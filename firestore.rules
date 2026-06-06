@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // qualquer usuário autenticado pode ler/gravar.
+    // (controle de perfil é feito no app via coleção 'usuarios')
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
