@@ -1,6 +1,6 @@
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM } from '../utils.js'
 
 export default function Rota({ pedidos }) {
   // só pedidos categorizados entram na lista de rota (estão em produção)
@@ -69,6 +69,7 @@ export default function Rota({ pedidos }) {
                             <div key={p.idVenda} style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 8 }}>
                               <div className="meta-row">
                                 <span className="idv">#{p.idVenda}</span>
+                                {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
                                 {atrasado
                                   ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
                                   : <span className="chip">{fmtData(p.previsao)}</span>}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM } from '../utils.js'
 
 export default function Entregues() {
   const [itens, setItens] = useState([])
@@ -47,8 +47,9 @@ export default function Entregues() {
                 <div className="idv">#{p.idVenda}</div>
               </div>
               <div className="meta-row">
+                {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
                 <span className="chip">{p.vendedor}</span>
-                <span className="chip">{p.cidade}</span>
+                <span className="chip">{p.cidade || '—'}</span>
                 <span className="chip" style={{ color: 'var(--ok)' }}>✓ {fmtData(p.entregueEm)}</span>
               </div>
               <ul className="itens">

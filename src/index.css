@@ -156,6 +156,8 @@ input, select { font-family: var(--font); }
   display: inline-flex; align-items: center; gap: 5px;
 }
 .chip.rota-warn { background: rgba(240,180,41,0.13); color: var(--warn); border-color: rgba(240,180,41,0.35); }
+.chip.origem-posseidon { background: rgba(109,40,217,0.14); color: #8B5CF6; border-color: rgba(109,40,217,0.4); font-weight: 700; }
+.chip.origem-zeus { background: rgba(14,116,144,0.14); color: #22B8CF; border-color: rgba(14,116,144,0.45); font-weight: 700; }
 .chip.atrasado { background: rgba(229,72,77,0.14); color: var(--danger); border-color: rgba(229,72,77,0.4); }
 .chip.linha { color: #fff; border: none; }
 

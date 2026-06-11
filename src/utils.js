@@ -24,6 +24,12 @@ export const MODO_COR = {
   GRAFICA: '#C2410C',  // laranja
 }
 
+// ---------- ORIGEM DOS PEDIDOS (sistema de onde veio a planilha) ----------
+export const ORIGEM_NM = {
+  POSSEIDON: 'Posseidon',
+  ZEUS: 'Zeus',
+}
+
 // ============================================================
 // SEED — dados atuais embutidos, no FORMATO NOVO.
 // Usado pelo botão "Importar dados atuais" na tela de Cadastros.
@@ -212,6 +218,7 @@ export function agrupaPedidos(linhas, mapa, cadastros) {
       const previsao = calculaPrevisao(vendRaw, dataVenda, cadastros)
       porId[id] = {
         idVenda: id,
+        origem: 'POSSEIDON',
         cliente: String(row[mapa.cliente] ?? '').trim(),
         vendedorRaw: String(vendRaw).trim(),
         vendedor: nomeVendedor(vendRaw, cadastros),
@@ -234,6 +241,106 @@ export function agrupaPedidos(linhas, mapa, cadastros) {
     // então pegamos o maior valor visto, não a soma.
     const v = Number(row[mapa.valor]) || 0
     if (v > porId[id].valorTotal) porId[id].valorTotal = v
+  }
+  return Object.values(porId)
+}
+
+// ============================================================
+// ZEUS — "Listagem de pré-vendas"
+// Colunas: Faturada | Código | Venda (data) | Cód. cliente |
+//          Cliente | Valor venda | Vendedor
+// Diferenças p/ o Posseidon: não tem produto/itens, não tem cidade,
+// valor vem como texto "3.219,50" e data como texto "08/06/2026".
+// ============================================================
+
+// ---------- detecta de qual sistema veio a planilha ----------
+// recebe os nomes das colunas; devolve 'ZEUS', 'POSSEIDON' ou null
+export function detectaOrigem(colunas) {
+  const cols = colunas.map((c) => normaliza(c).toLowerCase())
+  const tem = (k) => cols.some((c) => c.includes(k))
+  // assinatura da Zeus: "Faturada" + "Valor venda" (ou "Cód. cliente")
+  if (tem('faturada') || tem('valor venda') || tem('cod. cliente') || tem('cod cliente')) {
+    return 'ZEUS'
+  }
+  // assinatura do Posseidon: tem Produto e/ou Cidade
+  if (tem('produto') || tem('cidade') || tem('id venda')) {
+    return 'POSSEIDON'
+  }
+  return null
+}
+
+// ---------- parsers de formato brasileiro ----------
+// "08/06/2026" -> Date (new Date() puro interpretaria como mês/dia)
+export function parseDataBR(v) {
+  if (!v && v !== 0) return null
+  if (v instanceof Date) return isNaN(v) ? null : v
+  const s = String(v).trim()
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (m) {
+    let ano = Number(m[3])
+    if (ano < 100) ano += 2000
+    return new Date(ano, Number(m[2]) - 1, Number(m[1]))
+  }
+  const d = new Date(s)
+  return isNaN(d) ? null : d
+}
+
+// "3.219,50" -> 3219.5 (aceita número puro também)
+export function parseValorBR(v) {
+  if (typeof v === 'number') return v
+  if (!v) return 0
+  const s = String(v).trim().replace(/[R$\s]/g, '')
+  if (/,\d{1,2}$/.test(s)) {
+    return Number(s.replace(/\./g, '').replace(',', '.')) || 0
+  }
+  return Number(s) || 0
+}
+
+// ---------- mapeamento de colunas da Zeus ----------
+// precisa ser exato em alguns casos: "Venda" (data) x "Valor venda",
+// "Cliente" x "Cód. cliente"
+export function mapeiaColunasZeus(colunas) {
+  const norm = colunas.map((c) => ({ raw: c, n: normaliza(c).toLowerCase() }))
+  const exata = (alvo) => norm.find((c) => c.n === alvo)?.raw
+  const contem = (k) => norm.find((c) => c.n.includes(k))?.raw
+  return {
+    id: exata('codigo') || contem('codigo'),
+    dataVenda: exata('venda') || exata('data venda') || exata('data'),
+    cliente: exata('cliente') || norm.find((c) => c.n.includes('cliente') && !c.n.includes('cod'))?.raw,
+    valor: contem('valor venda') || contem('valor'),
+    vendedor: contem('vendedor'),
+    faturada: contem('faturada'),
+  }
+}
+
+// agrupa as linhas da Zeus => 1 linha = 1 pedido (pré-venda não tem itens)
+export function agrupaPedidosZeus(linhas, mapa, cadastros) {
+  const porId = {}
+  for (const row of linhas) {
+    const codigo = String(row[mapa.id] ?? '').trim().replace(/\.0$/, '')
+    if (!codigo || !/\d/.test(codigo)) continue // pula linha de total no fim
+    const cliente = String(row[mapa.cliente] ?? '').trim()
+    if (!cliente) continue
+    const vendRaw = row[mapa.vendedor] ?? ''
+    const dataVenda = parseDataBR(row[mapa.dataVenda])
+    const previsao = calculaPrevisao(vendRaw, dataVenda, cadastros)
+    // prefixo Z no ID evita conflito com um pedido do Posseidon de mesmo número
+    const idVenda = 'Z' + codigo
+    porId[idVenda] = {
+      idVenda,
+      origem: 'ZEUS',
+      cliente,
+      vendedorRaw: String(vendRaw).trim(),
+      vendedor: nomeVendedor(vendRaw, cadastros),
+      cidade: '', // a listagem da Zeus não traz cidade
+      dataVenda: dataVenda ? dataVenda.toISOString() : null,
+      rota: 'SEM ROTA',
+      previsao: previsao ? previsao.toISOString() : null,
+      status: '',
+      obs: '',
+      valorTotal: parseValorBR(row[mapa.valor]),
+      itens: [],
+    }
   }
   return Object.values(porId)
 }

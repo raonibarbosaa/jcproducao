@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  MODO_ORDER, MODO_NM, MODO_COR, fmtData, fmtMoeda, situacaoPrazo,
+  MODO_ORDER, MODO_NM, MODO_COR, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
 } from '../utils.js'
 
 export default function Producao({ pedidos }) {
@@ -88,7 +88,8 @@ function CardProd({ p }) {
         <div className="idv">#{p.idVenda}</div>
       </div>
       <div className="meta-row">
-        <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>{p.cidade}</span>
+        {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
+        <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>{p.cidade || '—'}</span>
         {atrasado && <span className="chip atrasado">Atrasado</span>}
       </div>
       <ul className="itens">
