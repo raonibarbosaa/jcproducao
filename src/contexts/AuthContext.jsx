@@ -25,6 +25,13 @@ export function AuthProvider({ children }) {
           const snap = await getDoc(doc(db, 'usuarios', u.uid))
           if (snap.exists()) {
             const d = snap.data()
+            if (d.ativo === false) {
+              // acesso desativado pelo admin -> derruba a sessão
+              await signOut(auth)
+              alert('Seu acesso foi desativado. Fale com o administrador do sistema.')
+              setCarregando(false)
+              return
+            }
             setPerfil(d.perfil || 'dono')
             setNome(d.nome || u.email)
           } else {

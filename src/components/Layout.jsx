@@ -7,6 +7,7 @@ const LABEL = {
   rota: 'Rota',
   entregues: 'Entregues',
   cadastros: 'Cadastros',
+  usuarios: 'Usuários',
 }
 
 export default function Layout({ abas, contadores, children }) {

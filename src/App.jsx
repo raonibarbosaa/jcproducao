@@ -10,13 +10,14 @@ import Producao from './pages/Producao.jsx'
 import Rota from './pages/Rota.jsx'
 import Entregues from './pages/Entregues.jsx'
 import Cadastros from './pages/Cadastros.jsx'
+import Usuarios from './pages/Usuarios.jsx'
 import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
   designer:   ['triagem', 'producao', 'cadastros'],
   financeiro: ['rota', 'entregues'],
-  dono:       ['triagem', 'producao', 'rota', 'entregues', 'cadastros'],
+  dono:       ['triagem', 'producao', 'rota', 'entregues', 'cadastros', 'usuarios'],
 }
 
 export default function App() {
@@ -53,6 +54,7 @@ export default function App() {
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}
         {abas.includes('cadastros') && <Route path="/cadastros" element={<Cadastros />} />}
+        {abas.includes('usuarios') && <Route path="/usuarios" element={<Usuarios />} />}
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
