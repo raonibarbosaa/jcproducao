@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
-  MODO_ORDER, MODO_NM, MODO_COR, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
-  filtraPedidos, vendedoresDe,
+  MODO_ORDER, MODO_NM, MODO_COR, fmtData, situacaoPrazo, ORIGEM_NM,
+  filtraPedidos, vendedoresDe, resumoFiltros,
 } from '../utils.js'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
@@ -9,7 +9,6 @@ export default function Producao({ pedidos }) {
   const [filtroLinha, setFiltroLinha] = useState('')
   const [filtros, setFiltros] = useState({})
 
-  // só pedidos já categorizados
   const categorizados = pedidos.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
 
@@ -35,7 +34,7 @@ export default function Producao({ pedidos }) {
 
   return (
     <>
-      <div className="toolbar">
+      <div className="toolbar no-print">
         <h1 className="page-title">Lista de Produção
           <small>
             {filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`}
@@ -51,43 +50,50 @@ export default function Producao({ pedidos }) {
 
       <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
 
-      {lista.length === 0 ? (
-        <div className="empty"><div className="big">🏭</div>
-          {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
-        </div>
-      ) : (
-        vendedoresOrd.map((vend) => (
-          <div key={vend} className="group-block">
-            <div className="group-head">
-              <h3>{vend}</h3>
-            </div>
-            {Object.entries(arvore[vend]).sort().map(([data, linhas]) => (
-              <div key={data} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600, margin: '6px 0' }}>
-                  📅 Entrega: {data}
-                </div>
-                {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
-                  <div key={m} style={{ marginBottom: 10 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0 6px' }}>
-                      <span className="chip linha" style={{ background: MODO_COR[m] }}>{MODO_NM[m]}</span>
-                    </div>
-                    {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
-                      <div key={rota} style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '4px 0', fontWeight: 600 }}>
-                          {rota} · {ps.length}
-                        </div>
-                        <div className="cards">
-                          {ps.map((p) => <CardProd key={p.idVenda} p={p} />)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            ))}
+      {/* ---------- TELA ---------- */}
+      <div className="screen-only">
+        {lista.length === 0 ? (
+          <div className="empty"><div className="big">🏭</div>
+            {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
           </div>
-        ))
-      )}
+        ) : (
+          vendedoresOrd.map((vend) => (
+            <div key={vend} className="group-block">
+              <div className="group-head"><h3>{vend}</h3></div>
+              {Object.entries(arvore[vend]).sort().map(([data, linhas]) => (
+                <div key={data} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600, margin: '6px 0' }}>
+                    📅 Entrega: {data}
+                  </div>
+                  {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
+                    <div key={m} style={{ marginBottom: 10 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0 6px' }}>
+                        <span className="chip linha" style={{ background: MODO_COR[m] }}>{MODO_NM[m]}</span>
+                      </div>
+                      {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
+                        <div key={rota} style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '4px 0', fontWeight: 600 }}>
+                            {rota} · {ps.length}
+                          </div>
+                          <div className="cards">
+                            {ps.map((p) => <CardProd key={p.idVenda} p={p} />)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* ---------- IMPRESSÃO ---------- */}
+      <ImpressaoProducao
+        arvore={arvore} vendedoresOrd={vendedoresOrd}
+        filtros={filtros} filtroLinha={filtroLinha} total={lista.length}
+      />
     </>
   )
 }
@@ -108,13 +114,64 @@ function CardProd({ p }) {
       </div>
       <ul className="itens">
         {p.itens.map((it, i) => (
-          <li key={i}>
-            <span>{it.produto}</span>
-            <span className="q">{it.qtd}</span>
-          </li>
+          <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
         ))}
       </ul>
       {p.obs && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 6 }}>⚠ {p.obs}</div>}
+    </div>
+  )
+}
+
+// ============================ LAYOUT DE IMPRESSÃO ============================
+function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total }) {
+  const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  const resumo = resumoFiltros(filtros)
+  return (
+    <div className="print-only">
+      <div className="pr-head">
+        <h1>JC Sacolas · Lista de Produção</h1>
+        <div className="meta">
+          Impresso em {hoje}<br />
+          {total} pedido(s){filtroLinha ? ` · linha ${MODO_NM[filtroLinha]}` : ''}
+          {resumo && <><br />{resumo}</>}
+        </div>
+      </div>
+
+      {vendedoresOrd.map((vend) => (
+        <div key={vend} className="pr-block">
+          <div className="pr-vend">{vend}</div>
+          {Object.entries(arvore[vend]).sort().map(([data, linhas]) => (
+            <div key={data}>
+              <div className="pr-data">Entrega: {data}</div>
+              {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
+                <div key={m}>
+                  <span className="pr-linha" style={{ background: MODO_COR[m] }}>{MODO_NM[m]}</span>
+                  {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
+                    <div key={rota}>
+                      <div className="pr-rota">{rota} · {ps.length} pedido(s)</div>
+                      {ps.map((p) => (
+                        <div key={p.idVenda} className="pr-ped">
+                          <div className="top">
+                            <span className="box" />
+                            <span className="nm">#{p.idVenda} — {p.cliente}</span>
+                            <span className="cid">({p.cidade || '—'})</span>
+                          </div>
+                          <table className="pr-itens"><tbody>
+                            {p.itens.map((it, i) => (
+                              <tr key={i}><td>{it.produto}</td><td className="q">{it.qtd}</td></tr>
+                            ))}
+                          </tbody></table>
+                          {p.obs && <div className="pr-obs">⚠ {p.obs}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

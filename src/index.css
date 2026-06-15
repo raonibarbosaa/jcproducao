@@ -230,12 +230,64 @@ input, select { font-family: var(--font); }
 }
 
 /* ---------- impressão ---------- */
+.print-only { display: none; }
+
 @media print {
+  @page { margin: 11mm; }
   body { background: #fff; color: #000; }
-  .header, .toolbar .btn, .modo-btns, .btn-logout, .no-print { display: none !important; }
+  .header, .toolbar, .filtros, .btn, .modo-btns, .btn-logout, .no-print, .screen-only {
+    display: none !important;
+  }
   .main { padding: 0; max-width: none; }
-  .card { break-inside: avoid; border: 1px solid #ccc; box-shadow: none; background: #fff; color: #000; }
-  .cards { grid-template-columns: repeat(2, 1fr); }
-  .chip, .card .cliente, .itens li { color: #000 !important; }
-  .group-head h3 { color: #000; }
+  .print-only { display: block !important; color: #000; }
+
+  /* cabeçalho da folha */
+  .pr-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 12px;
+  }
+  .pr-head h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+  .pr-head .meta { font-size: 10.5px; text-align: right; color: #333; line-height: 1.45; }
+
+  /* níveis de agrupamento */
+  .pr-block { margin-bottom: 8px; }
+  .pr-vend {
+    font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+    border-bottom: 1px solid #000; margin: 14px 0 6px; padding-bottom: 2px; break-after: avoid;
+  }
+  .pr-data { font-size: 12px; font-weight: 700; margin: 8px 0 4px; break-after: avoid; }
+  .pr-linha {
+    display: inline-block; font-size: 10.5px; font-weight: 800; color: #fff;
+    padding: 2px 9px; border-radius: 4px; margin: 7px 0 4px; letter-spacing: 0.3px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .pr-rota { font-size: 11px; font-weight: 700; color: #333; margin: 6px 0 3px; break-after: avoid; }
+  .pr-rota.forte {
+    color: #000; font-size: 12.5px; background: #eee; padding: 3px 8px; border-radius: 4px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* bloco de pedido / parada */
+  .pr-ped {
+    border: 1px solid #999; border-radius: 4px; padding: 5px 8px; margin-bottom: 6px;
+    break-inside: avoid;
+  }
+  .pr-ped.parada { border: 1px solid #444; padding: 7px 9px; margin-bottom: 8px; }
+  .pr-ped .top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .pr-ped .top .nm { font-weight: 700; }
+  .pr-ped .top .cid { color: #333; font-weight: 600; }
+  .pr-ped .top .ent { margin-left: auto; font-weight: 700; white-space: nowrap; }
+  .pr-ped .box {
+    width: 13px; height: 13px; border: 1.5px solid #000; border-radius: 2px;
+    display: inline-block; flex: none;
+  }
+  .pr-itens { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .pr-itens td { font-size: 12px; padding: 2px 4px; border-bottom: 1px dotted #ccc; }
+  .pr-itens td.q { text-align: right; font-weight: 700; width: 64px; font-family: var(--mono); }
+  .pr-itens .ref { color: #999; font-size: 10px; }
+  .pr-obs { font-size: 11px; font-style: italic; margin-top: 3px; }
+  .pr-sign {
+    font-size: 10.5px; color: #333; margin-top: 8px; padding-top: 5px;
+    border-top: 1px dashed #999;
+  }
 }

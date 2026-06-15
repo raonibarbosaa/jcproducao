@@ -207,6 +207,21 @@ export function vendedoresDe(lista) {
   return [...new Set(lista.map((p) => p.vendedor || '—'))].sort()
 }
 
+// texto curto descrevendo os filtros ativos (cabeçalho da impressão)
+export function resumoFiltros(f) {
+  if (!f) return ''
+  const partes = []
+  if (f.cliente) partes.push(`cliente "${f.cliente}"`)
+  if (f.pedido) partes.push(`pedido ${f.pedido}`)
+  if (f.vendedor) partes.push(`vendedor ${f.vendedor}`)
+  if (f.dataIni || f.dataFim) {
+    const a = f.dataIni ? fmtData(f.dataIni + 'T00:00:00') : '…'
+    const b = f.dataFim ? fmtData(f.dataFim + 'T00:00:00') : '…'
+    partes.push(`entrega ${a} a ${b}`)
+  }
+  return partes.join(' · ')
+}
+
 // ---------- detecção flexível de colunas da planilha ----------
 // recebe array de nomes de coluna, devolve mapa {campo: nomeRealDaColuna}
 const PADROES = {
