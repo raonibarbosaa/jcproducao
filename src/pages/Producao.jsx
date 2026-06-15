@@ -145,7 +145,7 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total 
               <div className="pr-data">Entrega: {data}</div>
               {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
                 <div key={m}>
-                  <span className="pr-linha" style={{ background: MODO_COR[m] }}>{MODO_NM[m]}</span>
+                  <span className="pr-linha" style={{ color: MODO_COR[m], borderColor: MODO_COR[m] }}>{MODO_NM[m]}</span>
                   {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
                     <div key={rota}>
                       <div className="pr-rota">{rota} · {ps.length} pedido(s)</div>
