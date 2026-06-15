@@ -177,6 +177,36 @@ export function fmtMoeda(v) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// ---------- filtro compartilhado (Rota e Produção) ----------
+// f = { cliente, pedido, vendedor, dataIni, dataFim }
+// datas filtram pela PREVISÃO de entrega. Pedido sem previsão não entra
+// quando há filtro de data ativo.
+export function filtraPedidos(lista, f) {
+  if (!f) return lista
+  const cli = normaliza(f.cliente || '')
+  const ped = normaliza(f.pedido || '')
+  const vend = f.vendedor || ''
+  const ini = f.dataIni ? new Date(f.dataIni + 'T00:00:00') : null
+  const fim = f.dataFim ? new Date(f.dataFim + 'T23:59:59') : null
+  return lista.filter((p) => {
+    if (cli && !normaliza(p.cliente).includes(cli)) return false
+    if (ped && !normaliza(p.idVenda).includes(ped)) return false
+    if (vend && (p.vendedor || '—') !== vend) return false
+    if (ini || fim) {
+      if (!p.previsao) return false
+      const d = new Date(p.previsao)
+      if (ini && d < ini) return false
+      if (fim && d > fim) return false
+    }
+    return true
+  })
+}
+
+// lista de vendedores distintos presentes nos pedidos (para o select do filtro)
+export function vendedoresDe(lista) {
+  return [...new Set(lista.map((p) => p.vendedor || '—'))].sort()
+}
+
 // ---------- detecção flexível de colunas da planilha ----------
 // recebe array de nomes de coluna, devolve mapa {campo: nomeRealDaColuna}
 const PADROES = {

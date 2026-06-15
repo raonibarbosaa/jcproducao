@@ -21,4 +21,6 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
+// E-mails do Firebase (reset de senha, verificação) saem em português
+auth.languageCode = 'pt'
 export const db = getFirestore(app)

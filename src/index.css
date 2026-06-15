@@ -125,6 +125,25 @@ input, select { font-family: var(--font); }
 }
 .filter-pill input { accent-color: var(--accent); }
 
+/* ---------- barra de filtros (Rota / Produção) ---------- */
+.filtros {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-bottom: 18px;
+}
+.filtros .filtro-input {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 11px; border-radius: 8px; font-size: 13px; font-family: var(--font);
+}
+.filtros .filtro-input:focus { outline: none; border-color: var(--accent); }
+.filtros .filtro-input::placeholder { color: var(--text-faint); }
+.filtros .filtro-label { font-size: 12px; color: var(--text-faint); font-weight: 600; }
+.filtros .filtro-date { color-scheme: dark; }
+.filtros .btn-clear {
+  background: none; border: none; color: var(--text-faint);
+  font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 4px;
+}
+.filtros .btn-clear:hover { color: var(--danger); }
+
 /* ---------- cards de pedido ---------- */
 .group-block { margin-bottom: 26px; }
 .group-head {

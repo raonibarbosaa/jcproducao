@@ -1,10 +1,16 @@
+import { useState } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe } from '../utils.js'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Rota({ pedidos }) {
+  const [filtros, setFiltros] = useState({})
+
   // só pedidos categorizados entram na lista de rota (estão em produção)
-  const lista = pedidos.filter((p) => p.status)
+  const categorizados = pedidos.filter((p) => p.status)
+  const vendedores = vendedoresDe(categorizados)
+  const lista = filtraPedidos(categorizados, filtros)
 
   // agrupa: Vendedor -> Rota -> Cliente -> pedidos
   const arvore = {}
@@ -27,22 +33,31 @@ export default function Rota({ pedidos }) {
     await deleteDoc(doc(db, 'pedidos', p.idVenda))
   }
 
-  const vendedores = Object.keys(arvore).sort()
+  const vendedoresOrd = Object.keys(arvore).sort()
+  const filtrado = lista.length !== categorizados.length
 
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Lista de Rota
-          <small>{lista.length} pedidos para entregar</small>
+          <small>
+            {filtrado
+              ? `${lista.length} de ${categorizados.length} pedidos`
+              : `${lista.length} pedidos para entregar`}
+          </small>
         </h1>
         <div className="spacer" />
         <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
       </div>
 
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
+
       {lista.length === 0 ? (
-        <div className="empty"><div className="big">🗺️</div>Nada para carregar no momento.</div>
+        <div className="empty"><div className="big">🗺️</div>
+          {categorizados.length === 0 ? 'Nada para carregar no momento.' : 'Nenhum pedido com esses filtros.'}
+        </div>
       ) : (
-        vendedores.map((vend) => (
+        vendedoresOrd.map((vend) => (
           <div key={vend} className="group-block">
             <div className="group-head"><h3>{vend}</h3></div>
             {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => {
@@ -70,6 +85,7 @@ export default function Rota({ pedidos }) {
                               <div className="meta-row">
                                 <span className="idv">#{p.idVenda}</span>
                                 {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
+                                <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>📍 {p.cidade || '—'}</span>
                                 {atrasado
                                   ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
                                   : <span className="chip">{fmtData(p.previsao)}</span>}

@@ -1,14 +1,21 @@
 import { useState } from 'react'
 import {
   MODO_ORDER, MODO_NM, MODO_COR, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
+  filtraPedidos, vendedoresDe,
 } from '../utils.js'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Producao({ pedidos }) {
   const [filtroLinha, setFiltroLinha] = useState('')
+  const [filtros, setFiltros] = useState({})
 
   // só pedidos já categorizados
-  let lista = pedidos.filter((p) => p.status)
+  const categorizados = pedidos.filter((p) => p.status)
+  const vendedores = vendedoresDe(categorizados)
+
+  let lista = categorizados
   if (filtroLinha) lista = lista.filter((p) => p.status === filtroLinha)
+  lista = filtraPedidos(lista, filtros)
 
   // agrupa: Vendedor -> Data de entrega -> Linha -> Rota
   const arvore = {}
@@ -23,13 +30,16 @@ export default function Producao({ pedidos }) {
     arvore[vend][data][p.status][rota].push(p)
   }
 
-  const vendedores = Object.keys(arvore).sort()
+  const vendedoresOrd = Object.keys(arvore).sort()
+  const filtrado = lista.length !== categorizados.length
 
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Lista de Produção
-          <small>{lista.length} pedidos</small>
+          <small>
+            {filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`}
+          </small>
         </h1>
         <div className="spacer" />
         <select className="btn" value={filtroLinha} onChange={(e) => setFiltroLinha(e.target.value)}>
@@ -39,10 +49,14 @@ export default function Producao({ pedidos }) {
         <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
       </div>
 
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
+
       {lista.length === 0 ? (
-        <div className="empty"><div className="big">🏭</div>Nenhum pedido categorizado ainda.</div>
+        <div className="empty"><div className="big">🏭</div>
+          {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
+        </div>
       ) : (
-        vendedores.map((vend) => (
+        vendedoresOrd.map((vend) => (
           <div key={vend} className="group-block">
             <div className="group-head">
               <h3>{vend}</h3>
@@ -89,7 +103,7 @@ function CardProd({ p }) {
       </div>
       <div className="meta-row">
         {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
-        <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>{p.cidade || '—'}</span>
+        <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>📍 {p.cidade || '—'}</span>
         {atrasado && <span className="chip atrasado">Atrasado</span>}
       </div>
       <ul className="itens">
