@@ -277,6 +277,7 @@ input, select { font-family: var(--font); }
   .pr-ped .top .nm { font-weight: 700; }
   .pr-ped .top .cid { color: #333; font-weight: 600; }
   .pr-ped .top .ent { margin-left: auto; font-weight: 700; white-space: nowrap; }
+  .pr-ped .top .val { font-weight: 800; white-space: nowrap; padding-left: 10px; font-family: var(--mono); }
   .pr-ped .box {
     width: 13px; height: 13px; border: 1.5px solid #000; border-radius: 2px;
     display: inline-block; flex: none;

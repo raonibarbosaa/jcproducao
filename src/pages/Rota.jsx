@@ -157,13 +157,16 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
           {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => (
             <div key={rota}>
               <div className="pr-rota forte">{rota} · {Object.keys(clientes).length} cliente(s)</div>
-              {Object.entries(clientes).map(([cliente, ps]) => (
+              {Object.entries(clientes).map(([cliente, ps]) => {
+                const totalParada = ps.reduce((s, p) => s + (p.valorTotal || 0), 0)
+                return (
                 <div key={cliente} className="pr-ped parada">
                   <div className="top">
                     <span className="box" />
                     <span className="nm">{cliente}</span>
                     <span className="cid">— {ps[0].cidade || '—'}</span>
                     <span className="ent">{fmtData(ps[0].previsao)}</span>
+                    <span className="val">{fmtMoeda(totalParada)}</span>
                   </div>
                   <table className="pr-itens"><tbody>
                     {ps.flatMap((p) => p.itens.map((it, i) => (
@@ -177,7 +180,8 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
                     Recebido por: ______________________________   Obs: ______________________
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           ))}
         </div>
