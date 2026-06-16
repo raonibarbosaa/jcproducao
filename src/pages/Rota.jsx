@@ -138,9 +138,18 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
         </div>
       </div>
 
-      {vendedoresOrd.map((vend) => (
+      {vendedoresOrd.map((vend) => {
+        // data(s) de entrega deste vendedor — a mesma que aparece na tela, abaixo do nome
+        const datasVend = [...new Set(
+          Object.values(arvore[vend])
+            .flatMap((clientes) => Object.values(clientes))
+            .flat()
+            .map((p) => fmtData(p.previsao))
+        )].join(' · ')
+        return (
         <div key={vend} className="pr-block">
           <div className="pr-vend">{vend}</div>
+          <div className="pr-data">Entrega: {datasVend}</div>
           {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => (
             <div key={rota}>
               <div className="pr-rota forte">{rota} · {Object.keys(clientes).length} cliente(s)</div>
@@ -168,7 +177,8 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
             </div>
           ))}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
