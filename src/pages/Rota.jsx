@@ -1,13 +1,17 @@
 import { useState } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe } from '../utils.js'
+import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Rota({ pedidos }) {
+  const { vendedores: cadastros } = useCadastros()
   const [filtros, setFiltros] = useState({})
 
-  const categorizados = pedidos.filter((p) => p.status)
+  // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
+  const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
+  const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
   const lista = filtraPedidos(categorizados, filtros)
 

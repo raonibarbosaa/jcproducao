@@ -155,6 +155,16 @@ export function calculaPrevisao(vendedorRaw, dataVenda, cadastros) {
   return new Date(ano, mes, dia)
 }
 
+// previsão "viva": recalcula a partir do vendedor + data da venda usando o
+// calendário ATUAL do Cadastro. Assim, configurar/ajustar o calendário de um
+// vendedor reflete na hora em todos os pedidos dele — sem reimportar.
+// Se não der pra recalcular (sem calendário), cai pro valor já gravado.
+export function previsaoDe(p, cadastros) {
+  const calc = calculaPrevisao(p.vendedorRaw, p.dataVenda, cadastros)
+  if (calc) return calc.toISOString()
+  return p.previsao || null
+}
+
 // situação: só 'em_dia' ou 'atrasado'
 export function situacaoPrazo(previsao) {
   if (!previsao) return 'em_dia'
