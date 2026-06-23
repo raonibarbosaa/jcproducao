@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { doc, setDoc, deleteDoc, writeBatch, collection, getDocs, query, where, documentId } from 'firebase/firestore'
+import { doc, setDoc, updateDoc, deleteDoc, writeBatch, collection, getDocs, query, where, documentId } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -115,23 +115,28 @@ export default function Triagem({ pedidos }) {
       p.itens?.length
         ? p.itens.every((_, i) => linhaDoItem(p, i) === linha)
         : p.status === linha
-    if (todosNaMesma) {
-      await setDoc(doc(db, 'pedidos', idVenda), { status: '', linhasItens: {} }, { merge: true })
-      return
+    try {
+      if (todosNaMesma) {
+        await updateDoc(doc(db, 'pedidos', idVenda), { status: '', linhasItens: {} })
+        return
+      }
+      // monta linhasItens com todos os índices apontando pra mesma linha
+      const linhasItens = {}
+      if (p.itens?.length) {
+        p.itens.forEach((_, i) => { linhasItens[i] = linha })
+      }
+      await updateDoc(doc(db, 'pedidos', idVenda), { status: linha, linhasItens })
+    } catch (err) {
+      console.error('[categorizar] erro:', err)
+      alert('Erro ao gravar: ' + err.message)
     }
-    // monta linhasItens com todos os índices apontando pra mesma linha
-    const linhasItens = {}
-    if (p.itens?.length) {
-      p.itens.forEach((_, i) => { linhasItens[i] = linha })
-    }
-    await setDoc(doc(db, 'pedidos', idVenda), { status: linha, linhasItens }, { merge: true })
   }
 
   // botãozinho por item — alterna a linha só daquele item.
   // recalcula status (linha predominante) e segura o pedido na Triagem se ainda faltar item.
   async function categorizarItem(idVenda, indice, linha) {
     const p = pedidos.find((x) => x.idVenda === idVenda)
-    if (!p) return
+    if (!p) { console.warn('[categorizarItem] pedido não encontrado:', idVenda); return }
     const atual = { ...(p.linhasItens || {}) }
     if (atual[indice] === linha) {
       delete atual[indice] // clicar de novo na mesma letra remove a linha do item
@@ -142,7 +147,16 @@ export default function Triagem({ pedidos }) {
     const pSimulado = { ...p, linhasItens: atual }
     const completo = pedidoCompleto(pSimulado)
     const novoStatus = completo ? linhaPredominante(pSimulado) : ''
-    await setDoc(doc(db, 'pedidos', idVenda), { linhasItens: atual, status: novoStatus }, { merge: true })
+    console.log('[categorizarItem]', { idVenda, indice, linha, atual, novoStatus })
+    // SEM merge no objeto linhasItens — substitui inteiro pra que delete propague.
+    // Mas mantém merge true no doc principal pra não apagar outros campos do pedido.
+    try {
+      await updateDoc(doc(db, 'pedidos', idVenda), { linhasItens: atual, status: novoStatus })
+      console.log('[categorizarItem] gravado ✓')
+    } catch (err) {
+      console.error('[categorizarItem] erro ao gravar:', err)
+      alert('Erro ao gravar: ' + err.message)
+    }
   }
 
   // responsável define a cidade de um pedido sem rota -> sistema recalcula a rota
