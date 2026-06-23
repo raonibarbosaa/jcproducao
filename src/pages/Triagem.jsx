@@ -319,7 +319,7 @@ export default function Triagem({ pedidos }) {
   )
 }
 
-function CardTriagem({ p, onCat, onCidade, onExcluir, clientes }) {
+function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
