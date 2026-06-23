@@ -8,7 +8,7 @@ import {
   mapeiaColunas, agrupaPedidos, MODO_ORDER, MODO_NM, MODO_COR,
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
-  linhaDoItem, pedidoCompleto, linhaPredominante,
+  linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente,
 } from '../utils.js'
 
 export default function Triagem({ pedidos }) {
@@ -23,7 +23,7 @@ export default function Triagem({ pedidos }) {
   const [perIni, setPerIni] = useState('')
   const [perFim, setPerFim] = useState('')
   const [excluindo, setExcluindo] = useState(false)
-  const [modalEntregues, setModalEntregues] = useState(null) // lista de pedidos ignorados ou null
+  const [resultadoImportacao, setResultadoImportacao] = useState(null) // resumo da última importação
 
   async function importar(e) {
     const file = e.target.files?.[0]
@@ -72,30 +72,68 @@ export default function Triagem({ pedidos }) {
       const idsEntregues = new Set(jaEntregues.map((e) => e.id))
       const aImportar = novos.filter((p) => !idsEntregues.has(p.idVenda))
 
+      // categoriza cada pedido (novo / atualizado-normal / atualizado-categorizado)
+      // e cataloga clientes novos pra cadastrar automaticamente
+      const existentes = Object.fromEntries(pedidos.map((p) => [p.idVenda, p]))
+      const novosResumo = []          // pedidos que entraram pela 1a vez
+      const atualizadosMantidos = []  // pedidos que existiam E já estavam categorizados
+      const atualizadosNormais = []   // pedidos que existiam mas estavam sem categoria
+
+      for (const p of aImportar) {
+        const ja = existentes[p.idVenda]
+        if (!ja) novosResumo.push(p)
+        else if (ja.status) atualizadosMantidos.push({ ...p, _statusAnterior: ja.status })
+        else atualizadosNormais.push(p)
+      }
+
       // grava em lote (máx. 500 operações por lote no Firestore).
       // Mantém status/obs/cidade já definidos se o pedido já existia.
-      const existentes = Object.fromEntries(pedidos.map((p) => [p.idVenda, p]))
-      let add = 0, mant = 0
+      setMsg('Gravando pedidos…')
       for (let i = 0; i < aImportar.length; i += 450) {
         const batch = writeBatch(db)
         for (const p of aImportar.slice(i, i + 450)) {
           const ja = existentes[p.idVenda]
           const dados = { ...p }
-          if (ja && ja.status) { dados.status = ja.status; mant++ }
+          if (ja && ja.status) { dados.status = ja.status }
+          if (ja && ja.linhasItens) { dados.linhasItens = ja.linhasItens }
           if (ja && ja.obs) dados.obs = ja.obs || dados.obs
-          // cidade definida manualmente não pode ser apagada por planilha sem cidade (Zeus)
+          // cidade definida manualmente não pode ser apagada por planilha sem cidade
           if (ja && ja.cidade && !dados.cidade) { dados.cidade = ja.cidade; dados.rota = ja.rota }
           batch.set(doc(db, 'pedidos', p.idVenda), dados, { merge: true })
-          if (!ja) add++
         }
         await batch.commit()
       }
-      setMsg(
-        `Importado da ${ORIGEM_NM[origem]}: ${aImportar.length} pedidos ` +
-        `(${add} novos, ${mant} já categorizados mantidos` +
-        (jaEntregues.length ? `, ${jaEntregues.length} ignorados — já entregues` : '') + ').'
-      )
-      if (jaEntregues.length) setModalEntregues(jaEntregues)
+
+      // captura automática de clientes: pra cada razão social que aparece na planilha
+      // e ainda NÃO está cadastrada, cria entrada com apelido vazio.
+      // Cliente já cadastrado (mesmo com apelido vazio) é deixado em paz.
+      setMsg('Conferindo clientes…')
+      const razoesNovas = new Map() // razao normalizada -> razao original (1a vez vista)
+      for (const p of aImportar) {
+        const razao = (p.cliente || '').trim()
+        if (!razao) continue
+        if (achaCliente(razao, clientes)) continue
+        const key = normaliza(razao)
+        if (!razoesNovas.has(key)) razoesNovas.set(key, razao)
+      }
+      const clientesNovos = [...razoesNovas.values()].map((razao) => ({ razao, nome: '' }))
+      if (clientesNovos.length) {
+        const listaAtualizada = [...clientes, ...clientesNovos]
+        await setDoc(doc(db, 'config', 'cadastros'), { clientes: listaAtualizada }, { merge: true })
+      }
+
+      // monta o resultado pro modal
+      setResultadoImportacao({
+        origem,
+        totalLinhas: linhas.length,
+        totalPedidos: novos.length,
+        novos: novosResumo,
+        atualizadosMantidos,
+        atualizadosNormais,
+        ignorados: jaEntregues,
+        clientesNovos,
+      })
+      setMsg('')
     } catch (err) {
       console.error(err)
       setMsg('Erro ao importar: ' + err.message)
@@ -282,38 +320,12 @@ export default function Triagem({ pedidos }) {
         </div>
       )}
 
-      {modalEntregues && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-          onClick={() => setModalEntregues(null)}>
-          <div className="card em_dia" style={{ maxWidth: 540, width: '100%', maxHeight: '80vh',
-            display: 'flex', flexDirection: 'column' }}
-            onClick={(e) => e.stopPropagation()}>
-            <div className="card-top">
-              <div className="cliente">⚠ Pedidos já entregues — não importados</div>
-            </div>
-            <p style={{ fontSize: 13, color: 'var(--text-dim)', margin: '6px 0 10px' }}>
-              Estes {modalEntregues.length} pedido(s) da planilha já constam no histórico de
-              <b> Entregues</b> e foram ignorados para não voltarem à triagem:
-            </p>
-            <ul className="itens" style={{ overflowY: 'auto', flex: 1 }}>
-              {modalEntregues.map((e) => (
-                <li key={e.id}>
-                  <span>
-                    #{e.id} · {nomeCliente(e.cliente, clientes)}
-                    {e.origem && <span className={`chip origem-${e.origem.toLowerCase()}`} style={{ marginLeft: 6 }}>{ORIGEM_NM[e.origem] || e.origem}</span>}
-                  </span>
-                  <span className="q">✓ {fmtData(e.entregueEm)}</span>
-                </li>
-              ))}
-            </ul>
-            <button className="btn primary" style={{ marginTop: 12, justifyContent: 'center' }}
-              onClick={() => setModalEntregues(null)}>
-              Entendi
-            </button>
-          </div>
-        </div>
+      {resultadoImportacao && (
+        <ModalImportacao
+          resultado={resultadoImportacao}
+          clientes={clientes}
+          onFechar={() => setResultadoImportacao(null)}
+        />
       )}
     </>
   )
@@ -448,6 +460,220 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// MODAL DE RESUMO DA IMPORTAÇÃO
+// Mostra estatísticas, lista de pedidos (com expandir),
+// e permite definir apelido dos clientes novos sem sair do modal.
+// ============================================================
+function ModalImportacao({ resultado, clientes, onFechar }) {
+  const { origem, totalLinhas, totalPedidos, novos, atualizadosMantidos, atualizadosNormais, ignorados, clientesNovos } = resultado
+
+  // soma valores (só dos importados, sem os ignorados)
+  const importados = [...novos, ...atualizadosNormais, ...atualizadosMantidos]
+  const valorTotal = importados.reduce((s, p) => s + (p.valorTotal || 0), 0)
+  const totalItens = importados.reduce((s, p) => s + (p.itens?.length || 0), 0)
+  const vendedoresSet = new Set(importados.map((p) => p.vendedor).filter(Boolean))
+  const datas = importados.map((p) => p.dataVenda).filter(Boolean).sort()
+  const periodo = datas.length
+    ? `${fmtData(datas[0])}${datas.length > 1 && datas[0] !== datas[datas.length - 1] ? ' a ' + fmtData(datas[datas.length - 1]) : ''}`
+    : '—'
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      onClick={onFechar}>
+      <div className="card em_dia" style={{ maxWidth: 720, width: '100%', maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column' }}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="card-top">
+          <div className="cliente">📥 Importação da {ORIGEM_NM[origem] || origem}</div>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, marginTop: 10 }}>
+          {/* Resumo numérico */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 14 }}>
+            <CaixaResumo num={totalLinhas} label="linhas na planilha" />
+            <CaixaResumo num={totalPedidos} label="pedidos identificados" />
+            <CaixaResumo num={novos.length} label="novos" cor="var(--ok)" />
+            <CaixaResumo num={atualizadosMantidos.length + atualizadosNormais.length} label="atualizados" />
+            {ignorados.length > 0 && <CaixaResumo num={ignorados.length} label="ignorados (entregues)" cor="var(--warn)" />}
+          </div>
+
+          {/* Totais */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+            <span className="chip">💰 {fmtMoeda(valorTotal)}</span>
+            <span className="chip">📦 {totalItens} itens</span>
+            <span className="chip">👤 {vendedoresSet.size} vendedor(es)</span>
+            <span className="chip">📅 {periodo}</span>
+          </div>
+
+          {/* Clientes novos capturados — com edição de apelido inline */}
+          {clientesNovos.length > 0 && (
+            <SecaoClientesNovos clientesNovos={clientesNovos} clientes={clientes} />
+          )}
+
+          {/* Seções de pedidos */}
+          {novos.length > 0 && (
+            <SecaoPedidos titulo={`✨ Novos (${novos.length})`} pedidos={novos} clientes={clientes} cor="var(--ok)" />
+          )}
+          {atualizadosNormais.length > 0 && (
+            <SecaoPedidos titulo={`🔄 Atualizados (${atualizadosNormais.length})`} pedidos={atualizadosNormais} clientes={clientes} />
+          )}
+          {atualizadosMantidos.length > 0 && (
+            <SecaoPedidos titulo={`🔒 Já categorizados — categoria mantida (${atualizadosMantidos.length})`} pedidos={atualizadosMantidos} clientes={clientes} />
+          )}
+          {ignorados.length > 0 && (
+            <SecaoIgnorados ignorados={ignorados} clientes={clientes} />
+          )}
+
+          {importados.length === 0 && ignorados.length === 0 && (
+            <div className="empty" style={{ padding: 20 }}>
+              <div className="big">🤔</div>
+              Nada para importar.
+            </div>
+          )}
+        </div>
+
+        <button className="btn primary" style={{ marginTop: 12, justifyContent: 'center' }}
+          onClick={onFechar}>
+          Fechar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CaixaResumo({ num, label, cor }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: cor || 'var(--text)', lineHeight: 1 }}>{num}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>{label}</div>
+    </div>
+  )
+}
+
+function SecaoPedidos({ titulo, pedidos, clientes, cor }) {
+  const [expandido, setExpandido] = useState(new Set())
+  function toggle(id) {
+    const novo = new Set(expandido)
+    novo.has(id) ? novo.delete(id) : novo.add(id)
+    setExpandido(novo)
+  }
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: cor || 'var(--text-dim)', marginBottom: 6 }}>
+        {titulo}
+      </div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 6 }}>
+        {pedidos.map((p, i) => {
+          const aberto = expandido.has(p.idVenda)
+          return (
+            <div key={p.idVenda}
+              style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <div onClick={() => toggle(p.idVenda)}
+                style={{ padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-faint)', minWidth: 60 }}>#{p.idVenda}</span>
+                <span style={{ flex: 1 }}>{nomeCliente(p.cliente, clientes)}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{p.itens?.length || 0} item(ns)</span>
+                <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{fmtMoeda(p.valorTotal)}</span>
+                <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>{aberto ? '▲' : '▼'}</span>
+              </div>
+              {aberto && p.itens?.length > 0 && (
+                <ul className="itens" style={{ borderTop: '1px dashed var(--border)', margin: '0 10px', padding: '6px 0' }}>
+                  {p.itens.map((it, j) => (
+                    <li key={j}>
+                      <span>{it.produto} <span className="g">{it.grupo}</span></span>
+                      <span className="q">{it.qtd}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SecaoIgnorados({ ignorados, clientes }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--warn)', marginBottom: 6 }}>
+        ⚠ Já entregues — ignorados ({ignorados.length})
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 6 }}>
+        Estes pedidos já estão no histórico de Entregues. Não voltaram para a Triagem.
+      </div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 6 }}>
+        {ignorados.map((e, i) => (
+          <div key={e.id}
+            style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+            <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-faint)', minWidth: 60 }}>#{e.id}</span>
+            <span style={{ flex: 1 }}>{nomeCliente(e.cliente, clientes)}</span>
+            <span className="q">✓ {fmtData(e.entregueEm)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SecaoClientesNovos({ clientesNovos, clientes }) {
+  // estado local: razão -> apelido que está sendo digitado.
+  // Cliente sem apelido no banco = razão social vai aparecer nos cards (fallback automático).
+  const [edicoes, setEdicoes] = useState({})
+  const [salvos, setSalvos] = useState(new Set())
+
+  async function salvarApelido(razao) {
+    const apelido = (edicoes[razao] || '').trim()
+    if (!apelido) return // vazio = mantém só a razão social, nada a salvar
+    // pega a lista mais atual do contexto e atualiza só esse cliente
+    const idx = clientes.findIndex((c) => normaliza(c.razao) === normaliza(razao))
+    if (idx === -1) return // estranho, mas defensivo
+    const lista = clientes.map((c, i) => (i === idx ? { ...c, nome: apelido } : c))
+    await setDoc(doc(db, 'config', 'cadastros'), { clientes: lista }, { merge: true })
+    const novo = new Set(salvos); novo.add(razao); setSalvos(novo)
+  }
+
+  return (
+    <div style={{ marginBottom: 16, padding: 10, border: '1px dashed var(--accent)', borderRadius: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>
+        🏷️ {clientesNovos.length} cliente(s) novo(s) cadastrado(s) automaticamente
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>
+        Defina um apelido agora (opcional) ou faça depois em Cadastros → Clientes. Sem apelido, os cards
+        mostram a razão social.
+      </div>
+      {clientesNovos.map((c) => {
+        const jaSalvo = salvos.has(c.razao)
+        return (
+          <div key={c.razao} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-dim)', flex: '1 1 220px', minWidth: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.razao}>
+              {c.razao}
+            </span>
+            <input
+              placeholder="Apelido"
+              value={edicoes[c.razao] || ''}
+              onChange={(e) => setEdicoes({ ...edicoes, [c.razao]: e.target.value })}
+              onKeyDown={(e) => e.key === 'Enter' && salvarApelido(c.razao)}
+              style={{ width: 160, background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '5px 8px', color: 'var(--text)', fontSize: 13 }}
+            />
+            {jaSalvo
+              ? <span style={{ fontSize: 12, color: 'var(--ok)' }}>✓ salvo</span>
+              : <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }}
+                  onClick={() => salvarApelido(c.razao)}>Salvar</button>}
+          </div>
+        )
+      })}
     </div>
   )
 }
