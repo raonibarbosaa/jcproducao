@@ -334,6 +334,8 @@ export default function Triagem({ pedidos }) {
 function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
+  const [editandoApelido, setEditandoApelido] = useState(false)
+  const [apelidoNovo, setApelidoNovo] = useState('')
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   const foraRota = p.rota === 'FORA DE ROTA' || p.rota === 'SEM ROTA'
 
@@ -343,18 +345,81 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
     setEditandoCidade(false); setCidadeNova('')
   }
 
+  // salva o apelido no cadastro de clientes (cria entrada se ainda não existir)
+  async function salvarApelido() {
+    const apelido = apelidoNovo.trim()
+    const razao = (p.cliente || '').trim()
+    if (!razao) { setEditandoApelido(false); return }
+    const idx = clientes.findIndex((c) => normaliza(c.razao) === normaliza(razao))
+    let lista
+    if (idx === -1) {
+      // pedido antigo importado antes da captura automática — cria entrada agora
+      lista = [...clientes, { razao, nome: apelido }]
+    } else {
+      lista = clientes.map((c, i) => (i === idx ? { ...c, nome: apelido } : c))
+    }
+    try {
+      await setDoc(doc(db, 'config', 'cadastros'), { clientes: lista }, { merge: true })
+      setEditandoApelido(false); setApelidoNovo('')
+    } catch (err) {
+      console.error('[salvarApelido]', err)
+      alert('Erro ao salvar apelido: ' + err.message)
+    }
+  }
+
+  function iniciarEdicaoApelido() {
+    // popula o input com o apelido atual (se houver) — facilita ajuste pequeno
+    const existente = clientes.find((c) => normaliza(c.razao) === normaliza(p.cliente || ''))
+    setApelidoNovo(existente?.nome || '')
+    setEditandoApelido(true)
+  }
+  function cancelarEdicaoApelido() {
+    setEditandoApelido(false); setApelidoNovo('')
+  }
+
   return (
     <div className={`card ${atrasado ? 'atrasado' : 'em_dia'} ${foraRota ? 'fora-rota' : ''}`}>
       <div className="card-top">
-        <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div className="idv">#{p.idVenda}</div>
-          {onExcluir && (
-            <button className="btn" title="Excluir pedido (admin)"
-              style={{ padding: '2px 8px', color: 'var(--danger)' }}
-              onClick={() => onExcluir(p)}>✕</button>
-          )}
-        </div>
+        {editandoApelido ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)' }} title={p.cliente}>
+              Razão social: {p.cliente}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <input value={apelidoNovo} autoFocus
+                placeholder="Apelido (vazio = mostra razão social)"
+                onChange={(e) => setApelidoNovo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') salvarApelido()
+                  if (e.key === 'Escape') cancelarEdicaoApelido()
+                }}
+                style={{ flex: 1, minWidth: 140, background: 'var(--surface-2)',
+                  border: '1px solid var(--border)', borderRadius: 6, padding: '6px 9px',
+                  color: 'var(--text)', fontWeight: 600 }} />
+              <button className="btn ok" onClick={salvarApelido}>Salvar</button>
+              <button className="btn" onClick={cancelarEdicaoApelido}>Cancelar</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+            <div className="cliente" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {nomeCliente(p.cliente, clientes)}
+            </div>
+            <button className="btn" title="Editar apelido do cliente"
+              style={{ padding: '2px 6px', fontSize: 11, color: 'var(--text-faint)' }}
+              onClick={iniciarEdicaoApelido}>✎</button>
+          </div>
+        )}
+        {!editandoApelido && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div className="idv">#{p.idVenda}</div>
+            {onExcluir && (
+              <button className="btn" title="Excluir pedido (admin)"
+                style={{ padding: '2px 8px', color: 'var(--danger)' }}
+                onClick={() => onExcluir(p)}>✕</button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="meta-row">
