@@ -7,11 +7,11 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import {
   mapeiaColunas, agrupaPedidos, MODO_ORDER, MODO_NM, MODO_COR,
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
-  detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM,
+  detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
 } from '../utils.js'
 
 export default function Triagem({ pedidos }) {
-  const { vendedores } = useCadastros()
+  const { vendedores, clientes } = useCadastros()
   const { perfil } = useAuth()
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
@@ -122,7 +122,7 @@ export default function Triagem({ pedidos }) {
   // exclusão individual — só perfil dono
   async function excluirPedido(p) {
     if (!ehDono) return
-    if (!confirm(`Excluir o pedido #${p.idVenda} — ${p.cliente}?\n\nEssa ação não tem volta.`)) return
+    if (!confirm(`Excluir o pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}?\n\nEssa ação não tem volta.`)) return
     await deleteDoc(doc(db, 'pedidos', p.idVenda))
   }
 
@@ -253,7 +253,7 @@ export default function Triagem({ pedidos }) {
               {modalEntregues.map((e) => (
                 <li key={e.id}>
                   <span>
-                    #{e.id} · {e.cliente}
+                    #{e.id} · {nomeCliente(e.cliente, clientes)}
                     {e.origem && <span className={`chip origem-${e.origem.toLowerCase()}`} style={{ marginLeft: 6 }}>{ORIGEM_NM[e.origem] || e.origem}</span>}
                   </span>
                   <span className="q">✓ {fmtData(e.entregueEm)}</span>
@@ -286,7 +286,7 @@ function CardTriagem({ p, onCat, onCidade, onExcluir }) {
   return (
     <div className={`card ${atrasado ? 'atrasado' : 'em_dia'} ${foraRota ? 'fora-rota' : ''}`}>
       <div className="card-top">
-        <div className="cliente">{p.cliente}</div>
+        <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div className="idv">#{p.idVenda}</div>
           {onExcluir && (

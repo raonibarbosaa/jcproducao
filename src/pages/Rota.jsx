@@ -1,19 +1,19 @@
 import { useState } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Rota({ pedidos }) {
-  const { vendedores: cadastros } = useCadastros()
+  const { vendedores: cadastros, clientes } = useCadastros()
   const [filtros, setFiltros] = useState({})
 
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
-  const lista = filtraPedidos(categorizados, filtros)
+  const lista = filtraPedidos(categorizados, filtros, clientes)
 
   // agrupa: Vendedor -> Rota -> Cliente -> pedidos
   const arvore = {}
@@ -22,12 +22,13 @@ export default function Rota({ pedidos }) {
     const rota = p.rota || 'SEM ROTA'
     arvore[vend] ??= {}
     arvore[vend][rota] ??= {}
-    arvore[vend][rota][p.cliente] ??= []
-    arvore[vend][rota][p.cliente].push(p)
+    const nomeCli = nomeCliente(p.cliente, clientes)
+    arvore[vend][rota][nomeCli] ??= []
+    arvore[vend][rota][nomeCli].push(p)
   }
 
   async function entregar(p) {
-    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${p.cliente}?`)) return
+    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}?`)) return
     await setDoc(doc(db, 'entregues', p.idVenda), {
       ...p,
       entregueEm: new Date().toISOString(),

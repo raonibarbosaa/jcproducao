@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente } from '../utils.js'
+import { useCadastros } from '../contexts/CadastrosContext.jsx'
 
 export default function Entregues() {
   const [itens, setItens] = useState([])
+  const { clientes } = useCadastros()
   const [busca, setBusca] = useState('')
 
   useEffect(() => {
@@ -17,6 +19,7 @@ export default function Entregues() {
   const lista = itens
     .filter((p) =>
       !busca ||
+      nomeCliente(p.cliente, clientes).toLowerCase().includes(busca.toLowerCase()) ||
       p.cliente?.toLowerCase().includes(busca.toLowerCase()) ||
       String(p.idVenda).includes(busca) ||
       p.cidade?.toLowerCase().includes(busca.toLowerCase())
@@ -43,7 +46,7 @@ export default function Entregues() {
           {lista.map((p) => (
             <div key={p.idVenda} className="card em_dia">
               <div className="card-top">
-                <div className="cliente">{p.cliente}</div>
+                <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
                 <div className="idv">#{p.idVenda}</div>
               </div>
               <div className="meta-row">

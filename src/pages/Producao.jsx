@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import {
   MODO_ORDER, MODO_NM, MODO_COR, fmtData, situacaoPrazo, ORIGEM_NM,
-  filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe,
+  filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Producao({ pedidos }) {
-  const { vendedores: cadastros } = useCadastros()
+  const { vendedores: cadastros, clientes } = useCadastros()
   const [filtroLinha, setFiltroLinha] = useState('')
   const [filtros, setFiltros] = useState({})
 
@@ -18,7 +18,7 @@ export default function Producao({ pedidos }) {
 
   let lista = categorizados
   if (filtroLinha) lista = lista.filter((p) => p.status === filtroLinha)
-  lista = filtraPedidos(lista, filtros)
+  lista = filtraPedidos(lista, filtros, clientes)
 
   // agrupa: Vendedor -> Data de entrega -> Linha -> Rota
   const arvore = {}
@@ -108,7 +108,7 @@ function CardProd({ p }) {
   return (
     <div className={`card ${atrasado ? 'atrasado' : 'em_dia'} ${foraRota ? 'fora-rota' : ''}`}>
       <div className="card-top">
-        <div className="cliente">{p.cliente}</div>
+        <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
         <div className="idv">#{p.idVenda}</div>
       </div>
       <div className="meta-row">
@@ -157,7 +157,7 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total 
                         <div key={p.idVenda} className="pr-ped">
                           <div className="top">
                             <span className="box" />
-                            <span className="nm">#{p.idVenda} — {p.cliente}</span>
+                            <span className="nm">#{p.idVenda} — {nomeCliente(p.cliente, clientes)}</span>
                             <span className="cid">({p.cidade || '—'})</span>
                           </div>
                           <table className="pr-itens"><tbody>

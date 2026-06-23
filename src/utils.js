@@ -121,6 +121,24 @@ export function nomeVendedor(raw, cadastros) {
   return n.charAt(0).toUpperCase() + n.slice(1)
 }
 
+// ---------- DE/PARA de clientes (razão social -> nome de exibição) ----------
+// clientes = array [{ razao: 'EXEMPLO LIMITADA', nome: 'Loja Exemplo' }]
+// Casa pela razão social normalizada (ignora espaço extra, acento e caixa).
+export function achaCliente(razaoSocial, clientes) {
+  if (!clientes || !clientes.length) return null
+  const alvo = normaliza(razaoSocial)
+  if (!alvo) return null
+  return clientes.find((c) => normaliza(c.razao) === alvo) || null
+}
+
+// nome a EXIBIR: apelido cadastrado, senão a própria razão social da planilha.
+// Resolve no render — não precisa reimportar quando se cadastra um apelido novo.
+export function nomeCliente(razaoSocial, clientes) {
+  const c = achaCliente(razaoSocial, clientes)
+  if (c && c.nome && c.nome.trim()) return c.nome.trim()
+  return razaoSocial || ''
+}
+
 // dias de entrega do vendedor (array). [] = sem calendário definido
 export function diasEntrega(raw, cadastros) {
   const v = achaVendedor(raw, cadastros)
@@ -190,8 +208,8 @@ export function fmtMoeda(v) {
 // ---------- filtro compartilhado (Rota e Produção) ----------
 // f = { cliente, pedido, vendedor, dataIni, dataFim }
 // datas filtram pela PREVISÃO de entrega. Pedido sem previsão não entra
-// quando há filtro de data ativo.
-export function filtraPedidos(lista, f) {
+// quando há filtro de data ativo. clientes = de/para (casa pelos dois nomes).
+export function filtraPedidos(lista, f, clientes) {
   if (!f) return lista
   const cli = normaliza(f.cliente || '')
   const ped = normaliza(f.pedido || '')
@@ -199,7 +217,11 @@ export function filtraPedidos(lista, f) {
   const ini = f.dataIni ? new Date(f.dataIni + 'T00:00:00') : null
   const fim = f.dataFim ? new Date(f.dataFim + 'T23:59:59') : null
   return lista.filter((p) => {
-    if (cli && !normaliza(p.cliente).includes(cli)) return false
+    if (cli) {
+      const razao = normaliza(p.cliente)
+      const exib = normaliza(nomeCliente(p.cliente, clientes))
+      if (!razao.includes(cli) && !exib.includes(cli)) return false
+    }
     if (ped && !normaliza(p.idVenda).includes(ped)) return false
     if (vend && (p.vendedor || '—') !== vend) return false
     if (ini || fim) {
