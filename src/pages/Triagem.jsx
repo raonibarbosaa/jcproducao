@@ -8,6 +8,7 @@ import {
   mapeiaColunas, agrupaPedidos, MODO_ORDER, MODO_NM, MODO_COR,
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
+  linhaDoItem, pedidoCompleto, linhaPredominante,
 } from '../utils.js'
 
 export default function Triagem({ pedidos }) {
@@ -104,11 +105,44 @@ export default function Triagem({ pedidos }) {
     }
   }
 
-  async function categorizar(idVenda, status) {
-    // toggle: clicar de novo na mesma linha remove
-    const atual = pedidos.find((p) => p.idVenda === idVenda)?.status
-    const novo = atual === status ? '' : status
-    await setDoc(doc(db, 'pedidos', idVenda), { status: novo }, { merge: true })
+  async function categorizar(idVenda, linha) {
+    // Botão grande: aplica a linha a TODOS os itens do pedido.
+    // Clicar de novo na mesma linha (quando o pedido inteiro já está nela) limpa tudo
+    // e devolve o pedido pra Triagem.
+    const p = pedidos.find((x) => x.idVenda === idVenda)
+    if (!p) return
+    const todosNaMesma =
+      p.itens?.length
+        ? p.itens.every((_, i) => linhaDoItem(p, i) === linha)
+        : p.status === linha
+    if (todosNaMesma) {
+      await setDoc(doc(db, 'pedidos', idVenda), { status: '', linhasItens: {} }, { merge: true })
+      return
+    }
+    // monta linhasItens com todos os índices apontando pra mesma linha
+    const linhasItens = {}
+    if (p.itens?.length) {
+      p.itens.forEach((_, i) => { linhasItens[i] = linha })
+    }
+    await setDoc(doc(db, 'pedidos', idVenda), { status: linha, linhasItens }, { merge: true })
+  }
+
+  // botãozinho por item — alterna a linha só daquele item.
+  // recalcula status (linha predominante) e segura o pedido na Triagem se ainda faltar item.
+  async function categorizarItem(idVenda, indice, linha) {
+    const p = pedidos.find((x) => x.idVenda === idVenda)
+    if (!p) return
+    const atual = { ...(p.linhasItens || {}) }
+    if (atual[indice] === linha) {
+      delete atual[indice] // clicar de novo na mesma letra remove a linha do item
+    } else {
+      atual[indice] = linha
+    }
+    // simula o pedido com a mudança pra recalcular status e completude
+    const pSimulado = { ...p, linhasItens: atual }
+    const completo = pedidoCompleto(pSimulado)
+    const novoStatus = completo ? linhaPredominante(pSimulado) : ''
+    await setDoc(doc(db, 'pedidos', idVenda), { linhasItens: atual, status: novoStatus }, { merge: true })
   }
 
   // responsável define a cidade de um pedido sem rota -> sistema recalcula a rota
@@ -164,7 +198,7 @@ export default function Triagem({ pedidos }) {
     }
   }
 
-  const lista = (soPendentes ? pedidos.filter((p) => !p.status) : pedidos)
+  const lista = (soPendentes ? pedidos.filter((p) => !pedidoCompleto(p)) : pedidos)
     .slice()
     .sort((a, b) => {
       // atrasados primeiro, depois sem definição, depois por id
@@ -178,7 +212,7 @@ export default function Triagem({ pedidos }) {
     <>
       <div className="toolbar">
         <h1 className="page-title">Triagem
-          <small>{pedidos.length} pedidos · {pedidos.filter(p=>!p.status).length} sem definição</small>
+          <small>{pedidos.length} pedidos · {pedidos.filter(p=>!pedidoCompleto(p)).length} sem definição</small>
         </h1>
         <div className="spacer" />
         <label className="filter-pill">
@@ -228,7 +262,7 @@ export default function Triagem({ pedidos }) {
       ) : (
         <div className="cards">
           {lista.map((p) => (
-            <CardTriagem key={p.idVenda} p={p} onCat={categorizar} clientes={clientes}
+            <CardTriagem key={p.idVenda} p={p} onCat={categorizar} onCatItem={categorizarItem} clientes={clientes}
               onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
           ))}
         </div>
@@ -324,28 +358,81 @@ function CardTriagem({ p, onCat, onCidade, onExcluir, clientes }) {
       )}
 
       <ul className="itens">
-        {p.itens.map((it, i) => (
-          <li key={i}>
-            <span>{it.produto} <span className="g">{it.grupo}</span></span>
-            <span className="q">{it.qtd}</span>
-          </li>
-        ))}
+        {p.itens.map((it, i) => {
+          const m = linhaDoItem(p, i)
+          return (
+            <li key={i} style={{ alignItems: 'center' }}>
+              <span>{it.produto} <span className="g">{it.grupo}</span></span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="q">{it.qtd}</span>
+                <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
+                  {MODO_ORDER.map((opt) => {
+                    const sel = m === opt
+                    const sigla = opt === 'PRODUCAO' ? 'P' : opt === 'GLICHE' ? 'G' : 'Gr'
+                    return (
+                      <button key={opt} title={MODO_NM[opt]}
+                        onClick={() => onCatItem(p.idVenda, i, opt)}
+                        style={{
+                          width: 22, height: 22, borderRadius: 4,
+                          border: '1px solid ' + (sel ? MODO_COR[opt] : 'var(--border)'),
+                          background: sel ? MODO_COR[opt] : 'transparent',
+                          color: sel ? '#fff' : MODO_COR[opt],
+                          fontWeight: 700, fontSize: 11,
+                          cursor: 'pointer', padding: 0,
+                          lineHeight: 1,
+                        }}>
+                        {sigla}
+                      </button>
+                    )
+                  })}
+                </span>
+              </span>
+            </li>
+          )
+        })}
       </ul>
 
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop: 8 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
         <span className="valor">{fmtMoeda(p.valorTotal)}</span>
+        {/* pills do estado: mostra quantos itens em cada linha quando dividido */}
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          {(() => {
+            const cont = {}
+            p.itens.forEach((_, i) => {
+              const m = linhaDoItem(p, i)
+              if (!m) return
+              cont[m] = (cont[m] || 0) + 1
+            })
+            const linhasUsadas = MODO_ORDER.filter((m) => cont[m])
+            if (!linhasUsadas.length) return null
+            return linhasUsadas.map((m) => (
+              <span key={m}
+                style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10,
+                  background: MODO_COR[m], color: '#fff',
+                }}>
+                {cont[m]}{m === 'PRODUCAO' ? 'P' : m === 'GLICHE' ? 'G' : 'Gr'}
+              </span>
+            ))
+          })()}
+        </span>
       </div>
 
       <div className="modo-btns">
-        {MODO_ORDER.map((m) => (
-          <button
-            key={m}
-            className={`modo-btn ${p.status === m ? 'sel-' + m : ''}`}
-            onClick={() => onCat(p.idVenda, m)}
-          >
-            {MODO_NM[m]}
-          </button>
-        ))}
+        {MODO_ORDER.map((m) => {
+          // botão grande "ativo" só quando TODOS os itens estão nessa linha
+          const todosNela = p.itens.length && p.itens.every((_, i) => linhaDoItem(p, i) === m)
+          return (
+            <button
+              key={m}
+              className={`modo-btn ${todosNela ? 'sel-' + m : ''}`}
+              onClick={() => onCat(p.idVenda, m)}
+              title={`Marcar TODOS os itens como ${MODO_NM[m]}`}
+            >
+              {MODO_NM[m]}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

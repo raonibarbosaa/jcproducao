@@ -24,6 +24,64 @@ export const MODO_COR = {
   GRAFICA: '#C2410C',  // laranja
 }
 
+// linha de um item específico do pedido.
+// se o pedido tem linhasItens definido por item, usa isso.
+// senão (pedidos antigos / Zeus / quando o usuário ainda não mexeu), herda de p.status.
+export function linhaDoItem(p, idx) {
+  const m = p.linhasItens && p.linhasItens[idx]
+  if (m) return m
+  return p.status || ''
+}
+
+// linhas únicas presentes no pedido (na ordem do MODO_ORDER).
+// pedido com tudo na mesma linha -> array de 1 elemento.
+// pedido dividido -> array com 2 ou 3 elementos.
+// pedido sem itens (Zeus) ou totalmente sem linha -> respeita p.status.
+export function linhasPresentes(p) {
+  if (!p.itens || !p.itens.length) {
+    return p.status ? [p.status] : []
+  }
+  const set = new Set()
+  p.itens.forEach((_, i) => {
+    const m = linhaDoItem(p, i)
+    if (m) set.add(m)
+  })
+  return MODO_ORDER.filter((m) => set.has(m))
+}
+
+// devolve só os itens de uma linha (com o índice original preservado para sobrescritas posteriores).
+export function itensDaLinha(p, linha) {
+  if (!p.itens) return []
+  return p.itens
+    .map((it, i) => ({ ...it, _idx: i }))
+    .filter((it) => linhaDoItem(p, it._idx) === linha)
+}
+
+// pedido está "completo" para sair da Triagem?
+// - sem itens (Zeus): basta ter p.status.
+// - com itens: todo item tem que ter linha.
+export function pedidoCompleto(p) {
+  if (!p.itens || !p.itens.length) return !!p.status
+  return p.itens.every((_, i) => !!linhaDoItem(p, i))
+}
+
+// linha "predominante" do pedido (a com mais itens) — usada para gravar p.status,
+// que ainda é o que filtros antigos e outras telas consultam.
+export function linhaPredominante(p) {
+  if (!p.itens || !p.itens.length) return p.status || ''
+  const cont = {}
+  p.itens.forEach((_, i) => {
+    const m = linhaDoItem(p, i)
+    if (!m) return
+    cont[m] = (cont[m] || 0) + 1
+  })
+  let melhor = ''; let max = 0
+  for (const m of MODO_ORDER) {
+    if ((cont[m] || 0) > max) { melhor = m; max = cont[m] }
+  }
+  return melhor
+}
+
 // ---------- ORIGEM DOS PEDIDOS (sistema de onde veio a planilha) ----------
 export const ORIGEM_NM = {
   POSSEIDON: 'Posseidon',
