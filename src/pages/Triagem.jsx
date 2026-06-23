@@ -228,7 +228,7 @@ export default function Triagem({ pedidos }) {
       ) : (
         <div className="cards">
           {lista.map((p) => (
-            <CardTriagem key={p.idVenda} p={p} onCat={categorizar}
+            <CardTriagem key={p.idVenda} p={p} onCat={categorizar} clientes={clientes}
               onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
           ))}
         </div>
@@ -271,7 +271,7 @@ export default function Triagem({ pedidos }) {
   )
 }
 
-function CardTriagem({ p, onCat, onCidade, onExcluir }) {
+function CardTriagem({ p, onCat, onCidade, onExcluir, clientes }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'

@@ -80,7 +80,7 @@ export default function Producao({ pedidos }) {
                             {rota} · {ps.length}
                           </div>
                           <div className="cards">
-                            {ps.map((p) => <CardProd key={p.idVenda} p={p} />)}
+                            {ps.map((p) => <CardProd key={p.idVenda} p={p} clientes={clientes} />)}
                           </div>
                         </div>
                       ))}
@@ -96,13 +96,13 @@ export default function Producao({ pedidos }) {
       {/* ---------- IMPRESSÃO ---------- */}
       <ImpressaoProducao
         arvore={arvore} vendedoresOrd={vendedoresOrd}
-        filtros={filtros} filtroLinha={filtroLinha} total={lista.length}
+        filtros={filtros} filtroLinha={filtroLinha} total={lista.length} clientes={clientes}
       />
     </>
   )
 }
 
-function CardProd({ p }) {
+function CardProd({ p, clientes }) {
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   const foraRota = p.rota === 'FORA DE ROTA' || p.rota === 'SEM ROTA'
   return (
@@ -127,7 +127,7 @@ function CardProd({ p }) {
 }
 
 // ============================ LAYOUT DE IMPRESSÃO ============================
-function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total }) {
+function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total, clientes }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
   return (
