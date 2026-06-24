@@ -16,7 +16,7 @@ import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'cadastros', 'relatorios'],
+  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios'],
   financeiro: ['rota', 'entregues'],
   dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios'],
 }

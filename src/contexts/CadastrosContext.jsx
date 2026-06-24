@@ -12,6 +12,7 @@ export function CadastrosProvider({ children }) {
   const [vendedores, setVendedores] = useState([])
   const [clientes, setClientes] = useState([])
   const [itens, setItens] = useState([])
+  const [motoristas, setMotoristas] = useState([])
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export function CadastrosProvider({ children }) {
       setVendedores([])
       setClientes([])
       setItens([])
+      setMotoristas([])
       setCarregando(false)
       return
     }
@@ -33,10 +35,12 @@ export function CadastrosProvider({ children }) {
         setVendedores(Array.isArray(d.vendedores) ? d.vendedores : [])
         setClientes(Array.isArray(d.clientes) ? d.clientes : [])
         setItens(Array.isArray(d.itens) ? d.itens : [])
+        setMotoristas(Array.isArray(d.motoristas) ? d.motoristas : [])
       } else {
         setVendedores([])
         setClientes([])
         setItens([])
+        setMotoristas([])
       }
       setCarregando(false)
     }, (e) => {
@@ -47,7 +51,7 @@ export function CadastrosProvider({ children }) {
   }, [user?.uid])
 
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, itens, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, carregando }}>
       {children}
     </CadCtx.Provider>
   )

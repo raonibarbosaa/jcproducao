@@ -40,6 +40,17 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Valor do pedido** no cabeçalho de cada parada da Rota.
 - **Usuários** (página restrita ao dono), `FiltrosBar`, layouts de impressão de Produção e
   Rota, chips de cidade, exclusão em lote/individual (chunk 450).
+- **Cadastros carregam no início:** `CadastrosProvider` só assina `config/cadastros` após o
+  login (depende de `user?.uid`) — antes o `onSnapshot` disparava sem auth e morria com
+  permission-denied (falso aviso "Nenhum vendedor cadastrado").
+- **Motoristas:** aba Cadastros › Motoristas (CRUD; nome, telefone, ativo/inativo — placa
+  NÃO entra, é do carro). Inativo some da seleção mas fica no histórico.
+- **Motorista na entrega:** na Rota, seletor de motorista por rota + botão "Entregar rota
+  toda"; o "✓ Entregue" individual também exige o motorista. Gravado em `entregues` no campo
+  `motorista` e exibido no romaneio impresso.
+- **Entregues:** mostra o motorista (chip 🚚) + filtro por motorista (inclui "sem motorista"
+  e o total acompanha o filtro). Botão "↩ Cancelar entrega" devolve o pedido ao fluxo —
+  visível só para **dono** e **designer**. Designer agora enxerga a aba Entregues.
 
 ## Em andamento — Fase 1 (desenho aprovado, nesta ordem)
 1. **Nova navegação + Cadastros como hub** ← COMEÇAR POR AQUI. Menu de topo mantém
@@ -51,10 +62,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 3. **Totais nos rodapés + módulo de Relatórios** — soma por unidade nos rodapés de
    Produção/Rota ("Plástico: 100 kg · Papel: 200 un") e relatórios de consumo físico
    filtráveis por linha, rota, vendedor e data de entrega.
-4. **Motoristas + financeiro + Entregues editável** — cadastro de Motoristas; ao marcar
-   rota como entregue, escolher motorista (aplica a todos os pedidos da rota); controle
-   financeiro por pedido: valor total → entrada → recebido na entrega → saldo, status
-   quitado/pendente; lista de Entregues passa a ser editável.
+4. **Motoristas + financeiro + Entregues editável** — ✅ cadastro de Motoristas e escolha do
+   motorista na entrega FEITOS (ver "Já feito"); ✅ Entregues já editável no sentido de
+   cancelar entrega. FALTA: controle financeiro por pedido (valor total → entrada → recebido
+   na entrega → saldo, status quitado/pendente) + cadastro de Motoristas ligado a esse fluxo.
 5. **Renomear "Produção" → "Silk"** (só rótulo, sem migrar dado; botões viram S/C/Gr) +
    romaneio de conferência no fim da lista por vendedor/dia (data que o vendedor passou o
    pedido, data de entrega prevista, assinatura sua e dele).

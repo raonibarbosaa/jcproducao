@@ -26,21 +26,9 @@ export default function Cadastros() {
       <SubTabs abas={visiveis} ativa={aba} onTrocar={setAba} />
       {aba === 'clientes'   && <AbaClientes />}
       {aba === 'itens'      && <AbaItens />}
-      {aba === 'motoristas' && <AbaEmBreve titulo="Motoristas" emoji="🚚"
-        texto="O cadastro de motoristas entra junto com o controle de entregas e recebimento." />}
+      {aba === 'motoristas' && <AbaMotoristas />}
       {aba === 'vendedores' && <AbaVendedores />}
     </>
-  )
-}
-
-// placeholder de aba ainda não implementada (encaixe pronto p/ as próximas entregas)
-function AbaEmBreve({ titulo, emoji, texto }) {
-  return (
-    <div className="empty">
-      <div className="big">{emoji}</div>
-      <b>{titulo}</b> — em breve.<br />
-      <span style={{ color: 'var(--text-faint)' }}>{texto}</span>
-    </div>
   )
 }
 
@@ -227,6 +215,147 @@ function FormVendedor({ inicial, onSalvar, onCancelar }) {
       ))}
       <button className="btn" style={{ marginTop: 8 }} onClick={addRota}>+ Adicionar rota</button>
 
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="btn primary" onClick={salvar}>Salvar</button>
+        <button className="btn" onClick={onCancelar}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ABA MOTORISTAS — nome, telefone, placa, ativo/inativo
+// ============================================================
+function AbaMotoristas() {
+  const { motoristas } = useCadastros()
+  const [editando, setEditando] = useState(null) // índice em edição, ou 'novo'
+  const [msg, setMsg] = useState('')
+
+  async function salvarTudo(lista) {
+    await setDoc(REF(), { motoristas: lista }, { merge: true })
+  }
+
+  async function salvarMotorista(dados, indice) {
+    const lista = [...motoristas]
+    if (indice === 'novo') lista.push(dados)
+    else lista[indice] = dados
+    await salvarTudo(lista)
+    setEditando(null)
+    setMsg('Motorista salvo.')
+  }
+
+  async function excluirMotorista(indice) {
+    if (!confirm(`Excluir o motorista "${motoristas[indice].nome}"?`)) return
+    const lista = motoristas.filter((_, i) => i !== indice)
+    await salvarTudo(lista)
+    setMsg('Motorista excluído.')
+  }
+
+  // ativo ausente (cadastro antigo) conta como ativo
+  async function alternarAtivo(indice) {
+    const lista = motoristas.map((m, i) =>
+      i === indice ? { ...m, ativo: m.ativo === false } : m
+    )
+    await salvarTudo(lista)
+  }
+
+  return (
+    <>
+      <div className="toolbar">
+        <h1 className="page-title">Cadastros
+          <small>{motoristas.length} motorista(s)</small>
+        </h1>
+        <div className="spacer" />
+        <button className="btn primary" onClick={() => setEditando('novo')}>+ Novo motorista</button>
+      </div>
+
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '0 0 14px', maxWidth: 720 }}>
+        Cadastre quem faz as entregas. Na aba <b>Rota</b>, ao marcar uma rota como entregue, você escolhe o
+        motorista — e ele fica registrado no histórico de Entregues. Motorista <b>inativo</b> some da seleção,
+        mas continua no histórico.
+      </div>
+
+      {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
+
+      {editando !== null && (
+        <FormMotorista
+          inicial={editando === 'novo' ? null : motoristas[editando]}
+          onSalvar={(dados) => salvarMotorista(dados, editando)}
+          onCancelar={() => setEditando(null)}
+        />
+      )}
+
+      {motoristas.length === 0 ? (
+        <div className="empty">
+          <div className="big">🚚</div>
+          Nenhum motorista cadastrado.<br />
+          Clique em <b>Novo motorista</b> para cadastrar o primeiro.
+        </div>
+      ) : (
+        <div className="cards">
+          {motoristas.map((m, i) => (
+            <CardMotorista key={i} m={m}
+              onEditar={() => setEditando(i)}
+              onExcluir={() => excluirMotorista(i)}
+              onAlternarAtivo={() => alternarAtivo(i)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+function CardMotorista({ m, onEditar, onExcluir, onAlternarAtivo }) {
+  const inativo = m.ativo === false
+  return (
+    <div className="card em_dia" style={inativo ? { opacity: 0.55 } : null}>
+      <div className="card-top">
+        <div className="cliente">{m.nome}</div>
+        {inativo
+          ? <div className="idv" style={{ color: 'var(--warn)' }}>inativo</div>
+          : <div className="idv" style={{ color: 'var(--ok)' }}>ativo</div>}
+      </div>
+      <div className="meta-row">
+        {m.telefone
+          ? <span className="chip">📞 {m.telefone}</span>
+          : <span className="chip" style={{ color: 'var(--text-faint)' }}>sem telefone</span>}
+      </div>
+      <div className="modo-btns">
+        <button className="modo-btn" onClick={onEditar}>Editar</button>
+        <button className="modo-btn" onClick={onAlternarAtivo}>{inativo ? 'Reativar' : 'Desativar'}</button>
+        <button className="modo-btn" onClick={onExcluir} style={{ color: 'var(--danger)' }}>Excluir</button>
+      </div>
+    </div>
+  )
+}
+
+function FormMotorista({ inicial, onSalvar, onCancelar }) {
+  const [nome, setNome] = useState(inicial?.nome || '')
+  const [telefone, setTelefone] = useState(inicial?.telefone || '')
+
+  function salvar() {
+    if (!nome.trim()) { alert('Informe o nome do motorista.'); return }
+    onSalvar({
+      nome: nome.trim(),
+      telefone: telefone.trim(),
+      ativo: inicial?.ativo === false ? false : true,
+    })
+  }
+
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18, borderLeftColor: 'var(--accent)' }}>
+      <h3 style={{ marginBottom: 12 }}>{inicial ? 'Editar motorista' : 'Novo motorista'}</h3>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="field" style={{ flex: 1, minWidth: 180 }}>
+          <label>Nome</label>
+          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="João da Silva" />
+        </div>
+        <div className="field" style={{ flex: '0 0 200px' }}>
+          <label>Telefone</label>
+          <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(79) 99999-0000" />
+        </div>
+      </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>

@@ -6,8 +6,10 @@ import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Rota({ pedidos }) {
-  const { vendedores: cadastros, clientes } = useCadastros()
+  const { vendedores: cadastros, clientes, motoristas } = useCadastros()
   const [filtros, setFiltros] = useState({})
+  const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
+  const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
 
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
@@ -27,13 +29,34 @@ export default function Rota({ pedidos }) {
     arvore[vend][rota][nomeCli].push(p)
   }
 
-  async function entregar(p) {
-    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}?`)) return
+  // grava 1 pedido como entregue (com o motorista escolhido) e tira de pedidos
+  async function gravarEntrega(p, motorista) {
     await setDoc(doc(db, 'entregues', p.idVenda), {
       ...p,
+      motorista: motorista || '',
       entregueEm: new Date().toISOString(),
     })
     await deleteDoc(doc(db, 'pedidos', p.idVenda))
+  }
+
+  async function entregar(p, motorista) {
+    if (motoristasAtivos.length > 0 && !motorista) {
+      alert('Escolha o motorista no seletor da rota antes de marcar como entregue.')
+      return
+    }
+    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?`)) return
+    await gravarEntrega(p, motorista)
+  }
+
+  // marca todos os pedidos de uma rota como entregues, com o mesmo motorista
+  async function entregarRota(vend, rota, ps) {
+    const motorista = motoristaSel[`${vend}|${rota}`] || ''
+    if (motoristasAtivos.length > 0 && !motorista) {
+      alert('Escolha o motorista antes de entregar a rota toda.')
+      return
+    }
+    if (!confirm(`Marcar TODOS os ${ps.length} pedido(s) da ${rota} (${vend}) como entregues${motorista ? ` por ${motorista}` : ''}?`)) return
+    for (const p of ps) await gravarEntrega(p, motorista)
   }
 
   const vendedoresOrd = Object.keys(arvore).sort()
@@ -69,13 +92,29 @@ export default function Rota({ pedidos }) {
                 const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
                 return (
                   <div key={rota} style={{ marginBottom: 16 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0', flexWrap:'wrap' }}>
                       <span className={`chip ${foraRota ? 'rota-warn' : ''}`} style={{ fontSize: 13 }}>
                         {rota}
                       </span>
                       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
                         {Object.keys(clientes).length} cliente(s)
                       </span>
+                      {motoristasAtivos.length > 0 ? (
+                        <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                          <select className="btn" value={motoristaSel[`${vend}|${rota}`] || ''}
+                            onChange={(e) => setMotoristaSel((s) => ({ ...s, [`${vend}|${rota}`]: e.target.value }))}>
+                            <option value="">🚚 Motorista…</option>
+                            {motoristasAtivos.map((m, i) => <option key={i} value={m.nome}>{m.nome}</option>)}
+                          </select>
+                          <button className="btn ok" onClick={() => entregarRota(vend, rota, Object.values(clientes).flat())}>
+                            ✓ Entregar rota toda
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="no-print" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+                          🚚 cadastre motoristas em Cadastros › Motoristas para escolher na entrega
+                        </span>
+                      )}
                     </div>
                     <div className="cards">
                       {Object.entries(clientes).map(([cliente, ps]) => (
@@ -102,7 +141,7 @@ export default function Rota({ pedidos }) {
                                   ))}
                                 </ul>
                                 <button className="btn ok no-print" style={{ width:'100%', justifyContent:'center', marginTop: 8 }}
-                                  onClick={() => entregar(p)}>
+                                  onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
                                   ✓ Entregue
                                 </button>
                               </div>
@@ -122,14 +161,14 @@ export default function Rota({ pedidos }) {
       {/* ---------- IMPRESSÃO (ROMANEIO) ---------- */}
       <ImpressaoRota
         arvore={arvore} vendedoresOrd={vendedoresOrd}
-        filtros={filtros} total={lista.length}
+        filtros={filtros} total={lista.length} motoristaSel={motoristaSel}
       />
     </>
   )
 }
 
 // ============================ ROMANEIO DE ENTREGA ============================
-function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
+function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {} }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
   return (
@@ -155,9 +194,14 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
         <div key={vend} className="pr-block">
           <div className="pr-vend">{vend}</div>
           <div className="pr-data">Entrega: {datasVend}</div>
-          {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => (
+          {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => {
+            const motoristaRota = motoristaSel[`${vend}|${rota}`]
+            return (
             <div key={rota}>
-              <div className="pr-rota forte">{rota} · {Object.keys(clientes).length} cliente(s)</div>
+              <div className="pr-rota forte">
+                {rota} · {Object.keys(clientes).length} cliente(s)
+                {motoristaRota ? ` · 🚚 ${motoristaRota}` : ''}
+              </div>
               {Object.entries(clientes).map(([cliente, ps]) => {
                 const totalParada = ps.reduce((s, p) => s + (p.valorTotal || 0), 0)
                 return (
@@ -184,7 +228,8 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total }) {
                 )
               })}
             </div>
-          ))}
+            )
+          })}
         </div>
         )
       })}
