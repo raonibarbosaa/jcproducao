@@ -296,6 +296,108 @@ export function fmtMoeda(v) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// ============================================================
+// ASSISTENTE DE VOZ (Opção A — local, sem LLM)
+// Interpreta perguntas simples por rota/vendedor e devolve uma
+// frase pronta para a síntese de voz falar. Acessibilidade.
+// ============================================================
+const NUM_PALAVRA = { UM: 1, DOIS: 2, TRES: 3, QUATRO: 4, CINCO: 5, SEIS: 6, SETE: 7, OITO: 8, NOVE: 9 }
+
+// procura "ROTA 1", "ROTA 01", "ROTA UM" no texto já normalizado (maiúsculo, sem acento)
+function extraiRota(t) {
+  const m = t.match(/ROTA\s+(\d{1,2}|UM|DOIS|TRES|QUATRO|CINCO|SEIS|SETE|OITO|NOVE)/)
+  if (!m) return null
+  const v = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : NUM_PALAVRA[m[1]]
+  return v ? String(v).padStart(2, '0') : null
+}
+
+// linha de produção citada (status). PRODUCAO != PRODUTO (palavra inteira)
+function extraiLinha(t) {
+  if (/\b(PRODUCAO|SILK)\b/.test(t)) return { id: 'PRODUCAO', nome: 'produção' }
+  if (/\b(GLICHE|CLICHE)\b/.test(t)) return { id: 'GLICHE', nome: 'clichê' }
+  if (/\bGRAFICA\b/.test(t)) return { id: 'GRAFICA', nome: 'gráfica' }
+  return null
+}
+
+// valor em forma falável: "1330 reais e cinquenta centavos"
+function fmtMoedaFala(v) {
+  const reais = Math.floor(v)
+  const cent = Math.round((v - reais) * 100)
+  let s = `${reais} ${reais === 1 ? 'real' : 'reais'}`
+  if (cent > 0) s += ` e ${cent} ${cent === 1 ? 'centavo' : 'centavos'}`
+  return s
+}
+
+export function responderPergunta(textoBruto, pedidos, vendedores = []) {
+  const t = normaliza(textoBruto)
+  if (!t) return 'Não entendi. Pode repetir a pergunta?'
+
+  // só pedidos categorizados entram no fluxo de entrega
+  let lista = (pedidos || []).filter((p) => p.status)
+  const partes = []
+
+  // ---------- escopos (filtros) ----------
+  const vend = vendedores.find((v) => v.nome && t.includes(normaliza(v.nome)))
+  if (vend) {
+    lista = lista.filter((p) => normaliza(p.vendedor) === normaliza(vend.nome))
+    partes.push(`de ${vend.nome}`)
+  }
+
+  const rota = extraiRota(t)
+  if (rota) {
+    lista = lista.filter((p) => normaliza(p.rota) === `ROTA ${rota}`)
+    partes.push(`na rota ${rota}`)
+  }
+
+  const linha = extraiLinha(t)
+  if (linha) {
+    lista = lista.filter((p) => p.status === linha.id)
+    partes.push(`na ${linha.nome}`)
+  }
+
+  const soAtrasados = /\bATRAS/.test(t)
+  if (soAtrasados) {
+    lista = lista.filter((p) => situacaoPrazo(previsaoDe(p, vendedores)) === 'atrasado')
+    partes.push('em atraso')
+  }
+
+  const escopo = partes.length ? ' ' + partes.join(' ') : ''
+  const nPed = lista.length
+
+  // ---------- métricas / intenções ----------
+  const querProduto = /(PRODUTO|SACOLA|ITEM|ITENS|UNIDADE|PE[CÇ]A)/.test(t)
+  const querValor = /(VALOR|RECEBER|REAIS|DINHEIRO|FATURAR)/.test(t)
+  const querClienteTop = /(QUAL CLIENTE|CLIENTE COM MAIS|MAIOR CLIENTE|MAIS PEDIDO)/.test(t)
+  const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
+
+  // cliente com mais pedidos
+  if (querClienteTop) {
+    if (nPed === 0) return `Não há pedidos${escopo}.`
+    const cont = {}
+    for (const p of lista) { const c = p.cliente || '—'; cont[c] = (cont[c] || 0) + 1 }
+    const [cli, q] = Object.entries(cont).sort((a, b) => b[1] - a[1])[0]
+    return `O cliente com mais pedidos${escopo} é ${cli}, com ${q} ${q === 1 ? 'pedido' : 'pedidos'}.`
+  }
+
+  // nada reconhecido -> não chuta, orienta
+  const reconheceu = vend || rota || linha || soAtrasados || querProduto || querValor || falaDePedido
+  if (!reconheceu) {
+    return 'Não entendi. Você pode perguntar, por exemplo: quantos pedidos para entregar; quantos pedidos de um vendedor; quantas sacolas em uma rota; quantos pedidos em atraso; quantos pedidos na gráfica; o valor a receber; ou qual cliente tem mais pedidos.'
+  }
+
+  if (nPed === 0) return `Não há pedidos${escopo}.`
+
+  if (querProduto) {
+    const qtd = lista.reduce((s, p) => s + (p.itens || []).reduce((a, it) => a + (Number(it.qtd) || 0), 0), 0)
+    return `São ${qtd} ${qtd === 1 ? 'item' : 'itens'} para entregar${escopo}, em ${nPed} ${nPed === 1 ? 'pedido' : 'pedidos'}.`
+  }
+  if (querValor) {
+    const v = lista.reduce((s, p) => s + (Number(p.valorTotal) || 0), 0)
+    return `O valor a entregar${escopo} é ${fmtMoedaFala(v)}, em ${nPed} ${nPed === 1 ? 'pedido' : 'pedidos'}.`
+  }
+  return `Você tem ${nPed} ${nPed === 1 ? 'pedido' : 'pedidos'} para entregar${escopo}.`
+}
+
 // ---------- filtro compartilhado (Rota e Produção) ----------
 // f = { cliente, pedido, vendedor, dataIni, dataFim }
 // datas filtram pela PREVISÃO de entrega. Pedido sem previsão não entra

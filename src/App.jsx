@@ -12,6 +12,7 @@ import Entregues from './pages/Entregues.jsx'
 import Cadastros from './pages/Cadastros.jsx'
 import Relatorios from './pages/Relatorios.jsx'
 import Usuarios from './pages/Usuarios.jsx'
+import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
@@ -47,6 +48,7 @@ export default function App() {
   const primeira = abas[0]
 
   return (
+    <>
     <Layout abas={abas} contadores={contadores}>
       <Routes>
         <Route path="/" element={<Navigate to={`/${primeira}`} replace />} />
@@ -60,5 +62,7 @@ export default function App() {
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
+    <AssistenteVoz pedidos={pedidos} />
+    </>
   )
 }

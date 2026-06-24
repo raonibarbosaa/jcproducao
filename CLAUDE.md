@@ -51,6 +51,14 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Entregues:** mostra o motorista (chip 🚚) + filtro por motorista (inclui "sem motorista"
   e o total acompanha o filtro). Botão "↩ Cancelar entrega" devolve o pedido ao fluxo —
   visível só para **dono** e **designer**. Designer agora enxerga a aba Entregues.
+- **Assistente de voz (acessibilidade — Opção A, local, sem LLM):** botão flutuante 🎤
+  (`src/components/AssistenteVoz.jsx`) em todas as telas. Voz→texto e texto→voz pelo
+  navegador (Web Speech API, pt-BR; reconhecimento bom no Chrome, instável no Safari —
+  por isso há campo de texto de reserva). O cérebro é `responderPergunta()` em `utils.js`:
+  reconhece padrões (vendedor, rota, linha, atraso, produto/sacola, valor, cliente-top) e
+  responde com os dados reais; quando não bate, diz "não entendi" com sugestões. Para o
+  empresário com deficiência visual. **Opção B (LLM Claude real) planejada** — exige backend
+  para proteger a API key (Firebase Functions/Blaze ou serverless) + custo por uso.
 
 ## Em andamento — Fase 1 (desenho aprovado, nesta ordem)
 1. **Nova navegação + Cadastros como hub** ← COMEÇAR POR AQUI. Menu de topo mantém
