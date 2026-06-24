@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import Footer from './Footer.jsx'
 
 const LABEL = {
   triagem: 'Triagem',
@@ -50,7 +51,10 @@ export default function Layout({ abas, contadores, children }) {
         </div>
       </header>
 
-      <main className="main">{children}</main>
+      <main className="main">
+        {children}
+        <Footer />
+      </main>
     </div>
   )
 }

@@ -92,15 +92,13 @@ export default function Rota({ pedidos }) {
                 const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
                 return (
                   <div key={rota} style={{ marginBottom: 16 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0', flexWrap:'wrap' }}>
-                      <span className={`chip ${foraRota ? 'rota-warn' : ''}`} style={{ fontSize: 13 }}>
-                        {rota}
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+                    <div className={`rota-band ${foraRota ? 'warn' : ''}`}>
+                      <span className="rb-nome">📍 {rota}</span>
+                      <span className="rb-count">
                         {Object.keys(clientes).length} cliente(s)
                       </span>
                       {motoristasAtivos.length > 0 ? (
-                        <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                        <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginLeft:'auto' }}>
                           <select className="btn" value={motoristaSel[`${vend}|${rota}`] || ''}
                             onChange={(e) => setMotoristaSel((s) => ({ ...s, [`${vend}|${rota}`]: e.target.value }))}>
                             <option value="">🚚 Motorista…</option>

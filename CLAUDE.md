@@ -80,6 +80,15 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
    continua com esse nome. FALTA: romaneio de conferência no fim da lista por vendedor/dia
    (data que o vendedor passou o pedido, data de entrega prevista, assinatura sua e dele).
 
+## Design / identidade
+- **Dashboards (Produção e Rota):** linha de produção = faixa colorida forte
+  (`.linha-bloco`/`.linha-head`, cor de `MODO_COR`), rota = badge/banda destacada
+  (`.rota-badge` na Produção, `.rota-band` na Rota) — divisão linha × rota bem evidente.
+- **Rodapé Totali:** `src/components/Footer.jsx` (renderizado no `Layout`, em todas as telas) —
+  "Solução desenvolvida por" (texto branco) + logo oficial. Assets em `src/assets/`:
+  `totali-branca.png` (fundo escuro, em uso) e `totali-preta.png` (fundo claro/impressão).
+  Logos baixadas/fornecidas pelo cliente (imagotipo "totali Soluções Contábeis").
+
 ## Fase 2 (projeto à parte, depois da base rodando)
 **Módulo de custo / ficha técnica (BOM):** insumos diretos por produto (resina em kg p/
 plástico, folha por tamanho p/ papel) + insumos secundários por rateio (tinta, energia) →

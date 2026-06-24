@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  MODO_ORDER, MODO_NM, MODO_COR, fmtData, situacaoPrazo, ORIGEM_NM,
+  MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha,
 } from '../utils.js'
@@ -86,20 +86,26 @@ export default function Producao({ pedidos }) {
                     📅 Entrega: {data}
                   </div>
                   {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
-                    <div key={m} style={{ marginBottom: 10 }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, margin:'8px 0 6px' }}>
-                        <span className="chip linha" style={{ background: MODO_COR[m] }}>{MODO_NM[m]}</span>
+                    <div key={m} className="linha-bloco" style={{ borderLeftColor: MODO_COR[m] }}>
+                      <div className="linha-head" style={{ background: MODO_COR[m] }}>
+                        {MODO_NM[m]} <span className="linha-desc">{MODO_DESC[m]}</span>
                       </div>
-                      {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
-                        <div key={rota} style={{ marginBottom: 8 }}>
-                          <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '4px 0', fontWeight: 600 }}>
-                            {rota} · {ps.length}
-                          </div>
-                          <div className="cards">
-                            {ps.map((p) => <CardProd key={p.idVenda + ":" + p._linhaCard} p={p} clientes={clientes} />)}
-                          </div>
-                        </div>
-                      ))}
+                      <div className="linha-body">
+                        {Object.entries(linhas[m]).sort().map(([rota, ps]) => {
+                          const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
+                          return (
+                            <div key={rota} className="rota-bloco">
+                              <div className="rota-head">
+                                <span className={`rota-badge ${foraRota ? 'warn' : ''}`}>📍 {rota}</span>
+                                <span className="rota-count">{ps.length} parada(s)</span>
+                              </div>
+                              <div className="cards">
+                                {ps.map((p) => <CardProd key={p.idVenda + ":" + p._linhaCard} p={p} clientes={clientes} />)}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
