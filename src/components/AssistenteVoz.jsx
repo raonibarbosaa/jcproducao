@@ -9,7 +9,7 @@ const SR = typeof window !== 'undefined'
   : null
 
 export default function AssistenteVoz({ pedidos }) {
-  const { vendedores } = useCadastros()
+  const { vendedores, clientes } = useCadastros()
   const [aberto, setAberto] = useState(false)
   const [ouvindo, setOuvindo] = useState(false)
   const [transcricao, setTranscricao] = useState('')
@@ -29,7 +29,7 @@ export default function AssistenteVoz({ pedidos }) {
 
   function responder(pergunta) {
     setTranscricao(pergunta)
-    falar(responderPergunta(pergunta, pedidos, vendedores))
+    falar(responderPergunta(pergunta, pedidos, vendedores, clientes))
   }
 
   function ouvir() {
@@ -106,7 +106,7 @@ export default function AssistenteVoz({ pedidos }) {
           )}
 
           <div className="assist-dicas">
-            Ex.: “quantos pedidos pra entregar”, “quantos pedidos do Sérgio”,
+            Ex.: “quantos pedidos pra entregar”, “quais clientes da rota 01 do Sérgio”,
             “quantas sacolas na rota 01”, “quanto vou receber na rota 02 do Sérgio”.
           </div>
         </div>

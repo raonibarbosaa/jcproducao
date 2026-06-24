@@ -328,7 +328,7 @@ function fmtMoedaFala(v) {
   return s
 }
 
-export function responderPergunta(textoBruto, pedidos, vendedores = []) {
+export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes = []) {
   const t = normaliza(textoBruto)
   if (!t) return 'Não entendi. Pode repetir a pergunta?'
 
@@ -368,21 +368,31 @@ export function responderPergunta(textoBruto, pedidos, vendedores = []) {
   const querProduto = /(PRODUTO|SACOLA|ITEM|ITENS|UNIDADE|PE[CÇ]A)/.test(t)
   const querValor = /(VALOR|RECEBER|REAIS|DINHEIRO|FATURAR)/.test(t)
   const querClienteTop = /(QUAL CLIENTE|CLIENTE COM MAIS|MAIOR CLIENTE|MAIS PEDIDO)/.test(t)
+  const querListarClientes = /CLIENTE/.test(t) &&
+    /(QUAIS|QUEM|LISTA|LISTAR|MOSTRA|FALA|DIGA|CLIENTES D[AEO])/.test(t)
   const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
 
   // cliente com mais pedidos
   if (querClienteTop) {
     if (nPed === 0) return `Não há pedidos${escopo}.`
     const cont = {}
-    for (const p of lista) { const c = p.cliente || '—'; cont[c] = (cont[c] || 0) + 1 }
+    for (const p of lista) { const c = nomeCliente(p.cliente, clientes); cont[c] = (cont[c] || 0) + 1 }
     const [cli, q] = Object.entries(cont).sort((a, b) => b[1] - a[1])[0]
     return `O cliente com mais pedidos${escopo} é ${cli}, com ${q} ${q === 1 ? 'pedido' : 'pedidos'}.`
+  }
+
+  // listar os clientes (por rota/vendedor)
+  if (querListarClientes) {
+    if (nPed === 0) return `Não há clientes${escopo}.`
+    const nomes = [...new Set(lista.map((p) => nomeCliente(p.cliente, clientes)))].sort()
+    const q = nomes.length
+    return `São ${q} ${q === 1 ? 'cliente' : 'clientes'}${escopo}: ${nomes.join(', ')}.`
   }
 
   // nada reconhecido -> não chuta, orienta
   const reconheceu = vend || rota || linha || soAtrasados || querProduto || querValor || falaDePedido
   if (!reconheceu) {
-    return 'Não entendi. Você pode perguntar, por exemplo: quantos pedidos para entregar; quantos pedidos de um vendedor; quantas sacolas em uma rota; quantos pedidos em atraso; quantos pedidos na gráfica; o valor a receber; ou qual cliente tem mais pedidos.'
+    return 'Não entendi. Você pode perguntar, por exemplo: quantos pedidos para entregar; quais clientes de uma rota; quantas sacolas em uma rota; quantos pedidos em atraso; quantos pedidos na gráfica; o valor a receber; ou qual cliente tem mais pedidos.'
   }
 
   if (nPed === 0) return `Não há pedidos${escopo}.`
