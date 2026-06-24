@@ -6,6 +6,7 @@ const LABEL = {
   producao: 'Produção',
   rota: 'Rota',
   entregues: 'Entregues',
+  relatorios: 'Relatórios',
   cadastros: 'Cadastros',
   usuarios: 'Usuários',
 }

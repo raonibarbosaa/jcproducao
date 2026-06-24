@@ -197,6 +197,39 @@ export function nomeCliente(razaoSocial, clientes) {
   return razaoSocial || ''
 }
 
+// ITENS / PRODUTOS
+// itens = array [{ produto: 'SACOLA ...', tipo: 'plastico'|'papel'|'', unidade: 'kg'|'un'|'' }]
+// opções de tipo de material e unidade (tipo e unidade são INDEPENDENTES)
+export const TIPOS_ITEM = [
+  { id: 'plastico', nome: 'Plástico' },
+  { id: 'papel', nome: 'Papel' },
+]
+export const UNIDADES_ITEM = [
+  { id: 'kg', nome: 'kg' },
+  { id: 'un', nome: 'un' },
+]
+export const tipoNome = (id) => (TIPOS_ITEM.find((t) => t.id === id)?.nome || '')
+export const unidadeNome = (id) => (UNIDADES_ITEM.find((u) => u.id === id)?.nome || '')
+
+// Casa pelo nome do produto normalizado (ignora espaço extra, acento e caixa).
+export function achaItem(produto, itens) {
+  if (!itens || !itens.length) return null
+  const alvo = normaliza(produto)
+  if (!alvo) return null
+  return itens.find((it) => normaliza(it.produto) === alvo) || null
+}
+
+// info do produto (tipo + unidade) resolvida no render a partir do cadastro.
+// Cadastrar/alterar um item reflete imediatamente em todos os pedidos, sem reimportar.
+export function infoItem(produto, itens) {
+  const it = achaItem(produto, itens)
+  return {
+    tipo: it?.tipo || '',
+    unidade: it?.unidade || '',
+    cadastrado: !!it,
+  }
+}
+
 // dias de entrega do vendedor (array). [] = sem calendário definido
 export function diasEntrega(raw, cadastros) {
   const v = achaVendedor(raw, cadastros)

@@ -8,11 +8,12 @@ import {
   mapeiaColunas, agrupaPedidos, MODO_ORDER, MODO_NM, MODO_COR,
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
-  linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente,
+  linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
+  TIPOS_ITEM, UNIDADES_ITEM,
 } from '../utils.js'
 
 export default function Triagem({ pedidos }) {
-  const { vendedores, clientes } = useCadastros()
+  const { vendedores, clientes, itens } = useCadastros()
   const { perfil } = useAuth()
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
@@ -107,7 +108,7 @@ export default function Triagem({ pedidos }) {
       // captura automática de clientes: pra cada razão social que aparece na planilha
       // e ainda NÃO está cadastrada, cria entrada com apelido vazio.
       // Cliente já cadastrado (mesmo com apelido vazio) é deixado em paz.
-      setMsg('Conferindo clientes…')
+      setMsg('Conferindo clientes e itens…')
       const razoesNovas = new Map() // razao normalizada -> razao original (1a vez vista)
       for (const p of aImportar) {
         const razao = (p.cliente || '').trim()
@@ -117,9 +118,28 @@ export default function Triagem({ pedidos }) {
         if (!razoesNovas.has(key)) razoesNovas.set(key, razao)
       }
       const clientesNovos = [...razoesNovas.values()].map((razao) => ({ razao, nome: '' }))
-      if (clientesNovos.length) {
-        const listaAtualizada = [...clientes, ...clientesNovos]
-        await setDoc(doc(db, 'config', 'cadastros'), { clientes: listaAtualizada }, { merge: true })
+
+      // captura automática de itens: pra cada produto que aparece nos itens dos pedidos
+      // e ainda NÃO está cadastrado, cria entrada com tipo e unidade vazios.
+      // Item já cadastrado é deixado em paz (não sobrescreve o que já foi configurado).
+      const produtosNovos = new Map() // produto normalizado -> produto original (1a vez visto)
+      for (const p of aImportar) {
+        for (const it of (p.itens || [])) {
+          const prod = (it.produto || '').trim()
+          if (!prod) continue
+          if (achaItem(prod, itens)) continue
+          const key = normaliza(prod)
+          if (!produtosNovos.has(key)) produtosNovos.set(key, prod)
+        }
+      }
+      const itensNovos = [...produtosNovos.values()].map((produto) => ({ produto, tipo: '', unidade: '' }))
+
+      // grava clientes e itens novos numa única escrita (mesmo documento config/cadastros)
+      if (clientesNovos.length || itensNovos.length) {
+        const patch = {}
+        if (clientesNovos.length) patch.clientes = [...clientes, ...clientesNovos]
+        if (itensNovos.length) patch.itens = [...itens, ...itensNovos]
+        await setDoc(doc(db, 'config', 'cadastros'), patch, { merge: true })
       }
 
       // monta o resultado pro modal
@@ -132,6 +152,7 @@ export default function Triagem({ pedidos }) {
         atualizadosNormais,
         ignorados: jaEntregues,
         clientesNovos,
+        itensNovos,
       })
       setMsg('')
     } catch (err) {
@@ -324,6 +345,7 @@ export default function Triagem({ pedidos }) {
         <ModalImportacao
           resultado={resultadoImportacao}
           clientes={clientes}
+          itens={itens}
           onFechar={() => setResultadoImportacao(null)}
         />
       )}
@@ -534,8 +556,8 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
 // Mostra estatísticas, lista de pedidos (com expandir),
 // e permite definir apelido dos clientes novos sem sair do modal.
 // ============================================================
-function ModalImportacao({ resultado, clientes, onFechar }) {
-  const { origem, totalLinhas, totalPedidos, novos, atualizadosMantidos, atualizadosNormais, ignorados, clientesNovos } = resultado
+function ModalImportacao({ resultado, clientes, itens, onFechar }) {
+  const { origem, totalLinhas, totalPedidos, novos, atualizadosMantidos, atualizadosNormais, ignorados, clientesNovos, itensNovos = [] } = resultado
 
   // soma valores (só dos importados, sem os ignorados)
   const importados = [...novos, ...atualizadosNormais, ...atualizadosMantidos]
@@ -580,6 +602,11 @@ function ModalImportacao({ resultado, clientes, onFechar }) {
           {/* Clientes novos capturados — com edição de apelido inline */}
           {clientesNovos.length > 0 && (
             <SecaoClientesNovos clientesNovos={clientesNovos} clientes={clientes} />
+          )}
+
+          {/* Itens novos capturados — com definição de tipo/unidade inline */}
+          {itensNovos.length > 0 && (
+            <SecaoItensNovos itensNovos={itensNovos} itens={itens} />
           )}
 
           {/* Seções de pedidos */}
@@ -736,6 +763,82 @@ function SecaoClientesNovos({ clientesNovos, clientes }) {
               ? <span style={{ fontSize: 12, color: 'var(--ok)' }}>✓ salvo</span>
               : <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }}
                   onClick={() => salvarApelido(c.razao)}>Salvar</button>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Itens novos capturados na importação — definição de tipo/unidade sem sair do modal.
+// Tipo e unidade são independentes. Salva direto no cadastro de itens.
+function SecaoItensNovos({ itensNovos, itens }) {
+  // estado local por produto: { tipo, unidade } sendo escolhidos
+  const [edicoes, setEdicoes] = useState({})
+  const [salvos, setSalvos] = useState(new Set())
+
+  function setCampo(produto, campo, valor) {
+    const atual = edicoes[produto] || { tipo: '', unidade: '' }
+    setEdicoes({ ...edicoes, [produto]: { ...atual, [campo]: valor } })
+  }
+
+  async function salvarItem(produto) {
+    const e = edicoes[produto] || {}
+    // precisa de pelo menos um dos dois pra valer a pena salvar
+    if (!e.tipo && !e.unidade) return
+    const idx = itens.findIndex((it) => normaliza(it.produto) === normaliza(produto))
+    if (idx === -1) return // defensivo
+    const lista = itens.map((it, i) => (i === idx ? { ...it, tipo: e.tipo || '', unidade: e.unidade || '' } : it))
+    await setDoc(doc(db, 'config', 'cadastros'), { itens: lista }, { merge: true })
+    const novo = new Set(salvos); novo.add(produto); setSalvos(novo)
+  }
+
+  return (
+    <div style={{ marginBottom: 16, padding: 10, border: '1px dashed var(--accent)', borderRadius: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>
+        📦 {itensNovos.length} item(ns) novo(s) cadastrado(s) automaticamente
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>
+        Defina o tipo de material e a unidade agora (opcional) ou faça depois em Cadastros → Itens.
+        Itens sem unidade não entram nos relatórios de matéria-prima.
+      </div>
+      {itensNovos.map((it) => {
+        const jaSalvo = salvos.has(it.produto)
+        const e = edicoes[it.produto] || { tipo: '', unidade: '' }
+        return (
+          <div key={it.produto} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 5 }} title={it.produto}>
+              {it.produto}
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* tipo */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                {TIPOS_ITEM.map((t) => (
+                  <button key={t.id} className="btn"
+                    onClick={() => setCampo(it.produto, 'tipo', t.id)}
+                    style={{ padding: '4px 10px', fontSize: 12,
+                      ...(e.tipo === t.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null) }}>
+                    {t.nome}
+                  </button>
+                ))}
+              </div>
+              <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>·</span>
+              {/* unidade */}
+              <div style={{ display: 'flex', gap: 4 }}>
+                {UNIDADES_ITEM.map((u) => (
+                  <button key={u.id} className="btn"
+                    onClick={() => setCampo(it.produto, 'unidade', u.id)}
+                    style={{ padding: '4px 10px', fontSize: 12,
+                      ...(e.unidade === u.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null) }}>
+                    {u.nome}
+                  </button>
+                ))}
+              </div>
+              {jaSalvo
+                ? <span style={{ fontSize: 12, color: 'var(--ok)' }}>✓ salvo</span>
+                : <button className="btn" style={{ padding: '4px 10px', fontSize: 12 }}
+                    onClick={() => salvarItem(it.produto)}>Salvar</button>}
+            </div>
           </div>
         )
       })}

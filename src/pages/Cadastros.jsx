@@ -2,22 +2,45 @@ import { useState } from 'react'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
-import { SEED_VENDEDORES, normaliza } from '../utils.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
+import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM } from '../utils.js'
+import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
 
+// abas do hub e quais perfis veem cada uma
+const ABAS_CADASTRO = [
+  { id: 'clientes',   label: 'Clientes',   perfis: ['designer', 'dono'] },
+  { id: 'itens',      label: 'Itens',      perfis: ['designer', 'dono'] },
+  { id: 'motoristas', label: 'Motoristas', perfis: ['designer', 'dono'] },
+  { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
+]
+
 export default function Cadastros() {
-  const [aba, setAba] = useState('vendedores')
+  const { perfil } = useAuth()
+  const visiveis = ABAS_CADASTRO.filter((a) => a.perfis.includes(perfil) || perfil == null)
+  const [aba, setAba] = useState(visiveis[0]?.id || 'clientes')
+
   return (
     <>
-      <div className="modo-btns" style={{ marginBottom: 16 }}>
-        <button className="modo-btn" onClick={() => setAba('vendedores')}
-          style={aba === 'vendedores' ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : null}>Vendedores</button>
-        <button className="modo-btn" onClick={() => setAba('clientes')}
-          style={aba === 'clientes' ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : null}>Clientes</button>
-      </div>
-      {aba === 'vendedores' ? <AbaVendedores /> : <AbaClientes />}
+      <SubTabs abas={visiveis} ativa={aba} onTrocar={setAba} />
+      {aba === 'clientes'   && <AbaClientes />}
+      {aba === 'itens'      && <AbaItens />}
+      {aba === 'motoristas' && <AbaEmBreve titulo="Motoristas" emoji="🚚"
+        texto="O cadastro de motoristas entra junto com o controle de entregas e recebimento." />}
+      {aba === 'vendedores' && <AbaVendedores />}
     </>
+  )
+}
+
+// placeholder de aba ainda não implementada (encaixe pronto p/ as próximas entregas)
+function AbaEmBreve({ titulo, emoji, texto }) {
+  return (
+    <div className="empty">
+      <div className="big">{emoji}</div>
+      <b>{titulo}</b> — em breve.<br />
+      <span style={{ color: 'var(--text-faint)' }}>{texto}</span>
+    </div>
   )
 }
 
@@ -355,6 +378,220 @@ function FormCliente({ inicial, onSalvar, onCancelar }) {
         Não precisa digitar igualzinho à planilha em maiúscula/minúscula ou acento — o sistema ignora essas diferenças ao cruzar.
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <button className="btn primary" onClick={salvar}>Salvar</button>
+        <button className="btn" onClick={onCancelar}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ABA ITENS — produto -> tipo de material + unidade
+// Tipo e unidade são INDEPENDENTES. Captura automática na importação;
+// aqui você completa/ajusta. Filtro "sem unidade" ajuda a achar pendências.
+// ============================================================
+function AbaItens() {
+  const { itens } = useCadastros()
+  const [busca, setBusca] = useState('')
+  const [soSemUnidade, setSoSemUnidade] = useState(false)
+  const [editando, setEditando] = useState(null) // índice em edição, ou 'novo'
+  const [msg, setMsg] = useState('')
+
+  async function salvarTudo(lista) {
+    await setDoc(REF(), { itens: lista }, { merge: true })
+  }
+
+  // altera tipo/unidade de um item direto no card (inline), salvando na hora
+  async function setCampoItem(indice, campo, valor) {
+    const lista = itens.map((it, i) => (i === indice ? { ...it, [campo]: valor } : it))
+    await salvarTudo(lista)
+  }
+
+  async function salvarItem(dados, indice) {
+    const dup = itens.findIndex(
+      (it, i) => i !== (indice === 'novo' ? -1 : indice) && normaliza(it.produto) === normaliza(dados.produto)
+    )
+    if (dup !== -1) {
+      alert(`Já existe um item com esse nome: "${itens[dup].produto}".`)
+      return
+    }
+    const lista = [...itens]
+    if (indice === 'novo') lista.push(dados)
+    else lista[indice] = dados
+    await salvarTudo(lista)
+    setEditando(null)
+    setMsg('Item salvo.')
+  }
+
+  async function excluirItem(indice) {
+    if (!confirm(`Excluir o item "${itens[indice].produto}"?`)) return
+    const lista = itens.filter((_, i) => i !== indice)
+    await salvarTudo(lista)
+    setMsg('Item excluído.')
+  }
+
+  const semUnidade = itens.filter((it) => !it.unidade).length
+
+  const filtrados = itens
+    .map((it, i) => ({ it, i }))
+    .filter(({ it }) => !soSemUnidade || !it.unidade)
+    .filter(({ it }) => !busca || normaliza(it.produto).includes(normaliza(busca)))
+
+  return (
+    <>
+      <div className="toolbar">
+        <h1 className="page-title">Cadastros
+          <small>{itens.length} item(ns)</small>
+        </h1>
+        <div className="spacer" />
+        <button className="btn primary" onClick={() => setEditando('novo')}>+ Novo item</button>
+      </div>
+
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '0 0 14px', maxWidth: 720 }}>
+        Cada produto da planilha entra aqui automaticamente na importação. Defina o <b>tipo de material</b> e a
+        <b> unidade</b> (são independentes). Feito uma vez, vale para todos os pedidos — inclusive os já importados.
+        Itens <b>sem unidade</b> não entram nos relatórios de matéria-prima.
+      </div>
+
+      {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
+
+      {editando !== null && (
+        <FormItem
+          inicial={editando === 'novo' ? null : itens[editando]}
+          onSalvar={(dados) => salvarItem(dados, editando)}
+          onCancelar={() => setEditando(null)}
+        />
+      )}
+
+      {/* filtros */}
+      {itens.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+          <div className="field" style={{ maxWidth: 360, flex: 1, minWidth: 200, marginBottom: 0 }}>
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto…" />
+          </div>
+          <button className="btn" onClick={() => setSoSemUnidade((v) => !v)}
+            style={soSemUnidade ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+            {soSemUnidade ? '✓ ' : ''}Só sem unidade{semUnidade > 0 ? ` (${semUnidade})` : ''}
+          </button>
+        </div>
+      )}
+
+      {itens.length === 0 ? (
+        <div className="empty">
+          <div className="big">📦</div>
+          Nenhum item cadastrado ainda.<br />
+          Os itens são capturados automaticamente quando você importa uma planilha — ou clique em <b>Novo item</b>.
+        </div>
+      ) : filtrados.length === 0 ? (
+        <div className="empty">
+          <div className="big">🔍</div>
+          Nenhum item encontrado com esse filtro.
+        </div>
+      ) : (
+        <div className="cards">
+          {filtrados.map(({ it, i }) => (
+            <CardItem key={i} it={it}
+              onTipo={(v) => setCampoItem(i, 'tipo', v)}
+              onUnidade={(v) => setCampoItem(i, 'unidade', v)}
+              onEditar={() => setEditando(i)}
+              onExcluir={() => excluirItem(i)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+function CardItem({ it, onTipo, onUnidade, onEditar, onExcluir }) {
+  const semUnidade = !it.unidade
+  return (
+    <div className="card em_dia" style={semUnidade ? { borderLeftColor: 'var(--warn)' } : null}>
+      <div className="card-top">
+        <div className="cliente" style={{ fontSize: 14 }}>{it.produto}</div>
+        {semUnidade && <div className="idv" style={{ color: 'var(--warn)' }}>sem unidade</div>}
+      </div>
+
+      {/* tipo de material (inline) */}
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>Tipo de material</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {TIPOS_ITEM.map((t) => (
+            <button key={t.id} className="modo-btn"
+              onClick={() => onTipo(it.tipo === t.id ? '' : t.id)}
+              style={it.tipo === t.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+              {t.nome}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* unidade (inline) */}
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>Unidade</div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {UNIDADES_ITEM.map((u) => (
+            <button key={u.id} className="modo-btn"
+              onClick={() => onUnidade(it.unidade === u.id ? '' : u.id)}
+              style={it.unidade === u.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+              {u.nome}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="modo-btns" style={{ marginTop: 10 }}>
+        <button className="modo-btn" onClick={onEditar}>Renomear</button>
+        <button className="modo-btn" onClick={onExcluir} style={{ color: 'var(--danger)' }}>Excluir</button>
+      </div>
+    </div>
+  )
+}
+
+function FormItem({ inicial, onSalvar, onCancelar }) {
+  const [produto, setProduto] = useState(inicial?.produto || '')
+  const [tipo, setTipo] = useState(inicial?.tipo || '')
+  const [unidade, setUnidade] = useState(inicial?.unidade || '')
+
+  function salvar() {
+    if (!produto.trim()) { alert('Informe o nome do produto.'); return }
+    onSalvar({ produto: produto.trim(), tipo, unidade })
+  }
+
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18, borderLeftColor: 'var(--accent)' }}>
+      <h3 style={{ marginBottom: 12 }}>{inicial ? 'Editar item' : 'Novo item'}</h3>
+      <div className="field" style={{ marginBottom: 12 }}>
+        <label>Nome do produto (como vem na planilha)</label>
+        <input value={produto} onChange={(e) => setProduto(e.target.value)} placeholder="SACOLA PLÁSTICA BOCA PALHAÇO 40X50 REC" />
+      </div>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 5, fontWeight: 600 }}>Tipo de material</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {TIPOS_ITEM.map((t) => (
+              <button key={t.id} className="modo-btn"
+                onClick={() => setTipo(tipo === t.id ? '' : t.id)}
+                style={tipo === t.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+                {t.nome}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 5, fontWeight: 600 }}>Unidade</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {UNIDADES_ITEM.map((u) => (
+              <button key={u.id} className="modo-btn"
+                onClick={() => setUnidade(unidade === u.id ? '' : u.id)}
+                style={unidade === u.id ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+                {u.nome}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button className="btn primary" onClick={salvar}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>
       </div>
