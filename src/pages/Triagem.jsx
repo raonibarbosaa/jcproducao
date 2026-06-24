@@ -13,7 +13,7 @@ import {
 } from '../utils.js'
 
 export default function Triagem({ pedidos }) {
-  const { vendedores, clientes, itens } = useCadastros()
+  const { vendedores, clientes, itens, carregando: cadCarregando } = useCadastros()
   const { perfil } = useAuth()
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
@@ -321,7 +321,7 @@ export default function Triagem({ pedidos }) {
 
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
-      {vendedores.length === 0 && (
+      {!cadCarregando && vendedores.length === 0 && (
         <div className="filter-pill" style={{ marginBottom: 14, background: 'rgba(240,180,41,0.13)', color: 'var(--warn)', borderColor: 'rgba(240,180,41,0.35)' }}>
           ⚠ Nenhum vendedor cadastrado — rotas e prazos não serão calculados. Vá em <b>&nbsp;Cadastros&nbsp;</b> e clique em "Importar dados atuais" antes de importar a planilha.
         </div>
