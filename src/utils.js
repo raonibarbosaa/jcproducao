@@ -7,7 +7,7 @@
 export const MODO_ORDER = ['PRODUCAO', 'GLICHE', 'GRAFICA']
 
 export const MODO_NM = {
-  PRODUCAO: 'PRODUÇÃO',
+  PRODUCAO: 'SILK SCREEN',
   GLICHE: 'GLICHE',
   GRAFICA: 'GRÁFICA',
 }
@@ -313,7 +313,7 @@ function extraiRota(t) {
 
 // linha de produção citada (status). PRODUCAO != PRODUTO (palavra inteira)
 function extraiLinha(t) {
-  if (/\b(PRODUCAO|SILK)\b/.test(t)) return { id: 'PRODUCAO', nome: 'produção' }
+  if (/\b(PRODUCAO|SILK|SCREEN)\b/.test(t)) return { id: 'PRODUCAO', nome: 'silk screen' }
   if (/\b(GLICHE|CLICHE)\b/.test(t)) return { id: 'GLICHE', nome: 'clichê' }
   if (/\bGRAFICA\b/.test(t)) return { id: 'GRAFICA', nome: 'gráfica' }
   return null

@@ -481,7 +481,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
                 <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
                   {MODO_ORDER.map((opt) => {
                     const sel = m === opt
-                    const sigla = opt === 'PRODUCAO' ? 'P' : opt === 'GLICHE' ? 'G' : 'Gr'
+                    const sigla = opt === 'PRODUCAO' ? 'S' : opt === 'GLICHE' ? 'G' : 'Gr'
                     return (
                       <button key={opt} title={MODO_NM[opt]}
                         onClick={() => onCatItem(p.idVenda, i, opt)}
@@ -524,7 +524,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
                   fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 10,
                   background: MODO_COR[m], color: '#fff',
                 }}>
-                {cont[m]}{m === 'PRODUCAO' ? 'P' : m === 'GLICHE' ? 'G' : 'Gr'}
+                {cont[m]}{m === 'PRODUCAO' ? 'S' : m === 'GLICHE' ? 'G' : 'Gr'}
               </span>
             ))
           })()}

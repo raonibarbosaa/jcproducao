@@ -74,9 +74,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
    motorista na entrega FEITOS (ver "Já feito"); ✅ Entregues já editável no sentido de
    cancelar entrega. FALTA: controle financeiro por pedido (valor total → entrada → recebido
    na entrega → saldo, status quitado/pendente) + cadastro de Motoristas ligado a esse fluxo.
-5. **Renomear "Produção" → "Silk"** (só rótulo, sem migrar dado; botões viram S/C/Gr) +
-   romaneio de conferência no fim da lista por vendedor/dia (data que o vendedor passou o
-   pedido, data de entrega prevista, assinatura sua e dele).
+5. ✅ **Renomear linha "Produção" → "SILK SCREEN"** FEITO — só rótulo via `MODO_NM.PRODUCAO`
+   (status no Firestore segue `PRODUCAO`); sigla do item P→S. A aba/página "Produção" (lista)
+   continua com esse nome. FALTA: romaneio de conferência no fim da lista por vendedor/dia
+   (data que o vendedor passou o pedido, data de entrega prevista, assinatura sua e dele).
 
 ## Fase 2 (projeto à parte, depois da base rodando)
 **Módulo de custo / ficha técnica (BOM):** insumos diretos por produto (resina em kg p/
