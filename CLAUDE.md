@@ -92,8 +92,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   PUBLICADAS no Firebase Console (não vão pelo deploy do Pages).
 - **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
   vendedor→rota.
-- **Fase C (pendente):** ciência por rota (vendedor e designer) com e-mail/IP(ipify)/data-hora
-  na coleção `ciencias`, e visualização pro designer.
+- **Fase C (em produção):** ciência por rota. Coleção `ciencias` (append/log) com
+  `{tipo:'vendedor'|'designer', vendedor, rota, pedidoIds, qtdPedidos, porUid, porEmail,
+  porNome, ip, quando}`. IP via `pegarIP()` (ipify). Vendedor dá ciência em "Meus Pedidos"
+  (botão por rota); designer/dono na aba **Ciência** (`Ciencia.jsx`, vendedor→rota, rota
+  expansível p/ ver pedidos, mostra ciência do vendedor + dá a sua). Helpers
+  `indexaCiencias`/`cienciaDe` pegam a mais recente por (tipo|vendedor|rota). Regra de
+  `ciencias`: vendedor lê/cria só as do próprio `vendedorNome`.
 
 ## Design / identidade
 - **Dashboards (Produção e Rota):** linha de produção = faixa colorida forte

@@ -1,15 +1,33 @@
+import { useEffect, useState } from 'react'
+import { collection, onSnapshot, addDoc, query, where } from 'firebase/firestore'
+import { db } from '../firebase.js'
 import {
   previsaoDe, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
-  nomeCliente, MODO_NM, linhaDoItem,
+  nomeCliente, MODO_NM, linhaDoItem, pegarIP, indexaCiencias, cienciaDe,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
-// Tela do perfil VENDEDOR: vê apenas os próprios pedidos (já filtrados no App
-// e impostos pelas regras do Firestore), agrupados por rota.
+const fmtDataHora = (iso) =>
+  iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''
+
+// Tela do perfil VENDEDOR: vê apenas os próprios pedidos (filtrados no App e
+// impostos pelas regras), agrupados por rota, e dá CIÊNCIA por rota.
 export default function MeusPedidos({ pedidos }) {
   const { vendedores, clientes } = useCadastros()
-  const { vendedorNome, nome } = useAuth()
+  const { user, vendedorNome, nome } = useAuth()
+  const [ciencias, setCiencias] = useState([])
+  const [salvando, setSalvando] = useState('')
+
+  useEffect(() => {
+    if (!vendedorNome) return
+    const q = query(collection(db, 'ciencias'), where('vendedor', '==', vendedorNome))
+    const unsub = onSnapshot(q, (snap) => setCiencias(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (e) => console.error('Erro ao ler ciências:', e))
+    return unsub
+  }, [vendedorNome])
+
+  const mapaC = indexaCiencias(ciencias)
 
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
   const cat = base.filter((p) => p.status)
@@ -21,6 +39,30 @@ export default function MeusPedidos({ pedidos }) {
     arvore[r].push(p)
   }
   const rotas = Object.keys(arvore).sort()
+
+  async function darCiencia(rota, ps) {
+    if (!confirm(`Confirmar que você viu e está ciente dos ${ps.length} pedido(s) da ${rota}?`)) return
+    setSalvando(rota)
+    try {
+      const ip = await pegarIP()
+      await addDoc(collection(db, 'ciencias'), {
+        tipo: 'vendedor',
+        vendedor: vendedorNome,
+        rota,
+        pedidoIds: ps.map((p) => p.idVenda),
+        qtdPedidos: ps.length,
+        porUid: user.uid,
+        porEmail: user.email,
+        porNome: nome || user.email,
+        ip,
+        quando: new Date().toISOString(),
+      })
+    } catch (e) {
+      alert('Não foi possível registrar a ciência: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
 
   return (
     <>
@@ -37,14 +79,26 @@ export default function MeusPedidos({ pedidos }) {
       ) : (
         rotas.map((rota) => {
           const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
+          const ps = arvore[rota]
+          const c = cienciaDe(mapaC, 'vendedor', vendedorNome, rota)
           return (
             <div key={rota} style={{ marginBottom: 16 }}>
               <div className={`rota-band ${foraRota ? 'warn' : ''}`}>
                 <span className="rb-nome">📍 {rota}</span>
-                <span className="rb-count">{arvore[rota].length} pedido(s)</span>
+                <span className="rb-count">{ps.length} pedido(s)</span>
+                <div className="no-print" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  {c ? (
+                    <span className="chip" style={{ color: 'var(--ok)' }}>✓ Ciência em {fmtDataHora(c.quando)}</span>
+                  ) : (
+                    <button className="btn ok" disabled={salvando === rota}
+                      onClick={() => darCiencia(rota, ps)}>
+                      {salvando === rota ? 'Registrando…' : '✓ Dar ciência nesta rota'}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="cards">
-                {arvore[rota].map((p) => <CardMeu key={p.idVenda} p={p} clientes={clientes} />)}
+                {ps.map((p) => <CardMeu key={p.idVenda} p={p} clientes={clientes} />)}
               </div>
             </div>
           )

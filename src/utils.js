@@ -328,6 +328,34 @@ function fmtMoedaFala(v) {
   return s
 }
 
+// ============================================================
+// CIÊNCIA (conferido) — captura de IP e indexação
+// ============================================================
+// descobre o IP público via serviço gratuito (ipify). Falha silenciosa.
+export async function pegarIP() {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json')
+    const j = await r.json()
+    return j.ip || ''
+  } catch {
+    return ''
+  }
+}
+
+// indexa a ciência MAIS RECENTE por (tipo|vendedor|rota)
+export function indexaCiencias(lista) {
+  const map = {}
+  for (const c of lista || []) {
+    const k = `${c.tipo}|${normaliza(c.vendedor)}|${normaliza(c.rota)}`
+    if (!map[k] || new Date(c.quando) > new Date(map[k].quando)) map[k] = c
+  }
+  return map
+}
+
+export function cienciaDe(map, tipo, vendedor, rota) {
+  return (map || {})[`${tipo}|${normaliza(vendedor)}|${normaliza(rota)}`] || null
+}
+
 export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes = []) {
   const t = normaliza(textoBruto)
   if (!t) return 'Não entendi. Pode repetir a pergunta?'

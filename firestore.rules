@@ -45,7 +45,8 @@ service cloud.firestore {
 
     // Ciências (conferido): staff vê todas; vendedor vê e cria as do seu vendedor.
     match /ciencias/{id} {
-      allow read: if ehStaff() || ehVendedor();
+      allow read: if ehStaff()
+        || (ehVendedor() && resource.data.vendedor == meuVendedor());
       allow create: if ehStaff()
         || (ehVendedor() && request.resource.data.vendedor == meuVendedor());
       allow update, delete: if ehStaff();

@@ -13,14 +13,15 @@ import Cadastros from './pages/Cadastros.jsx'
 import Relatorios from './pages/Relatorios.jsx'
 import Usuarios from './pages/Usuarios.jsx'
 import MeusPedidos from './pages/MeusPedidos.jsx'
+import Ciencia from './pages/Ciencia.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios'],
+  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios', 'ciencia'],
   financeiro: ['rota', 'entregues'],
-  dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios'],
+  dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia'],
   vendedor:   ['meus'],
 }
 
@@ -67,6 +68,7 @@ export default function App() {
         {abas.includes('cadastros') && <Route path="/cadastros" element={<Cadastros />} />}
         {abas.includes('usuarios') && <Route path="/usuarios" element={<Usuarios />} />}
         {abas.includes('meus') && <Route path="/meus" element={<MeusPedidos pedidos={pedidos} />} />}
+        {abas.includes('ciencia') && <Route path="/ciencia" element={<Ciencia pedidos={pedidos} />} />}
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
