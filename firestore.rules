@@ -1,10 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // qualquer usuário autenticado pode ler/gravar.
-    // (controle de perfil é feito no app via coleção 'usuarios')
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    function logado() { return request.auth != null; }
+    function meu() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+    function temPerfil() {
+      return logado()
+        && exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    function ehStaff() {
+      return temPerfil() && meu().perfil in ['dono', 'designer', 'financeiro'];
+    }
+    function ehVendedor() {
+      return temPerfil() && meu().perfil == 'vendedor';
+    }
+    function meuVendedor() { return meu().vendedorNome; }
+
+    // Perfis: cada um lê o próprio doc (para descobrir seu perfil); staff gerencia todos.
+    match /usuarios/{uid} {
+      allow read: if logado() && (request.auth.uid == uid || ehStaff());
+      allow write: if ehStaff();
+    }
+
+    // Pedidos: staff vê tudo; vendedor só os pedidos do SEU vendedor (consulta filtrada).
+    match /pedidos/{id} {
+      allow read: if ehStaff()
+        || (ehVendedor() && resource.data.vendedor == meuVendedor());
+      allow write: if ehStaff();
+    }
+
+    // Entregues: somente staff.
+    match /entregues/{id} {
+      allow read, write: if ehStaff();
+    }
+
+    // Cadastros (config/cadastros): qualquer autenticado lê (o app precisa para
+    // resolver nomes/rotas); apenas staff altera.
+    match /config/{doc} {
+      allow read: if logado();
+      allow write: if ehStaff();
+    }
+
+    // Ciências (conferido): staff vê todas; vendedor vê e cria as do seu vendedor.
+    match /ciencias/{id} {
+      allow read: if ehStaff() || ehVendedor();
+      allow create: if ehStaff()
+        || (ehVendedor() && request.resource.data.vendedor == meuVendedor());
+      allow update, delete: if ehStaff();
     }
   }
 }

@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot } from 'firebase/firestore'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { useAuth } from './contexts/AuthContext.jsx'
 import Layout from './components/Layout.jsx'
@@ -12,6 +12,7 @@ import Entregues from './pages/Entregues.jsx'
 import Cadastros from './pages/Cadastros.jsx'
 import Relatorios from './pages/Relatorios.jsx'
 import Usuarios from './pages/Usuarios.jsx'
+import MeusPedidos from './pages/MeusPedidos.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo } from './utils.js'
 
@@ -20,20 +21,26 @@ const ACESSO = {
   designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios'],
   financeiro: ['rota', 'entregues'],
   dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios'],
+  vendedor:   ['meus'],
 }
 
 export default function App() {
-  const { user, perfil, carregando } = useAuth()
+  const { user, perfil, vendedorNome, carregando } = useAuth()
   const [pedidos, setPedidos] = useState([])
 
-  // assina pedidos em tempo real (para contadores e páginas)
+  // assina pedidos em tempo real. Vendedor só enxerga os PRÓPRIOS pedidos
+  // (consulta filtrada — as regras do Firestore impõem o mesmo no servidor).
   useEffect(() => {
-    if (!user) return
-    const unsub = onSnapshot(collection(db, 'pedidos'), (snap) => {
+    if (!user || !perfil) return
+    if (perfil === 'vendedor' && !vendedorNome) { setPedidos([]); return }
+    const ref = perfil === 'vendedor'
+      ? query(collection(db, 'pedidos'), where('vendedor', '==', vendedorNome))
+      : collection(db, 'pedidos')
+    const unsub = onSnapshot(ref, (snap) => {
       setPedidos(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    })
+    }, (e) => console.error('Erro ao ler pedidos:', e))
     return unsub
-  }, [user])
+  }, [user, perfil, vendedorNome])
 
   if (carregando) return <div className="loading">Carregando…</div>
   if (!user) return <Login />
@@ -59,10 +66,11 @@ export default function App() {
         {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios />} />}
         {abas.includes('cadastros') && <Route path="/cadastros" element={<Cadastros />} />}
         {abas.includes('usuarios') && <Route path="/usuarios" element={<Usuarios />} />}
+        {abas.includes('meus') && <Route path="/meus" element={<MeusPedidos pedidos={pedidos} />} />}
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
-    <AssistenteVoz pedidos={pedidos} />
+    {perfil !== 'vendedor' && <AssistenteVoz pedidos={pedidos} />}
     </>
   )
 }

@@ -6,10 +6,12 @@ import {
 import { collection, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db, firebaseConfig } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { useCadastros } from '../contexts/CadastrosContext.jsx'
 
 const PERFIS = [
   { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção e Cadastros' },
   { id: 'financeiro', nm: 'Financeiro', desc: 'Rota e Entregues' },
+  { id: 'vendedor', nm: 'Vendedor', desc: 'Vê só os próprios pedidos e dá ciência' },
   { id: 'dono', nm: 'Dono (admin)', desc: 'Acesso total + gestão de usuários' },
 ]
 const PERFIL_NM = Object.fromEntries(PERFIS.map((p) => [p.id, p.nm]))
@@ -39,7 +41,7 @@ export default function Usuarios() {
   // ---- criar usuário sem derrubar a sessão do admin ----
   // usa uma instância secundária do Firebase: o novo usuário "loga" nela,
   // a gente grava o perfil e desconecta — a sessão principal não é tocada.
-  async function criarUsuario({ nome, email, senha, perfil }) {
+  async function criarUsuario({ nome, email, senha, perfil, vendedorNome }) {
     const appSec = initializeApp(firebaseConfig, 'criacao-usuario')
     const authSec = getAuth(appSec)
     try {
@@ -48,6 +50,7 @@ export default function Usuarios() {
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
         perfil,
+        vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
         ativo: true,
         criadoEm: new Date().toISOString(),
       })
@@ -59,8 +62,11 @@ export default function Usuarios() {
     }
   }
 
-  async function salvarEdicao(uid, { nome, perfil }) {
-    await updateDoc(doc(db, 'usuarios', uid), { nome: nome.trim(), perfil })
+  async function salvarEdicao(uid, { nome, perfil, vendedorNome }) {
+    await updateDoc(doc(db, 'usuarios', uid), {
+      nome: nome.trim(), perfil,
+      vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
+    })
     setEditando(null)
     aviso('Usuário atualizado.')
   }
@@ -139,6 +145,7 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
       </div>
       <div className="meta-row">
         <span className="chip">✉️ {u.email}</span>
+        {u.perfil === 'vendedor' && u.vendedorNome && <span className="chip">👤 {u.vendedorNome}</span>}
         {inativo
           ? <span className="chip rota-warn">acesso desativado</span>
           : <span className="chip">ativo</span>}
@@ -158,11 +165,13 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
 }
 
 function FormUsuario({ onSalvar, onCancelar }) {
+  const { vendedores } = useCadastros()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [senha2, setSenha2] = useState('')
   const [perfil, setPerfil] = useState('designer')
+  const [vendedorNome, setVendedorNome] = useState('')
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -172,9 +181,10 @@ function FormUsuario({ onSalvar, onCancelar }) {
     if (!email.trim()) { setErro('Informe o e-mail.'); return }
     if (senha.length < 6) { setErro('A senha precisa ter pelo menos 6 caracteres.'); return }
     if (senha !== senha2) { setErro('As senhas não conferem.'); return }
+    if (perfil === 'vendedor' && !vendedorNome) { setErro('Escolha qual vendedor este usuário representa.'); return }
     setBusy(true)
     try {
-      await onSalvar({ nome, email, senha, perfil })
+      await onSalvar({ nome, email, senha, perfil, vendedorNome })
     } catch (e) {
       const map = {
         'auth/email-already-in-use': 'Já existe um usuário com este e-mail.',
@@ -233,6 +243,18 @@ function FormUsuario({ onSalvar, onCancelar }) {
         ))}
       </div>
 
+      {perfil === 'vendedor' && (
+        <div className="field" style={{ marginTop: 10, maxWidth: 320 }}>
+          <label>Qual vendedor este usuário representa?</label>
+          <select value={vendedorNome} onChange={(e) => setVendedorNome(e.target.value)}
+            style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', color: 'var(--text)' }}>
+            <option value="">— escolha o vendedor —</option>
+            {vendedores.map((v, i) => <option key={i} value={v.nome}>{v.nome}</option>)}
+          </select>
+          <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Ele verá apenas os pedidos deste vendedor.</span>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar} disabled={busy}>
           {busy ? 'Criando…' : 'Criar usuário'}
@@ -244,8 +266,10 @@ function FormUsuario({ onSalvar, onCancelar }) {
 }
 
 function FormEdicao({ u, onSalvar, onCancelar }) {
+  const { vendedores } = useCadastros()
   const [nome, setNome] = useState(u.nome || '')
   const [perfil, setPerfil] = useState(u.perfil || 'designer')
+  const [vendedorNome, setVendedorNome] = useState(u.vendedorNome || '')
 
   return (
     <div className="card em_dia" style={{ borderLeftColor: 'var(--accent)' }}>
@@ -265,10 +289,21 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
           {PERFIS.map((p) => <option key={p.id} value={p.id}>{p.nm}</option>)}
         </select>
       </div>
+      {perfil === 'vendedor' && (
+        <div className="field">
+          <label>Vendedor representado</label>
+          <select value={vendedorNome} onChange={(e) => setVendedorNome(e.target.value)}
+            style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', color: 'var(--text)' }}>
+            <option value="">— escolha o vendedor —</option>
+            {vendedores.map((v, i) => <option key={i} value={v.nome}>{v.nome}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button className="btn primary" onClick={() => {
           if (!nome.trim()) { alert('Informe o nome.'); return }
-          onSalvar({ nome, perfil })
+          if (perfil === 'vendedor' && !vendedorNome) { alert('Escolha qual vendedor este usuário representa.'); return }
+          onSalvar({ nome, perfil, vendedorNome })
         }}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>
       </div>

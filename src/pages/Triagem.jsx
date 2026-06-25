@@ -296,6 +296,7 @@ export default function Triagem({ pedidos }) {
         <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={importando}>
           {importando ? 'Importando…' : '↑ Importar planilha'}
         </button>
+        <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
         {ehDono && (
           <button className="btn" style={{ color: 'var(--danger)' }} onClick={() => setPainelExcluir((v) => !v)}>
             🗑 Excluir por período
@@ -333,13 +334,15 @@ export default function Triagem({ pedidos }) {
           {pedidos.length === 0 ? 'Importe a planilha do Posseidon ou da Zeus para começar.' : 'Nada pendente — tudo categorizado!'}
         </div>
       ) : (
-        <div className="cards">
+        <div className="cards screen-only">
           {lista.map((p) => (
             <CardTriagem key={p.idVenda} p={p} onCat={categorizar} onCatItem={categorizarItem} clientes={clientes}
               onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
           ))}
         </div>
       )}
+
+      <ImpressaoTriagem lista={lista} clientes={clientes} />
 
       {resultadoImportacao && (
         <ModalImportacao
@@ -350,6 +353,55 @@ export default function Triagem({ pedidos }) {
         />
       )}
     </>
+  )
+}
+
+// ============================ IMPRESSÃO DA TRIAGEM ============================
+function ImpressaoTriagem({ lista, clientes }) {
+  const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  const arvore = {}
+  for (const p of lista) {
+    const v = p.vendedor || '—'
+    const r = p.rota || 'SEM ROTA'
+    arvore[v] ??= {}
+    arvore[v][r] ??= []
+    arvore[v][r].push(p)
+  }
+  const vends = Object.keys(arvore).sort()
+  return (
+    <div className="print-only">
+      <div className="pr-head">
+        <h1>JC Sacolas · Triagem</h1>
+        <div className="meta">Impresso em {hoje}<br />{lista.length} pedido(s)</div>
+      </div>
+      {vends.map((v) => (
+        <div key={v} className="pr-block">
+          <div className="pr-vend">{v}</div>
+          {Object.entries(arvore[v]).sort().map(([rota, ps]) => (
+            <div key={rota}>
+              <div className="pr-rota forte">{rota} · {ps.length} pedido(s)</div>
+              {ps.map((p) => (
+                <div key={p.idVenda} className="pr-ped">
+                  <div className="top">
+                    <span className="box" />
+                    <span className="nm">#{p.idVenda} — {nomeCliente(p.cliente, clientes)}</span>
+                    <span className="cid">({p.cidade || '—'})</span>
+                  </div>
+                  <table className="pr-itens"><tbody>
+                    {(p.itens || []).map((it, i) => (
+                      <tr key={i}>
+                        <td>{it.produto} <span className="ref">{MODO_NM[linhaDoItem(p, i)] || '—'}</span></td>
+                        <td className="q">{it.qtd}</td>
+                      </tr>
+                    ))}
+                  </tbody></table>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   )
 }
 

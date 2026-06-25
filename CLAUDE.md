@@ -80,6 +80,21 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
    continua com esse nome. FALTA: romaneio de conferência no fim da lista por vendedor/dia
    (data que o vendedor passou o pedido, data de entrega prevista, assinatura sua e dele).
 
+## Perfil Vendedor + segurança (Fase B — em produção)
+- **Perfil `vendedor`:** acesso só à aba "Meus Pedidos" (`MeusPedidos.jsx`), vê apenas os
+  pedidos do próprio vendedor. Vínculo via campo `vendedorNome` em `usuarios/{uid}` (casado
+  com `p.vendedor`). Criado em Usuários (dropdown do cadastro de vendedores). Assistente de
+  voz oculto para esse perfil.
+- **App.jsx:** consulta de pedidos filtra `where('vendedor','==', vendedorNome)` quando o
+  perfil é vendedor. `AuthContext` expõe `vendedorNome`.
+- **Segurança real:** `firestore.rules` reescrito — staff (dono/designer/financeiro) total;
+  vendedor lê só os próprios pedidos; coleção `ciencias` preparada. ⚠️ As regras precisam ser
+  PUBLICADAS no Firebase Console (não vão pelo deploy do Pages).
+- **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
+  vendedor→rota.
+- **Fase C (pendente):** ciência por rota (vendedor e designer) com e-mail/IP(ipify)/data-hora
+  na coleção `ciencias`, e visualização pro designer.
+
 ## Design / identidade
 - **Dashboards (Produção e Rota):** linha de produção = faixa colorida forte
   (`.linha-bloco`/`.linha-head`, cor de `MODO_COR`), rota = badge/banda destacada
