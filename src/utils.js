@@ -502,12 +502,35 @@ const PADROES = {
   obs: ['obs', 'observacao', 'observacoes'],
 }
 
+// Pontua o quão bem uma coluna casa com uma chave:
+//  - nome EXATO vale mais que palavra inteira, que vale mais que pedaço (substring).
+//  - substring só conta para chaves longas (>= 4 letras), pra evitar que 'id' case
+//    com "cidade" ou 'venda' case com "data da venda".
+// Chaves mais à esquerda na lista têm leve prioridade (peso).
+function scoreColuna(n, chaves) {
+  let score = 0
+  for (let i = 0; i < chaves.length; i++) {
+    const k = chaves[i]
+    const peso = chaves.length - i
+    if (n === k) score = Math.max(score, 100 + peso)
+    else if (new RegExp(`(^|\\s)${k}(\\s|$)`).test(n)) score = Math.max(score, 50 + peso)
+    else if (k.length >= 4 && n.includes(k)) score = Math.max(score, 10 + peso)
+  }
+  return score
+}
+
 export function mapeiaColunas(colunas) {
-  const norm = colunas.map((c) => ({ raw: c, n: normaliza(c).toLowerCase() }))
+  const norm = colunas.map((c) => ({ raw: c, n: normaliza(c).toLowerCase().trim() }))
   const mapa = {}
+  const usados = new Set()
   for (const [campo, chaves] of Object.entries(PADROES)) {
-    const achou = norm.find((c) => chaves.some((k) => c.n.includes(k)))
-    if (achou) mapa[campo] = achou.raw
+    let melhor = null, melhorScore = 0
+    for (const c of norm) {
+      if (usados.has(c.raw)) continue            // 1 coluna não serve a 2 campos
+      const s = scoreColuna(c.n, chaves)
+      if (s > melhorScore) { melhorScore = s; melhor = c }
+    }
+    if (melhor) { mapa[campo] = melhor.raw; usados.add(melhor.raw) }
   }
   return mapa
 }
@@ -516,7 +539,7 @@ export function mapeiaColunas(colunas) {
 export function agrupaPedidos(linhas, mapa, cadastros) {
   const porId = {}
   for (const row of linhas) {
-    const id = String(row[mapa.id] ?? '').trim()
+    const id = String(row[mapa.id] ?? '').trim().replace(/\.0$/, '')
     if (!id) continue
     if (!porId[id]) {
       const vendRaw = row[mapa.vendedor] ?? ''
