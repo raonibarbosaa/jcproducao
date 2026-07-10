@@ -74,9 +74,15 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 2. **Cadastro de Itens** — mapeia produto → unidade (kg, unidade, milheiro) + tipo de
    material (deixar o campo preparado pro custo da Fase 2). Captura automática no import
    (padrão do Clientes) + filtro "sem unidade" com badge contador. Quantidade vem do Posseidon.
-3. **Totais nos rodapés + módulo de Relatórios** — soma por unidade nos rodapés de
-   Produção/Rota ("Plástico: 100 kg · Papel: 200 un") e relatórios de consumo físico
-   filtráveis por linha, rota, vendedor e data de entrega.
+3. ✅ **Totais nos rodapés + módulo de Relatórios** FEITO. Regra de unidade fixa:
+   **plástico → kg, papel → unidade**. Material vem do cadastro de Itens (`tipo`) com
+   fallback pela inferência do nome (`materialDoItem` em utils: /PLAST/→plástico,
+   /PAPEL/→papel). Helpers `totaisPorMaterial`/`somaTotais`/`fmtTotais`/`fmtQtd`.
+   Produção: rodapé por rota (`.rota-totais`) e por linha (`.linha-foot`), tela+impressão.
+   Rota: total por rota na banda + no romaneio. Relatórios (`Relatorios.jsx`, recebe
+   `pedidos`): consumo físico por período (data de entrega/previsão viva), filtros de
+   vendedor/linha/rota, quebra por linha e por rota, total geral em cards. Item explode
+   por `linhaDoItem` (respeita pedido dividido).
 4. **Motoristas + financeiro + Entregues editável** — ✅ cadastro de Motoristas e escolha do
    motorista na entrega FEITOS (ver "Já feito"); ✅ Entregues já editável no sentido de
    cancelar entrega. FALTA: controle financeiro por pedido (valor total → entrada → recebido
