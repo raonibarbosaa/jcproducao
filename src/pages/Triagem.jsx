@@ -9,8 +9,9 @@ import {
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
   linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
-  TIPOS_ITEM, UNIDADES_ITEM,
+  TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
 } from '../utils.js'
+import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Triagem({ pedidos }) {
   const { vendedores, clientes, itens, carregando: cadCarregando } = useCadastros()
@@ -271,7 +272,9 @@ export default function Triagem({ pedidos }) {
     }
   }
 
-  const lista = (soPendentes ? pedidos.filter((p) => !pedidoCompleto(p)) : pedidos)
+  // recalcula a previsão com o calendário ATUAL (respeita a data manual do pedido)
+  const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
+  const lista = (soPendentes ? base.filter((p) => !pedidoCompleto(p)) : base)
     .slice()
     .sort((a, b) => {
       // atrasados primeiro, depois sem definição, depois por id
@@ -500,9 +503,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
         {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
         <span className="chip">{p.vendedor}</span>
         <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>{p.cidade || '—'} · {p.rota}</span>
-        {atrasado
-          ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
-          : <span className="chip">Entrega {fmtData(p.previsao)}</span>}
+        <DataEntrega p={p} atrasado={atrasado} />
       </div>
 
       {foraRota && !editandoCidade && (
