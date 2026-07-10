@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
+import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas } = useCadastros()
@@ -128,9 +129,7 @@ export default function Rota({ pedidos }) {
                                   <span className="idv">#{p.idVenda}</span>
                                   {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
                                   <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>📍 {p.cidade || '—'}</span>
-                                  {atrasado
-                                    ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
-                                    : <span className="chip">{fmtData(p.previsao)}</span>}
+                                  <DataEntrega p={p} atrasado={atrasado} />
                                   <span className="valor" style={{ marginLeft:'auto' }}>{fmtMoeda(p.valorTotal)}</span>
                                 </div>
                                 <ul className="itens">

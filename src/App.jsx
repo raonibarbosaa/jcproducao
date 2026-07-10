@@ -50,7 +50,7 @@ export default function App() {
 
   // contadores
   const semDef = pedidos.filter((p) => !p.status).length
-  const atrasados = pedidos.filter((p) => situacaoPrazo(p.previsao) === 'atrasado').length
+  const atrasados = pedidos.filter((p) => situacaoPrazo(p.previsaoManual || p.previsao) === 'atrasado').length
   const contadores = { semDef, atrasados, total: pedidos.length }
 
   const primeira = abas[0]

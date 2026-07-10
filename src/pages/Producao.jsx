@@ -1,16 +1,25 @@
 import { useState } from 'react'
+import { doc, writeBatch, deleteField } from 'firebase/firestore'
+import { db } from '../firebase.js'
 import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
+import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
+import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes } = useCadastros()
+  const { perfil, nome } = useAuth()
+  const podeEditarData = perfil === 'dono' || perfil === 'designer'
   const [filtroLinha, setFiltroLinha] = useState('')
   const [filtros, setFiltros] = useState({})
+  const [sel, setSel] = useState([])       // idVenda selecionados p/ alteração em lote
+  const [dataLote, setDataLote] = useState('')
+  const [salvandoLote, setSalvandoLote] = useState(false)
 
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
@@ -52,6 +61,53 @@ export default function Producao({ pedidos }) {
   const vendedoresOrd = Object.keys(arvore).sort()
   const filtrado = lista.length !== categorizados.length
 
+  // ---------- seleção / alteração em lote (dono e designer) ----------
+  // seleção é por idVenda (o pedido), não por card — pedido dividido em várias
+  // linhas aparece em vários cards, mas conta como 1 seleção.
+  const idsVisiveis = [...new Set(lista.map((p) => p.idVenda))]
+  const todosSelecionados = sel.length > 0 && sel.length === idsVisiveis.length
+  const toggleSel = (id) => setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
+  const limparSel = () => setSel([])
+  const selecionarTodos = () => setSel(todosSelecionados ? [] : idsVisiveis)
+
+  async function gravarLote(campos) {
+    const ids = [...new Set(sel)]
+    if (!ids.length) return
+    setSalvandoLote(true)
+    try {
+      for (let i = 0; i < ids.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const id of ids.slice(i, i + 450)) batch.update(doc(db, 'pedidos', id), campos)
+        await batch.commit()
+      }
+      setSel([]); setDataLote('')
+    } catch (e) {
+      console.error('Erro na alteração em lote:', e)
+      alert('Erro ao alterar as datas em lote: ' + e.message)
+    } finally {
+      setSalvandoLote(false)
+    }
+  }
+
+  const aplicarDataLote = () => {
+    if (!dataLote) return
+    if (!confirm(`Aplicar a data ${fmtData(dataLote + 'T00:00:00')} a ${sel.length} pedido(s)?`)) return
+    gravarLote({
+      previsaoManual: new Date(dataLote + 'T00:00:00').toISOString(),
+      previsaoManualPor: nome || '',
+      previsaoManualEm: new Date().toISOString(),
+    })
+  }
+
+  const voltarAutomaticoLote = () => {
+    if (!confirm(`Voltar ${sel.length} pedido(s) para a data automática do calendário?`)) return
+    gravarLote({
+      previsaoManual: deleteField(),
+      previsaoManualPor: deleteField(),
+      previsaoManualEm: deleteField(),
+    })
+  }
+
   return (
     <>
       <div className="toolbar no-print">
@@ -65,6 +121,11 @@ export default function Producao({ pedidos }) {
           <option value="">Todas as linhas</option>
           {MODO_ORDER.map((m) => <option key={m} value={m}>{MODO_NM[m]}</option>)}
         </select>
+        {podeEditarData && lista.length > 0 && (
+          <button className="btn" onClick={selecionarTodos}>
+            {todosSelecionados ? '☑ Limpar seleção' : `☐ Selecionar todos (${idsVisiveis.length})`}
+          </button>
+        )}
         <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
       </div>
 
@@ -100,7 +161,12 @@ export default function Producao({ pedidos }) {
                                 <span className="rota-count">{ps.length} parada(s)</span>
                               </div>
                               <div className="cards">
-                                {ps.map((p) => <CardProd key={p.idVenda + ":" + p._linhaCard} p={p} clientes={clientes} />)}
+                                {ps.map((p) => (
+                                  <CardProd key={p.idVenda + ":" + p._linhaCard} p={p} clientes={clientes}
+                                    selecionavel={podeEditarData}
+                                    selecionado={sel.includes(p.idVenda)}
+                                    onToggleSel={() => toggleSel(p.idVenda)} />
+                                ))}
                               </div>
                             </div>
                           )
@@ -115,6 +181,24 @@ export default function Producao({ pedidos }) {
         )}
       </div>
 
+      {/* ---------- BARRA DE ALTERAÇÃO EM LOTE (aparece com seleção) ---------- */}
+      {podeEditarData && sel.length > 0 && (
+        <div className="batch-bar no-print">
+          <span className="bb-count">{sel.length} pedido(s) selecionado(s)</span>
+          <label className="bb-field">
+            Nova data:
+            <input type="date" value={dataLote} onChange={(e) => setDataLote(e.target.value)} />
+          </label>
+          <button className="btn ok" disabled={!dataLote || salvandoLote} onClick={aplicarDataLote}>
+            {salvandoLote ? 'Salvando…' : '✓ Aplicar data'}
+          </button>
+          <button className="btn" disabled={salvandoLote} onClick={voltarAutomaticoLote} title="Remove a data manual e volta ao calendário do vendedor">
+            ↺ Voltar ao automático
+          </button>
+          <button className="btn" disabled={salvandoLote} onClick={limparSel}>Limpar seleção</button>
+        </div>
+      )}
+
       {/* ---------- IMPRESSÃO ---------- */}
       <ImpressaoProducao
         arvore={arvore} vendedoresOrd={vendedoresOrd}
@@ -124,20 +208,24 @@ export default function Producao({ pedidos }) {
   )
 }
 
-function CardProd({ p, clientes }) {
+function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   const foraRota = p.rota === 'FORA DE ROTA' || p.rota === 'SEM ROTA'
   const dividido = p._totalItens && p.itens.length < p._totalItens
   return (
-    <div className={`card ${atrasado ? 'atrasado' : 'em_dia'} ${foraRota ? 'fora-rota' : ''}`}>
+    <div className={`card ${atrasado ? 'atrasado' : 'em_dia'} ${foraRota ? 'fora-rota' : ''} ${selecionado ? 'selecionado' : ''}`}>
       <div className="card-top">
+        {selecionavel && (
+          <input type="checkbox" className="no-print card-check" checked={selecionado} onChange={onToggleSel}
+            title="Selecionar para alterar a data em lote" />
+        )}
         <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
         <div className="idv">#{p.idVenda}</div>
       </div>
       <div className="meta-row">
         {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
         <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>📍 {p.cidade || '—'}</span>
-        {atrasado && <span className="chip atrasado">Atrasado</span>}
+        <DataEntrega p={p} atrasado={atrasado} />
         {dividido && (
           <span className="chip" style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }}>
             {p.itens.length} de {p._totalItens} itens

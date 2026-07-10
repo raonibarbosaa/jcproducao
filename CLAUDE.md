@@ -51,6 +51,12 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Entregues:** mostra o motorista (chip 🚚) + filtro por motorista (inclui "sem motorista"
   e o total acompanha o filtro). Botão "↩ Cancelar entrega" devolve o pedido ao fluxo —
   visível só para **dono** e **designer**. Designer agora enxerga a aba Entregues.
+- **Data de entrega manual (dono/designer):** campo `previsaoManual` no pedido (+
+  `previsaoManualPor`/`previsaoManualEm` de auditoria), gravado com `updateDoc`; limpar =
+  `deleteField()` ("↺ voltar ao automático"). `previsaoDe()` dá precedência à manual, então
+  Produção/Rota/Meus Pedidos/Ciência reagrupam sozinhas no render (onSnapshot). UI: chip de
+  data editável `src/components/DataEntrega.jsx` (✎ só p/ dono/designer; 📌 marca data manual)
+  nos cards de Produção e Rota. Contador de atrasados no App.jsx considera a manual.
 - **Assistente de voz (acessibilidade — Opção A, local, sem LLM):** botão flutuante 🎤
   (`src/components/AssistenteVoz.jsx`) em todas as telas. Voz→texto e texto→voz pelo
   navegador (Web Speech API, pt-BR; reconhecimento bom no Chrome, instável no Safari —

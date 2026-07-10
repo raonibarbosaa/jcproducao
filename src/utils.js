@@ -268,7 +268,10 @@ export function calculaPrevisao(vendedorRaw, dataVenda, cadastros) {
 // calendário ATUAL do Cadastro. Assim, configurar/ajustar o calendário de um
 // vendedor reflete na hora em todos os pedidos dele — sem reimportar.
 // Se não der pra recalcular (sem calendário), cai pro valor já gravado.
+// EXCEÇÃO: data definida À MÃO (dono/designer) tem precedência sobre tudo —
+// gravada em p.previsaoManual, só sai com "voltar ao automático".
 export function previsaoDe(p, cadastros) {
+  if (p.previsaoManual) return p.previsaoManual
   const calc = calculaPrevisao(p.vendedorRaw, p.dataVenda, cadastros)
   if (calc) return calc.toISOString()
   return p.previsao || null
