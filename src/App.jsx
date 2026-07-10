@@ -64,7 +64,7 @@ export default function App() {
         {abas.includes('producao') && <Route path="/producao" element={<Producao pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}
-        {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios />} />}
+        {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios pedidos={pedidos} />} />}
         {abas.includes('cadastros') && <Route path="/cadastros" element={<Cadastros />} />}
         {abas.includes('usuarios') && <Route path="/usuarios" element={<Usuarios />} />}
         {abas.includes('meus') && <Route path="/meus" element={<MeusPedidos pedidos={pedidos} />} />}

@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
-  linhasPresentes, itensDaLinha,
+  linhasPresentes, itensDaLinha, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -12,7 +12,7 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Producao({ pedidos }) {
-  const { vendedores: cadastros, clientes } = useCadastros()
+  const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
   const [filtroLinha, setFiltroLinha] = useState('')
@@ -146,7 +146,10 @@ export default function Producao({ pedidos }) {
                   <div style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 600, margin: '6px 0' }}>
                     📅 Entrega: {data}
                   </div>
-                  {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
+                  {MODO_ORDER.filter((m) => linhas[m]).map((m) => {
+                    const totalLinha = Object.values(linhas[m]).flat()
+                      .reduce((acc, c) => somaTotais(acc, totaisPorMaterial(c.itens, itensCad)), TOTAIS_ZERO)
+                    return (
                     <div key={m} className="linha-bloco" style={{ borderLeftColor: MODO_COR[m] }}>
                       <div className="linha-head" style={{ background: MODO_COR[m] }}>
                         {MODO_NM[m]} <span className="linha-desc">{MODO_DESC[m]}</span>
@@ -154,11 +157,13 @@ export default function Producao({ pedidos }) {
                       <div className="linha-body">
                         {Object.entries(linhas[m]).sort().map(([rota, ps]) => {
                           const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
+                          const totalRota = ps.reduce((acc, c) => somaTotais(acc, totaisPorMaterial(c.itens, itensCad)), TOTAIS_ZERO)
                           return (
                             <div key={rota} className="rota-bloco">
                               <div className="rota-head">
                                 <span className={`rota-badge ${foraRota ? 'warn' : ''}`}>📍 {rota}</span>
                                 <span className="rota-count">{ps.length} parada(s)</span>
+                                <span className="rota-totais">{fmtTotais(totalRota)}</span>
                               </div>
                               <div className="cards">
                                 {ps.map((p) => (
@@ -172,8 +177,11 @@ export default function Producao({ pedidos }) {
                           )
                         })}
                       </div>
+                      <div className="linha-foot">
+                        Total {MODO_NM[m]}: <b>{fmtTotais(totalLinha)}</b>
+                      </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               ))}
             </div>
@@ -202,7 +210,7 @@ export default function Producao({ pedidos }) {
       {/* ---------- IMPRESSÃO ---------- */}
       <ImpressaoProducao
         arvore={arvore} vendedoresOrd={vendedoresOrd}
-        filtros={filtros} filtroLinha={filtroLinha} total={lista.length} clientes={clientes}
+        filtros={filtros} filtroLinha={filtroLinha} total={lista.length} clientes={clientes} itensCad={itensCad}
       />
     </>
   )
@@ -243,7 +251,7 @@ function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
 }
 
 // ============================ LAYOUT DE IMPRESSÃO ============================
-function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total, clientes }) {
+function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total, clientes, itensCad }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
   return (
@@ -263,12 +271,17 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total,
           {Object.entries(arvore[vend]).sort().map(([data, linhas]) => (
             <div key={data}>
               <div className="pr-data">Entrega: {data}</div>
-              {MODO_ORDER.filter((m) => linhas[m]).map((m) => (
+              {MODO_ORDER.filter((m) => linhas[m]).map((m) => {
+                const totalLinha = Object.values(linhas[m]).flat()
+                  .reduce((acc, c) => somaTotais(acc, totaisPorMaterial(c.itens, itensCad)), TOTAIS_ZERO)
+                return (
                 <div key={m}>
                   <span className="pr-linha" style={{ color: MODO_COR[m], borderColor: MODO_COR[m] }}>{MODO_NM[m]}</span>
-                  {Object.entries(linhas[m]).sort().map(([rota, ps]) => (
+                  {Object.entries(linhas[m]).sort().map(([rota, ps]) => {
+                    const totalRota = ps.reduce((acc, c) => somaTotais(acc, totaisPorMaterial(c.itens, itensCad)), TOTAIS_ZERO)
+                    return (
                     <div key={rota}>
-                      <div className="pr-rota">{rota} · {ps.length} pedido(s)</div>
+                      <div className="pr-rota">{rota} · {ps.length} pedido(s) · <b>{fmtTotais(totalRota)}</b></div>
                       {ps.map((p) => (
                         <div key={p.idVenda + ':' + (p._linhaCard || '')} className="pr-ped">
                           <div className="top">
@@ -285,9 +298,12 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total,
                         </div>
                       ))}
                     </div>
-                  ))}
+                    )
+                  })}
+                  <div className="pr-total-linha">Total {MODO_NM[m]}: {fmtTotais(totalLinha)}</div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           ))}
         </div>

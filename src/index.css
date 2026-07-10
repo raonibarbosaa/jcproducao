@@ -279,6 +279,44 @@ input, select { font-family: var(--font); }
   padding: 5px 8px; color: var(--text); font: inherit;
 }
 
+/* ---------- TOTAIS por rota/linha (Produção e Rota) ---------- */
+.rota-totais, .rb-totais {
+  margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border);
+  padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+}
+.linha-foot {
+  padding: 8px 12px; font-size: 13px; color: var(--text-dim);
+  border-top: 1px dashed var(--border); text-align: right;
+}
+.linha-foot b { color: var(--text); }
+
+/* ---------- RELATÓRIOS ---------- */
+.rel-periodo { font-size: 13px; color: var(--text-dim); font-weight: 600; margin: 4px 0 12px; }
+.rel-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.rel-total-card {
+  flex: 1; min-width: 160px; border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 18px; background: var(--surface-2);
+}
+.rel-total-card.plastico { border-left: 4px solid #1C7A4E; }
+.rel-total-card.papel { border-left: 4px solid #1A5FB4; }
+.rel-total-card.outro { border-left: 4px solid var(--warn); }
+.rel-total-card .rt-label { font-size: 12px; text-transform: uppercase; color: var(--text-faint); letter-spacing: .04em; }
+.rel-total-card .rt-valor { font-size: 26px; font-weight: 800; color: var(--text); margin-top: 2px; }
+.rel-total-card .rt-valor span { font-size: 14px; font-weight: 600; color: var(--text-dim); }
+
+.rel-grids { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.rel-bloco h3 { font-size: 14px; margin-bottom: 8px; color: var(--text); }
+.rel-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rel-tab th, .rel-tab td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+.rel-tab th { color: var(--text-faint); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+.rel-tab td.q, .rel-tab th.q { text-align: right; font-family: var(--mono); }
+.rel-tab tfoot td { font-weight: 800; color: var(--text); border-top: 2px solid var(--border); border-bottom: none; }
+.rel-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; vertical-align: middle; }
+
+/* total de linha na impressão da Produção */
+.pr-total-linha { font-size: 11px; font-weight: 700; margin: 2px 0 8px; padding-left: 4px; }
+
 .itens { list-style: none; margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .itens li { font-size: 13px; color: var(--text-dim); display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .itens li .q { font-family: var(--mono); color: var(--text); font-weight: 600; }

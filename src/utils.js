@@ -230,6 +230,60 @@ export function infoItem(produto, itens) {
   }
 }
 
+// ---------- MATERIAL / UNIDADE FÍSICA (regra do negócio) ----------
+// Regra: PLÁSTICO conta em KG, PAPEL conta em UNIDADE.
+// O material vem do cadastro de Itens (tipo); se o item não estiver cadastrado,
+// infere pelo texto do produto/grupo ("PLÁST..." -> plástico, "PAPEL" -> papel).
+export const UNID_POR_MATERIAL = { plastico: 'kg', papel: 'un' }
+export function unidadeDoMaterial(mat) { return UNID_POR_MATERIAL[mat] || '' }
+
+export function materialDoItem(it, itensCad) {
+  const info = infoItem(it?.produto, itensCad)
+  if (info.tipo) return info.tipo // 'plastico' | 'papel'
+  const t = normaliza(`${it?.produto || ''} ${it?.grupo || ''}`)
+  if (/PLAST/.test(t)) return 'plastico'
+  if (/PAPEL/.test(t)) return 'papel'
+  return ''
+}
+
+// soma as quantidades de uma lista de itens por material.
+// devolve { plastico: <kg>, papel: <un>, outro: <n> }
+export function totaisPorMaterial(itens, itensCad) {
+  const t = { plastico: 0, papel: 0, outro: 0 }
+  for (const it of itens || []) {
+    const q = Number(it?.qtd) || 0
+    if (!q) continue
+    const mat = materialDoItem(it, itensCad)
+    if (mat === 'plastico') t.plastico += q
+    else if (mat === 'papel') t.papel += q
+    else t.outro += q
+  }
+  return t
+}
+
+// soma dois objetos de totais (para acumular rota -> linha -> total)
+export function somaTotais(a, b) {
+  return { plastico: a.plastico + b.plastico, papel: a.papel + b.papel, outro: a.outro + b.outro }
+}
+export const TOTAIS_ZERO = { plastico: 0, papel: 0, outro: 0 }
+
+// número de quantidade em pt-BR (kg pode ter casas; unidade é inteiro)
+export function fmtQtd(n) {
+  const v = Number(n) || 0
+  return v % 1 === 0
+    ? v.toLocaleString('pt-BR')
+    : v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })
+}
+
+// texto "Plástico: 100 kg · Papel: 200 un"
+export function fmtTotais(t) {
+  const partes = []
+  if (t.plastico) partes.push(`Plástico: ${fmtQtd(t.plastico)} kg`)
+  if (t.papel) partes.push(`Papel: ${fmtQtd(t.papel)} un`)
+  if (t.outro) partes.push(`Outros: ${fmtQtd(t.outro)}`)
+  return partes.length ? partes.join(' · ') : '—'
+}
+
 // dias de entrega do vendedor (array). [] = sem calendário definido
 export function diasEntrega(raw, cadastros) {
   const v = achaVendedor(raw, cadastros)

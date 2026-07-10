@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Rota({ pedidos }) {
-  const { vendedores: cadastros, clientes, motoristas } = useCadastros()
+  const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
   const [filtros, setFiltros] = useState({})
   const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
@@ -91,6 +91,8 @@ export default function Rota({ pedidos }) {
               <div className="group-head"><h3>{vend}</h3></div>
               {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => {
                 const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
+                const totalRota = Object.values(clientes).flat()
+                  .reduce((acc, p) => somaTotais(acc, totaisPorMaterial(p.itens, itensCad)), TOTAIS_ZERO)
                 return (
                   <div key={rota} style={{ marginBottom: 16 }}>
                     <div className={`rota-band ${foraRota ? 'warn' : ''}`}>
@@ -98,6 +100,7 @@ export default function Rota({ pedidos }) {
                       <span className="rb-count">
                         {Object.keys(clientes).length} cliente(s)
                       </span>
+                      <span className="rb-totais">{fmtTotais(totalRota)}</span>
                       {motoristasAtivos.length > 0 ? (
                         <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginLeft:'auto' }}>
                           <select className="btn" value={motoristaSel[`${vend}|${rota}`] || ''}
@@ -158,14 +161,14 @@ export default function Rota({ pedidos }) {
       {/* ---------- IMPRESSÃO (ROMANEIO) ---------- */}
       <ImpressaoRota
         arvore={arvore} vendedoresOrd={vendedoresOrd}
-        filtros={filtros} total={lista.length} motoristaSel={motoristaSel}
+        filtros={filtros} total={lista.length} motoristaSel={motoristaSel} itensCad={itensCad}
       />
     </>
   )
 }
 
 // ============================ ROMANEIO DE ENTREGA ============================
-function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {} }) {
+function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {}, itensCad }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
   return (
@@ -193,11 +196,13 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
           <div className="pr-data">Entrega: {datasVend}</div>
           {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => {
             const motoristaRota = motoristaSel[`${vend}|${rota}`]
+            const totalRota = Object.values(clientes).flat()
+              .reduce((acc, p) => somaTotais(acc, totaisPorMaterial(p.itens, itensCad)), TOTAIS_ZERO)
             return (
             <div key={rota}>
               <div className="pr-rota forte">
                 {rota} · {Object.keys(clientes).length} cliente(s)
-                {motoristaRota ? ` · 🚚 ${motoristaRota}` : ''}
+                {motoristaRota ? ` · 🚚 ${motoristaRota}` : ''} · {fmtTotais(totalRota)}
               </div>
               {Object.entries(clientes).map(([cliente, ps]) => {
                 const totalParada = ps.reduce((s, p) => s + (p.valorTotal || 0), 0)
