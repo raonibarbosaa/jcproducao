@@ -4,18 +4,22 @@ import { db } from '../firebase.js'
 import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
-  linhasPresentes, itensDaLinha, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
+  linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 
+// rótulos do filtro de material (plástico = kg, papel = unidade)
+const MATERIAL_NM = { papel: 'Papel', plastico: 'Plástico' }
+
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
   const [filtroLinha, setFiltroLinha] = useState('')
+  const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
   const [filtros, setFiltros] = useState({})
   const [sel, setSel] = useState([])       // idVenda selecionados p/ alteração em lote
   const [dataLote, setDataLote] = useState('')
@@ -29,6 +33,8 @@ export default function Producao({ pedidos }) {
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
   if (filtroLinha) lista = lista.filter((p) => linhasPresentes(p).includes(filtroLinha))
+  // filtroMaterial: pedido que TEM algum item desse material (papel/plástico)
+  if (filtroMaterial) lista = lista.filter((p) => (p.itens || []).some((it) => materialDoItem(it, itensCad) === filtroMaterial))
   lista = filtraPedidos(lista, filtros, clientes)
 
   // agrupa: Vendedor -> Data de entrega -> Linha -> Rota
@@ -42,13 +48,16 @@ export default function Producao({ pedidos }) {
     const linhas = linhasPresentes(p)
     for (const m of linhas) {
       if (filtroLinha && m !== filtroLinha) continue // só montra a linha filtrada
+      // fatia do pedido: só os itens dessa linha (com índice original preservado)
+      let itensFatia = totalItens ? itensDaLinha(p, m) : (p.itens || [])
+      // filtroMaterial: dentro da linha, só os itens do material escolhido
+      if (filtroMaterial) itensFatia = itensFatia.filter((it) => materialDoItem(it, itensCad) === filtroMaterial)
+      if (filtroMaterial && !itensFatia.length) continue // esse card não tem item do material
       arvore[vend] ??= {}
       arvore[vend][data] ??= {}
       arvore[vend][data][m] ??= {}
       const rota = p.rota || 'SEM ROTA'
       arvore[vend][data][m][rota] ??= []
-      // fatia do pedido: só os itens dessa linha (com índice original preservado)
-      const itensFatia = totalItens ? itensDaLinha(p, m) : (p.itens || [])
       arvore[vend][data][m][rota].push({
         ...p,
         itens: itensFatia,
@@ -120,6 +129,11 @@ export default function Producao({ pedidos }) {
         <select className="btn" value={filtroLinha} onChange={(e) => setFiltroLinha(e.target.value)}>
           <option value="">Todas as linhas</option>
           {MODO_ORDER.map((m) => <option key={m} value={m}>{MODO_NM[m]}</option>)}
+        </select>
+        <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} title="Filtrar por material (papel × plástico)">
+          <option value="">Todos os materiais</option>
+          <option value="papel">Só Papel</option>
+          <option value="plastico">Só Plástico</option>
         </select>
         {podeEditarData && lista.length > 0 && (
           <button className="btn" onClick={selecionarTodos}>
@@ -210,7 +224,7 @@ export default function Producao({ pedidos }) {
       {/* ---------- IMPRESSÃO ---------- */}
       <ImpressaoProducao
         arvore={arvore} vendedoresOrd={vendedoresOrd}
-        filtros={filtros} filtroLinha={filtroLinha} total={lista.length} clientes={clientes} itensCad={itensCad}
+        filtros={filtros} filtroLinha={filtroLinha} filtroMaterial={filtroMaterial} total={lista.length} clientes={clientes} itensCad={itensCad}
       />
     </>
   )
@@ -251,16 +265,16 @@ function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
 }
 
 // ============================ LAYOUT DE IMPRESSÃO ============================
-function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, total, clientes, itensCad }) {
+function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, filtroMaterial, total, clientes, itensCad }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
   return (
     <div className="print-only">
       <div className="pr-head">
-        <h1>JC Sacolas · Lista de Produção</h1>
+        <h1>JC Sacolas · Lista de Produção{filtroMaterial ? ` — só ${MATERIAL_NM[filtroMaterial]}` : ''}</h1>
         <div className="meta">
           Impresso em {hoje}<br />
-          {total} pedido(s){filtroLinha ? ` · linha ${MODO_NM[filtroLinha]}` : ''}
+          {total} pedido(s){filtroLinha ? ` · linha ${MODO_NM[filtroLinha]}` : ''}{filtroMaterial ? ` · só ${MATERIAL_NM[filtroMaterial]}` : ''}
           {resumo && <><br />{resumo}</>}
         </div>
       </div>

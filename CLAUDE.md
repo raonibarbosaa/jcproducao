@@ -51,6 +51,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Entregues:** mostra o motorista (chip 🚚) + filtro por motorista (inclui "sem motorista"
   e o total acompanha o filtro). Botão "↩ Cancelar entrega" devolve o pedido ao fluxo —
   visível só para **dono** e **designer**. Designer agora enxerga a aba Entregues.
+- **Filtro Papel × Plástico na Lista de Produção:** seletor "Todos os materiais / Só
+  Papel / Só Plástico" (`filtroMaterial` em `Producao.jsx`), ao lado do filtro de linha,
+  aplicado **item a item** via `materialDoItem`. Pré-filtra a lista (pedido que tem algum
+  item do material) e, dentro de cada card, fatia só os itens do material — pedido misto
+  imprime só a parte escolhida; card sem o material some. Combina com vendedor/cliente/
+  período/linha; totais de rodapé (rota/linha) somam só o filtrado. Cabeçalho da impressão
+  indica "— só Papel". Para imprimir a produção só do papel (ou só do plástico).
 - **Data de entrega manual (dono/designer):** campo `previsaoManual` no pedido (+
   `previsaoManualPor`/`previsaoManualEm` de auditoria), gravado com `updateDoc`; limpar =
   `deleteField()` ("↺ voltar ao automático"). `previsaoDe()` dá precedência à manual, então
