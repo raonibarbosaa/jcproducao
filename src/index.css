@@ -314,6 +314,33 @@ input, select { font-family: var(--font); }
 .rel-tab tfoot td { font-weight: 800; color: var(--text); border-top: 2px solid var(--border); border-bottom: none; }
 .rel-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 7px; vertical-align: middle; }
 
+/* seleção de itens de papel (caixas de seleção do relatório) */
+.rel-itens-sel {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+  padding: 12px 14px; margin: 0 0 16px;
+}
+.rel-itens-sel .ris-cab { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ris-count { font-size: 12px; color: var(--text-dim); font-weight: 700; }
+.ris-mini {
+  font-size: 12px; font-weight: 700; color: var(--text-dim); background: none;
+  border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer;
+}
+.ris-mini:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.ris-mini:disabled { opacity: .4; cursor: default; }
+.ris-vazio { font-size: 13px; color: var(--text-faint); padding: 4px 0; }
+.rel-chks { display: flex; flex-wrap: wrap; gap: 8px; }
+.rel-chk {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  background: var(--surface); color: var(--text);
+}
+.rel-chk:hover { border-color: var(--accent); }
+.rel-chk input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; margin: 0; }
+.rel-chk .rc-qtd { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.rel-chk.off { opacity: .5; }
+.rel-item-bloco { margin-top: 18px; }
+.rel-item-bloco .ib-sub { font-weight: 600; color: var(--text-faint); font-size: 12px; }
+
 /* total de linha na impressão da Produção */
 .pr-total-linha { font-size: 11px; font-weight: 700; margin: 2px 0 8px; padding-left: 4px; }
 
