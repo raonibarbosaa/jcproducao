@@ -22,6 +22,8 @@ export default function AssistenteVoz({ pedidos }) {
   const [resposta, setResposta] = useState('')
   const [texto, setTexto] = useState('')
   const recRef = useRef(null)
+  const ultimaRef = useRef('')       // último texto ouvido (interim ou final)
+  const processadoRef = useRef(false) // já viramos o texto em resposta?
 
   function falar(msg) {
     try {
@@ -38,18 +40,23 @@ export default function AssistenteVoz({ pedidos }) {
     }
   }
 
+  // vira a pergunta em resposta E JÁ LÊ EM VOZ (automático).
   function responder(pergunta) {
+    processadoRef.current = true
+    const r = responderPergunta(pergunta, pedidos, vendedores, clientes)
     setTranscricao(pergunta)
-    setResposta(responderPergunta(pergunta, pedidos, vendedores, clientes))
-    setFase('pronto')         // mostra a resposta grande; toque no botão lê em voz
+    setResposta(r)
+    falar(r)                  // lê a resposta automaticamente (muda p/ roxo)
   }
 
   function ouvir() {
     setTranscricao(''); setResposta('')
+    ultimaRef.current = ''
+    processadoRef.current = false
     try { window.speechSynthesis?.cancel() } catch { /* noop */ }
     if (!SR) {
       const m = 'O reconhecimento de voz não está disponível neste navegador. Digite a pergunta no campo de texto.'
-      setResposta(m); setFase('pronto'); falar(m)
+      setResposta(m); falar(m)
       return
     }
     try {
@@ -61,11 +68,19 @@ export default function AssistenteVoz({ pedidos }) {
       rec.onresult = (e) => {
         let txt = ''
         for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript
+        ultimaRef.current = txt
         setTranscricao(txt)
-        if (e.results[e.results.length - 1].isFinal) responder(txt)
+        // se o navegador marcou como final, já responde (e lê)
+        if (e.results[e.results.length - 1].isFinal && !processadoRef.current) responder(txt)
       }
-      rec.onerror = () => setFase(resposta ? 'pronto' : 'parado')
-      rec.onend = () => setFase((f) => (f === 'ouvindo' ? (resposta ? 'pronto' : 'parado') : f))
+      rec.onerror = () => { if (!processadoRef.current) setFase(resposta ? 'pronto' : 'parado') }
+      rec.onend = () => {
+        // ao parar (manual ou pausa da fala): se ainda não respondeu, usa o que ouviu
+        if (processadoRef.current) return
+        const txt = ultimaRef.current.trim()
+        if (txt) responder(txt)               // → lê automaticamente
+        else setFase((f) => (f === 'ouvindo' ? 'parado' : f))
+      }
       recRef.current = rec
       rec.start()
     } catch {
@@ -73,11 +88,10 @@ export default function AssistenteVoz({ pedidos }) {
     }
   }
 
-  // O "mesmo botão" que o usuário pediu: uma ação por fase.
+  // O "mesmo botão": uma ação por fase.
   function acaoPrincipal() {
-    if (fase === 'ouvindo') {                       // ouvindo → para de ouvir
+    if (fase === 'ouvindo') {                       // ouvindo → PARA e lê a resposta (via onend)
       try { recRef.current?.stop() } catch { /* noop */ }
-      setFase(resposta ? 'pronto' : 'parado')
       return
     }
     if (fase === 'falando') {                        // lendo → para de ler
@@ -85,7 +99,7 @@ export default function AssistenteVoz({ pedidos }) {
       setFase('pronto')
       return
     }
-    if (fase === 'pronto' && resposta) { falar(resposta); return }  // lê a resposta (muda p/ roxo)
+    if (fase === 'pronto' && resposta) { falar(resposta); return }  // ouvir de novo
     ouvir()                                          // parado → começa a ouvir (muda p/ verde)
   }
 
@@ -106,9 +120,9 @@ export default function AssistenteVoz({ pedidos }) {
   const temResp = !!resposta
   const BTN = ({
     parado:  { ic: '🎤', txt: 'TOQUE E FALE', sub: 'diga a sua pergunta' },
-    ouvindo: { ic: '🎙️', txt: 'ESTOU OUVINDO…', sub: 'toque para parar' },
+    ouvindo: { ic: '🎙️', txt: 'ESTOU OUVINDO…', sub: 'toque para parar e ouvir a resposta' },
     pronto:  temResp
-      ? { ic: '🔊', txt: 'OUVIR A RESPOSTA', sub: 'toque para ler em voz' }
+      ? { ic: '🔊', txt: 'OUVIR DE NOVO', sub: 'toque para ler a resposta outra vez' }
       : { ic: '🎤', txt: 'TOQUE E FALE', sub: 'diga a sua pergunta' },
     falando: { ic: '🔊', txt: 'LENDO A RESPOSTA…', sub: 'toque para parar' },
   })[fase]
