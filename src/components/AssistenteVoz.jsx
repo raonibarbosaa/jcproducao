@@ -15,7 +15,7 @@ const SR = typeof window !== 'undefined'
 //   pronto  → azul     · "OUVIR A RESPOSTA"        (resposta na tela; toque = lê em voz)
 //   falando → roxo     · "LENDO A RESPOSTA…"       (pulsando; toque = para)
 export default function AssistenteVoz({ pedidos }) {
-  const { vendedores, clientes } = useCadastros()
+  const { vendedores, clientes, itens } = useCadastros()
   const [aberto, setAberto] = useState(false)
   const [fase, setFase] = useState('parado')      // parado | ouvindo | pronto | falando
   const [transcricao, setTranscricao] = useState('')
@@ -88,7 +88,7 @@ export default function AssistenteVoz({ pedidos }) {
   // vira a pergunta em resposta E JÁ LÊ EM VOZ (automático).
   function responder(pergunta) {
     processadoRef.current = true
-    const r = responderPergunta(pergunta, pedidos, vendedores, clientes)
+    const r = responderPergunta(pergunta, pedidos, vendedores, clientes, itens)
     setTranscricao(pergunta)
     setResposta(r)
     falar(r)                  // lê a resposta automaticamente (muda p/ roxo)
@@ -238,8 +238,9 @@ export default function AssistenteVoz({ pedidos }) {
             <div className="assist-aviso">🔊 Se não ouvir a resposta, aumente o volume do aparelho.</div>
 
             <div className="assist-dicas">
-              Ex.: “quantos pedidos pra entregar”, “quais clientes da rota 01 do Sérgio”,
-              “quantas sacolas na rota 01”, “quanto vou receber na rota 02 do Sérgio”.
+              Ex.: “quantas sacolas por produto no mês”, “quais produtos de papel”,
+              “quantas sacolas da [produto] no mês”, “quantos pedidos por produto de papel no mês”,
+              “quantos pedidos pra entregar”, “quais clientes da rota 01 do Sérgio”.
             </div>
           </div>
         </div>

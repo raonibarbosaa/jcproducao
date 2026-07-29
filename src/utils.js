@@ -413,7 +413,61 @@ export function cienciaDe(map, tipo, vendedor, rota) {
   return (map || {})[`${tipo}|${normaliza(vendedor)}|${normaliza(rota)}`] || null
 }
 
-export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes = []) {
+// ---------- MÊS (para as perguntas por produto/por mês) ----------
+const MESES_NORM = ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO']
+const MESES_LABEL = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+function mkMes(ano, m) {
+  return { ini: new Date(ano, m, 1, 0, 0, 0, 0), fim: new Date(ano, m + 1, 0, 23, 59, 59, 999), nome: MESES_LABEL[m] }
+}
+function mesCorrente() { const d = new Date(); return mkMes(d.getFullYear(), d.getMonth()) }
+// mês citado no texto normalizado; "MES/DO MES/ESTE MES" -> mês atual
+function extraiMes(t) {
+  for (let i = 0; i < 12; i++) if (new RegExp(`\\b${MESES_NORM[i]}\\b`).test(t)) { const d = new Date(); return mkMes(d.getFullYear(), i) }
+  if (/\bMES(ES)?\b/.test(t)) return mesCorrente()
+  return null
+}
+function emMes(d, mi) { if (!d || !mi) return false; const x = new Date(d); return x >= mi.ini && x <= mi.fim }
+
+// ---------- PRODUTOS DE PAPEL (para as perguntas por produto) ----------
+// palavras comuns que NÃO servem para identificar um produto pelo nome falado
+const STOP_PROD = new Set(['SACOLA', 'SACOLAS', 'CAIXA', 'CAIXAS', 'PAPEL', 'PLASTICO', 'PLASTICA', 'PRODUTO',
+  'PRODUTOS', 'ITEM', 'ITENS', 'PEDIDO', 'PEDIDOS', 'ENTREGAR', 'ENTREGA', 'MES', 'MESES', 'QUANTAS', 'QUANTOS',
+  'QUANTA', 'QUANTO', 'TEM', 'TEMOS', 'PARA', 'POR', 'COM', 'SEM', 'UNIDADE', 'UNIDADES', 'PECA', 'PECAS',
+  'QUAL', 'QUAIS', 'SABER', 'FALA', 'DIGA', 'MOSTRA', 'LISTA', 'LISTAR', 'ESSE', 'ESSA', 'ESTE', 'ESTA', 'NESSE'])
+
+// { chaveNormalizada -> { nome, qtd, pedidos:Set } } só de itens de PAPEL
+function mapaProdutosPapel(lista, itensCad) {
+  const map = {}
+  for (const p of lista || []) {
+    for (const it of (p.itens || [])) {
+      if (materialDoItem(it, itensCad) !== 'papel') continue
+      const norm = normaliza(it.produto)
+      if (!norm) continue
+      if (!map[norm]) map[norm] = { nome: (it.produto || '').trim() || '—', qtd: 0, pedidos: new Set() }
+      map[norm].qtd += Number(it.qtd) || 0
+      map[norm].pedidos.add(p.id != null ? p.id : p)
+    }
+  }
+  return map
+}
+
+// acha, entre os produtos de papel do escopo, o citado na pergunta (por palavras)
+function achaProdutoPapel(t, mapa) {
+  const qTokens = new Set((t.split(/[^A-Z0-9]+/) || []).filter((w) => w.length >= 3 && !STOP_PROD.has(w)))
+  if (!qTokens.size) return null
+  let best = null, bestScore = 0
+  for (const info of Object.values(mapa)) {
+    const pTokens = normaliza(info.nome).split(/[^A-Z0-9]+/).filter((w) => w.length >= 3 && !STOP_PROD.has(w))
+    if (!pTokens.length) continue
+    let score = 0
+    for (const w of pTokens) if (qTokens.has(w)) score++
+    if (score > bestScore) { bestScore = score; best = info }
+  }
+  return bestScore >= 1 ? best : null
+}
+
+export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes = [], itensCad = []) {
   const t = normaliza(textoBruto)
   if (!t) return 'Não entendi. Pode repetir a pergunta?'
 
@@ -446,6 +500,13 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
     partes.push('em atraso')
   }
 
+  // mês: nas perguntas GERAIS só filtra se o mês foi dito (compatível com o que já existia)
+  const mesDito = extraiMes(t)
+  if (mesDito) {
+    lista = lista.filter((p) => emMes(previsaoDe(p, vendedores), mesDito))
+    partes.push(`em ${mesDito.nome}`)
+  }
+
   const escopo = partes.length ? ' ' + partes.join(' ') : ''
   const nPed = lista.length
 
@@ -456,6 +517,47 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   const querListarClientes = /CLIENTE/.test(t) &&
     /(QUAIS|QUEM|LISTA|LISTAR|MOSTRA|FALA|DIGA|CLIENTES D[AEO])/.test(t)
   const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
+
+  // ---------- PRODUTO DE PAPEL: por produto / por mês / produto específico ----------
+  // Para essas perguntas o mês é sempre considerado (o dito, ou o atual).
+  const querListarProdutos = /PRODUTO/.test(t) && /(QUAIS|QUE PRODUTOS|LISTA|LISTAR|MOSTRA|FALA|DIGA|NOMES)/.test(t)
+  const querPorProduto = /(POR PRODUTO|CADA PRODUTO|PRODUTO A PRODUTO|POR ITEM|POR TIPO)/.test(t)
+  const mesProd = mesDito || mesCorrente()
+  const listaProd = mesDito ? lista : lista.filter((p) => emMes(previsaoDe(p, vendedores), mesProd))
+  const mapaPapel = mapaProdutosPapel(listaProd, itensCad)
+  const escProd = partes.filter((x) => !x.startsWith('em ')).join(' ')
+  const escProdTxt = escProd ? ' ' + escProd : ''
+
+  // produto específico (não quando é pergunta agregada de cliente/valor/por-produto)
+  if (!querPorProduto && !querListarProdutos && !querListarClientes && !querClienteTop && !querValor) {
+    const prod = achaProdutoPapel(t, mapaPapel)
+    if (prod) {
+      const q = prod.qtd, np = prod.pedidos.size
+      return `${prod.nome}, em ${mesProd.nome}: ${q} ${q === 1 ? 'sacola' : 'sacolas'} de papel para entregar${escProdTxt}, em ${np} ${np === 1 ? 'pedido' : 'pedidos'}.`
+    }
+  }
+
+  // listar os produtos de papel do mês
+  if (querListarProdutos) {
+    const nomes = Object.values(mapaPapel).map((x) => x.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    if (!nomes.length) return `Não há produtos de papel para entregar em ${mesProd.nome}${escProdTxt}.`
+    const cap = nomes.slice(0, 12), resto = nomes.length - cap.length
+    return `Em ${mesProd.nome} há ${nomes.length} ${nomes.length === 1 ? 'produto' : 'produtos'} de papel${escProdTxt}: ${cap.join(', ')}${resto > 0 ? `, e mais ${resto}` : ''}.`
+  }
+
+  // por produto (papel): fala só o TOTAL e pede o produto
+  if (querPorProduto) {
+    const prods = Object.values(mapaPapel)
+    if (!prods.length) return `Não há sacolas de papel para entregar em ${mesProd.nome}${escProdTxt}.`
+    const totalSac = prods.reduce((s, x) => s + x.qtd, 0)
+    const pedSet = new Set(); prods.forEach((x) => x.pedidos.forEach((id) => pedSet.add(id)))
+    const nP = pedSet.size, nProd = prods.length
+    const soPedidos = /PEDIDO/.test(t) && !/(SACOLA|UNIDADE|PE[CÇ]A)/.test(t) // "quantos pedidos por produto"
+    if (soPedidos) {
+      return `Em ${mesProd.nome}, papel${escProdTxt}: ${nP} ${nP === 1 ? 'pedido' : 'pedidos'} para entregar, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'}. Diga o nome de um produto para saber quantos pedidos dele, ou pergunte "quais produtos de papel".`
+    }
+    return `Para entregar em ${mesProd.nome}${escProdTxt}: ${totalSac} ${totalSac === 1 ? 'sacola' : 'sacolas'} de papel, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'} e ${nP} ${nP === 1 ? 'pedido' : 'pedidos'}. Diga o nome de um produto para saber a quantidade dele, ou pergunte "quais produtos de papel".`
+  }
 
   // cliente com mais pedidos
   if (querClienteTop) {
@@ -475,9 +577,9 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   }
 
   // nada reconhecido -> não chuta, orienta
-  const reconheceu = vend || rota || linha || soAtrasados || querProduto || querValor || falaDePedido
+  const reconheceu = vend || rota || linha || soAtrasados || querProduto || querValor || falaDePedido || mesDito
   if (!reconheceu) {
-    return 'Não entendi. Você pode perguntar, por exemplo: quantos pedidos para entregar; quais clientes de uma rota; quantas sacolas em uma rota; quantos pedidos em atraso; quantos pedidos na gráfica; o valor a receber; ou qual cliente tem mais pedidos.'
+    return 'Não entendi. Você pode perguntar, por exemplo: quantas sacolas por produto no mês; quais produtos de papel; quantas sacolas de um produto no mês; quantos pedidos para entregar; quais clientes de uma rota; quantos pedidos em atraso; ou o valor a receber.'
   }
 
   if (nPed === 0) return `Não há pedidos${escopo}.`
