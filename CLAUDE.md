@@ -12,6 +12,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 **Linhas de produção:** Produção (silk) / Clichê / Gráfica
 **Perfis:** designer · financeiro · dono
 
+> **Processo real da fábrica** (acabamento, montagem, prazo × etapas): ver
+> [`FLUXO_PRODUCAO.md`](FLUXO_PRODUCAO.md). Base para, no futuro, modelar as
+> etapas/estações de produção no sistema.
+
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),
   `gh-pages` = build publicado.
