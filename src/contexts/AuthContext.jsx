@@ -15,6 +15,7 @@ export function AuthProvider({ children }) {
   const [perfil, setPerfil] = useState(null)    // 'designer' | 'financeiro' | 'dono' | 'vendedor'
   const [nome, setNome] = useState('')
   const [vendedorNome, setVendedorNome] = useState(null) // vínculo p/ perfil 'vendedor'
+  const [setores, setSetores] = useState([])   // setores liberados p/ perfil 'operador'
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -36,20 +37,23 @@ export function AuthProvider({ children }) {
             setPerfil(d.perfil || 'dono')
             setNome(d.nome || u.email)
             setVendedorNome(d.vendedorNome || null)
+            setSetores(Array.isArray(d.setores) ? d.setores : [])
           } else {
             // sem documento de perfil -> trata como dono (fallback seguro p/ admin)
             setPerfil('dono')
             setNome(u.email)
             setVendedorNome(null)
+            setSetores([])
           }
         } catch (e) {
           console.error('Erro ao ler perfil:', e)
           setPerfil('dono')
           setNome(u.email)
           setVendedorNome(null)
+          setSetores([])
         }
       } else {
-        setUser(null); setPerfil(null); setNome(''); setVendedorNome(null)
+        setUser(null); setPerfil(null); setNome(''); setVendedorNome(null); setSetores([])
       }
       setCarregando(false)
     })
@@ -64,7 +68,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, perfil, nome, vendedorNome, carregando, login, logout }}>
+    <AuthCtx.Provider value={{ user, perfil, nome, vendedorNome, setores, carregando, login, logout }}>
       {children}
     </AuthCtx.Provider>
   )

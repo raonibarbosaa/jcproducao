@@ -27,8 +27,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   (updateDoc em `pedidos/{idVenda}`). NÃO mostra valor R$. Move: só dono/designer (Fase A).
 - **Voz:** "quantos pedidos na montagem/gráfica", "o que falta expedir" (conta por `etapa`,
   escopo gráfica; combina com vendedor/rota).
-- **Falta (fases B–D):** perfil Operador + liberação por setor + esconder R$; acabamentos
-  (laminação/furo por item) na Triagem; cauda Expedição→Entrega→Financeiro (baixa).
+- **Fase B (no ar):** perfil **`operador`** (chão de fábrica). `AuthContext` expõe `setores`
+  (array liberado, lido de `usuarios/{uid}.setores`). Cadastro de Usuários tem o perfil
+  Operador + seleção de setores (Gráfica/Montagem/Expedição/Entrega); designer também acessa
+  Usuários. No quadro, `podeMoverEtapa`: dono/designer movem tudo, operador só nos setores
+  liberados (o de ORIGEM). Operador só acessa a aba **Produção** (não vê R$; voz oculta —
+  voz só dono/designer/financeiro). `firestore.rules`: operador lê pedidos e faz update só de
+  `etapa/etapaPor/etapaEm` e só quando a etapa de origem está em `setores`. ⚠️ **Publicar as
+  rules no Firebase Console** (não vão pelo deploy do Pages).
+- **Falta (fases C–D):** acabamentos (laminação/furo por item) na Triagem; cauda
+  Expedição→Entrega→Financeiro (baixa).
 
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),

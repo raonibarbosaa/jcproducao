@@ -19,10 +19,11 @@ import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios', 'ciencia'],
+  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
   financeiro: ['rota', 'entregues'],
   dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia'],
   vendedor:   ['meus'],
+  operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
 }
 
 export default function App() {
@@ -72,7 +73,7 @@ export default function App() {
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
-    {perfil !== 'vendedor' && <AssistenteVoz pedidos={pedidos} />}
+    {['dono', 'designer', 'financeiro'].includes(perfil) && <AssistenteVoz pedidos={pedidos} />}
     </>
   )
 }

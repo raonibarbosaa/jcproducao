@@ -17,7 +17,7 @@ export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
-  const [vista, setVista] = useState('lista')   // 'lista' | 'quadro' (fluxo gráfica)
+  const [vista, setVista] = useState(perfil === 'operador' ? 'quadro' : 'lista')   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
   const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
   const [filtros, setFiltros] = useState({})

@@ -9,12 +9,22 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 
 const PERFIS = [
-  { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção e Cadastros' },
+  { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção, Cadastros e Usuários' },
   { id: 'financeiro', nm: 'Financeiro', desc: 'Rota e Entregues' },
   { id: 'vendedor', nm: 'Vendedor', desc: 'Vê só os próprios pedidos e dá ciência' },
+  { id: 'operador', nm: 'Operador', desc: 'Chão de fábrica: move só os setores liberados (não vê valores)' },
   { id: 'dono', nm: 'Dono (admin)', desc: 'Acesso total + gestão de usuários' },
 ]
 const PERFIL_NM = Object.fromEntries(PERFIS.map((p) => [p.id, p.nm]))
+
+// setores que um Operador pode ser liberado a movimentar
+const SETORES = [
+  { id: 'grafica', nm: 'Gráfica' },
+  { id: 'montagem', nm: 'Montagem' },
+  { id: 'expedicao', nm: 'Expedição' },
+  { id: 'entrega', nm: 'Entrega' },
+]
+const SETOR_NM = Object.fromEntries(SETORES.map((s) => [s.id, s.nm]))
 
 export default function Usuarios() {
   const { user } = useAuth()
@@ -41,7 +51,7 @@ export default function Usuarios() {
   // ---- criar usuário sem derrubar a sessão do admin ----
   // usa uma instância secundária do Firebase: o novo usuário "loga" nela,
   // a gente grava o perfil e desconecta — a sessão principal não é tocada.
-  async function criarUsuario({ nome, email, senha, perfil, vendedorNome }) {
+  async function criarUsuario({ nome, email, senha, perfil, vendedorNome, setores }) {
     const appSec = initializeApp(firebaseConfig, 'criacao-usuario')
     const authSec = getAuth(appSec)
     try {
@@ -51,6 +61,7 @@ export default function Usuarios() {
         email: email.trim().toLowerCase(),
         perfil,
         vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
+        setores: perfil === 'operador' ? (setores || []) : [],
         ativo: true,
         criadoEm: new Date().toISOString(),
       })
@@ -62,10 +73,11 @@ export default function Usuarios() {
     }
   }
 
-  async function salvarEdicao(uid, { nome, perfil, vendedorNome }) {
+  async function salvarEdicao(uid, { nome, perfil, vendedorNome, setores }) {
     await updateDoc(doc(db, 'usuarios', uid), {
       nome: nome.trim(), perfil,
       vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
+      setores: perfil === 'operador' ? (setores || []) : [],
     })
     setEditando(null)
     aviso('Usuário atualizado.')
@@ -146,6 +158,11 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
       <div className="meta-row">
         <span className="chip">✉️ {u.email}</span>
         {u.perfil === 'vendedor' && u.vendedorNome && <span className="chip">👤 {u.vendedorNome}</span>}
+        {u.perfil === 'operador' && (
+          (u.setores || []).length
+            ? (u.setores || []).map((s) => <span key={s} className="chip">🏭 {SETOR_NM[s] || s}</span>)
+            : <span className="chip rota-warn">sem setor liberado</span>
+        )}
         {inativo
           ? <span className="chip rota-warn">acesso desativado</span>
           : <span className="chip">ativo</span>}
@@ -164,6 +181,25 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
   )
 }
 
+function SetoresPicker({ setores, onToggle }) {
+  return (
+    <div className="field" style={{ marginTop: 10 }}>
+      <label>Setores liberados (o operador só movimenta pedidos nesses setores)</label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+        {SETORES.map((s) => {
+          const on = setores.includes(s.id)
+          return (
+            <button key={s.id} type="button" className="modo-btn" onClick={() => onToggle(s.id)}
+              style={on ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+              {s.nm}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function FormUsuario({ onSalvar, onCancelar }) {
   const { vendedores } = useCadastros()
   const [nome, setNome] = useState('')
@@ -172,8 +208,10 @@ function FormUsuario({ onSalvar, onCancelar }) {
   const [senha2, setSenha2] = useState('')
   const [perfil, setPerfil] = useState('designer')
   const [vendedorNome, setVendedorNome] = useState('')
+  const [setores, setSetores] = useState([])
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState('')
+  const toggleSetor = (id) => setSetores((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
 
   async function salvar() {
     setErro('')
@@ -182,9 +220,10 @@ function FormUsuario({ onSalvar, onCancelar }) {
     if (senha.length < 6) { setErro('A senha precisa ter pelo menos 6 caracteres.'); return }
     if (senha !== senha2) { setErro('As senhas não conferem.'); return }
     if (perfil === 'vendedor' && !vendedorNome) { setErro('Escolha qual vendedor este usuário representa.'); return }
+    if (perfil === 'operador' && !setores.length) { setErro('Libere pelo menos um setor para o operador.'); return }
     setBusy(true)
     try {
-      await onSalvar({ nome, email, senha, perfil, vendedorNome })
+      await onSalvar({ nome, email, senha, perfil, vendedorNome, setores })
     } catch (e) {
       const map = {
         'auth/email-already-in-use': 'Já existe um usuário com este e-mail.',
@@ -255,6 +294,8 @@ function FormUsuario({ onSalvar, onCancelar }) {
         </div>
       )}
 
+      {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
+
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar} disabled={busy}>
           {busy ? 'Criando…' : 'Criar usuário'}
@@ -270,6 +311,8 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
   const [nome, setNome] = useState(u.nome || '')
   const [perfil, setPerfil] = useState(u.perfil || 'designer')
   const [vendedorNome, setVendedorNome] = useState(u.vendedorNome || '')
+  const [setores, setSetores] = useState(u.setores || [])
+  const toggleSetor = (id) => setSetores((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
 
   return (
     <div className="card em_dia" style={{ borderLeftColor: 'var(--accent)' }}>
@@ -299,11 +342,13 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
           </select>
         </div>
       )}
+      {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button className="btn primary" onClick={() => {
           if (!nome.trim()) { alert('Informe o nome.'); return }
           if (perfil === 'vendedor' && !vendedorNome) { alert('Escolha qual vendedor este usuário representa.'); return }
-          onSalvar({ nome, perfil, vendedorNome })
+          if (perfil === 'operador' && !setores.length) { alert('Libere pelo menos um setor para o operador.'); return }
+          onSalvar({ nome, perfil, vendedorNome, setores })
         }}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>
       </div>

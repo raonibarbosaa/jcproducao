@@ -12,8 +12,13 @@ import DataEntrega from './DataEntrega.jsx'
 // O pedido anda como bloco. Cada avanço grava quem/quando. NÃO mostra valor (R$).
 // Fase A: só dono/designer movem (perfil "operador" com liberação por setor vem depois).
 export default function QuadroProducao({ pedidos, clientes }) {
-  const { perfil, nome } = useAuth()
-  const podeMover = perfil === 'dono' || perfil === 'designer'
+  const { perfil, nome, setores } = useAuth()
+  // dono/designer movem qualquer setor; operador só nos setores liberados (o de ORIGEM)
+  const podeMoverEtapa = (etapa) => {
+    if (perfil === 'dono' || perfil === 'designer') return true
+    if (perfil === 'operador') return (setores || []).includes(etapa)
+    return false
+  }
   const [salvando, setSalvando] = useState('')
 
   const porEtapa = {}
@@ -67,7 +72,7 @@ export default function QuadroProducao({ pedidos, clientes }) {
                   {p.etapaPor && (
                     <div className="qcard-log">último avanço: {p.etapaPor}{p.etapaEm ? ` · ${fmtData(p.etapaEm)}` : ''}</div>
                   )}
-                  {podeMover && (
+                  {podeMoverEtapa(e.id) && (
                     <div className="qcard-acoes no-print">
                       {ant && (
                         <button className="mini-btn" title={`Voltar para ${nomeEtapa(ant)}`}

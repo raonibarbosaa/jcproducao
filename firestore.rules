@@ -16,6 +16,9 @@ service cloud.firestore {
     function ehVendedor() {
       return temPerfil() && meu().perfil == 'vendedor';
     }
+    function ehOperador() {
+      return temPerfil() && meu().perfil == 'operador';
+    }
     function meuVendedor() { return meu().vendedorNome; }
 
     // Perfis: cada um lê o próprio doc (para descobrir seu perfil); staff gerencia todos.
@@ -24,11 +27,18 @@ service cloud.firestore {
       allow write: if ehStaff();
     }
 
-    // Pedidos: staff vê tudo; vendedor só os pedidos do SEU vendedor (consulta filtrada).
+    // Pedidos: staff vê tudo; operador vê tudo (precisa do quadro); vendedor só os
+    // pedidos do SEU vendedor (consulta filtrada).
     match /pedidos/{id} {
-      allow read: if ehStaff()
+      allow read: if ehStaff() || ehOperador()
         || (ehVendedor() && resource.data.vendedor == meuVendedor());
-      allow write: if ehStaff();
+      allow create, delete: if ehStaff();
+      // staff atualiza qualquer campo; operador só avança a etapa e só quando
+      // liberado no setor de ORIGEM (etapa atual do pedido).
+      allow update: if ehStaff()
+        || (ehOperador()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['etapa', 'etapaPor', 'etapaEm'])
+            && (resource.data.get('etapa', 'grafica') in meu().get('setores', [])));
     }
 
     // Entregues: somente staff.
