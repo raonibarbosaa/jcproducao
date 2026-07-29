@@ -197,6 +197,28 @@ export function nomeCliente(razaoSocial, clientes) {
   return razaoSocial || ''
 }
 
+// ---------- ETAPAS DE PRODUÇÃO (fluxo por setor — linha Gráfica) ----------
+// O pedido de papel/gráfica anda como bloco: grafica -> montagem -> expedicao.
+// (entrega/financeiro/entregue entram em fase posterior)
+export const ETAPAS_PROD = [
+  { id: 'grafica', nome: 'Gráfica' },
+  { id: 'montagem', nome: 'Montagem' },
+  { id: 'expedicao', nome: 'Expedição' },
+]
+export const ETAPA_IDS = ETAPAS_PROD.map((e) => e.id)
+export const nomeEtapa = (id) => (ETAPAS_PROD.find((e) => e.id === id)?.nome || '')
+export const etapaDe = (p) => (p?.etapa && ETAPA_IDS.includes(p.etapa) ? p.etapa : 'grafica')
+export function proximaEtapa(id) {
+  const i = ETAPA_IDS.indexOf(id)
+  return i >= 0 && i < ETAPA_IDS.length - 1 ? ETAPA_IDS[i + 1] : null
+}
+export function etapaAnterior(id) {
+  const i = ETAPA_IDS.indexOf(id)
+  return i > 0 ? ETAPA_IDS[i - 1] : null
+}
+// pedido pertence ao fluxo da Gráfica? (tem item de linha gráfica)
+export function ehGrafica(p) { return linhasPresentes(p).includes('GRAFICA') }
+
 // ITENS / PRODUTOS
 // itens = array [{ produto: 'SACOLA ...', tipo: <id de MATERIAIS>, unidade: 'kg'|'un'|'' }]
 // MATERIAIS: fonte única dos tipos de material (id, nome, unidade padrão, cor).
@@ -470,6 +492,14 @@ function extraiMaterialPergunta(t) {
   return null
 }
 
+// setor/etapa citado na pergunta (fluxo da gráfica) — ou null
+function extraiEtapa(t) {
+  if (/MONTAGEM/.test(t)) return 'montagem'
+  if (/EXPEDI/.test(t)) return 'expedicao'    // expedição / expedir
+  if (/\bGRAFICA\b/.test(t)) return 'grafica'
+  return null
+}
+
 // { chaveNormalizada -> { nome, mat, qtd, pedidos:Set } }
 // matFiltro null = todos os materiais (cada produto marcado com seu material)
 function mapaProdutosMaterial(lista, itensCad, matFiltro = null) {
@@ -554,6 +584,16 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   const querListarClientes = /CLIENTE/.test(t) &&
     /(QUAIS|QUEM|LISTA|LISTAR|MOSTRA|FALA|DIGA|CLIENTES D[AEO])/.test(t)
   const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
+
+  // ---------- ETAPA / SETOR (fluxo da gráfica): "quantos pedidos na montagem" ----------
+  const etapaPerg = extraiEtapa(t)
+  if (etapaPerg && /(PEDIDO|QUANT|FALTA|SETOR|ANDAMENTO|PRODUCAO)/.test(t)) {
+    const graf = lista.filter((p) => ehGrafica(p))
+    const n = graf.filter((p) => etapaDe(p) === etapaPerg).length
+    const escSemLinha = partes.filter((x) => !(linha && x === `na ${linha.nome}`)).join(' ')
+    const escE = escSemLinha ? ' ' + escSemLinha : ''
+    return `${n === 1 ? 'Tem 1 pedido' : `Tem ${n} pedidos`} na ${nomeEtapa(etapaPerg).toLowerCase()}${escE}.`
+  }
 
   // ---------- PRODUTO POR MATERIAL: por produto / por mês / produto específico ----------
   // Para essas perguntas o mês é sempre considerado (o dito, ou o atual).

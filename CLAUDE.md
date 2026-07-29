@@ -13,8 +13,22 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 **Perfis:** designer · financeiro · dono
 
 > **Processo real da fábrica** (acabamento, montagem, prazo × etapas): ver
-> [`FLUXO_PRODUCAO.md`](FLUXO_PRODUCAO.md). Base para, no futuro, modelar as
-> etapas/estações de produção no sistema.
+> [`FLUXO_PRODUCAO.md`](FLUXO_PRODUCAO.md) (fluxo do mundo real) e
+> [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
+> acabamentos por item, permissões/perfil Operador, fases A–D).
+
+## Produção por setores (fluxo da gráfica) — Fase A no ar
+- Campo **`etapa`** no pedido (`grafica → montagem → expedicao`; `etapaDe(p)` cai em
+  `grafica` por padrão). Helpers em utils: `ETAPAS_PROD`, `etapaDe`, `proximaEtapa`,
+  `etapaAnterior`, `nomeEtapa`, `ehGrafica`.
+- **Quadro por setor** (`src/components/QuadroProducao.jsx`): a página Produção tem toggle
+  **Lista / Quadro**; o Quadro mostra só os pedidos da **linha Gráfica** em colunas
+  (Gráfica·Montagem·Expedição), botão "Concluir → próximo" grava `etapa`/`etapaPor`/`etapaEm`
+  (updateDoc em `pedidos/{idVenda}`). NÃO mostra valor R$. Move: só dono/designer (Fase A).
+- **Voz:** "quantos pedidos na montagem/gráfica", "o que falta expedir" (conta por `etapa`,
+  escopo gráfica; combina com vendedor/rota).
+- **Falta (fases B–D):** perfil Operador + liberação por setor + esconder R$; acabamentos
+  (laminação/furo por item) na Triagem; cauda Expedição→Entrega→Financeiro (baixa).
 
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),

@@ -341,6 +341,36 @@ input, select { font-family: var(--font); }
 .rel-item-bloco { margin-top: 18px; }
 .rel-item-bloco .ib-sub { font-weight: 600; color: var(--text-faint); font-size: 12px; }
 
+/* ---------- QUADRO POR SETOR (Produção — fluxo da gráfica) ---------- */
+.vista-toggle { display: inline-flex; gap: 4px; }
+.quadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.quadro-col {
+  flex: 1; min-width: 300px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column;
+}
+.qc-head {
+  padding: 11px 14px; font-weight: 800; color: var(--text); font-size: 15px;
+  border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px;
+}
+.qc-count { background: var(--accent); color: #1a1205; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 1px 9px; }
+.qc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 48px; }
+.qc-vazio { color: var(--text-faint); font-size: 13px; text-align: center; padding: 10px; }
+.qcard {
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 10px; padding: 10px 12px;
+}
+.qcard.atrasado { border-left-color: var(--danger); }
+.qcard-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.qcard-top .cliente { font-weight: 700; color: var(--text); font-size: 14px; }
+.qcard-top .idv { color: var(--text-faint); font-size: 12px; font-family: var(--mono); }
+.qcard-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; align-items: center; }
+.qcard .itens { list-style: none; margin: 6px 0 0; border-top: 1px dashed var(--border); padding-top: 6px; font-size: 13px; }
+.qcard .itens li { display: flex; justify-content: space-between; gap: 10px; color: var(--text-dim); padding: 1px 0; }
+.qcard .itens .q { font-family: var(--mono); color: var(--text); }
+.qcard-log { font-size: 11px; color: var(--text-faint); margin-top: 7px; }
+.qcard-acoes { display: flex; gap: 6px; margin-top: 9px; align-items: center; }
+.qc-avancar { flex: 1; justify-content: center; font-size: 13px; padding: 9px; }
+
 /* total de linha na impressão da Produção */
 .pr-total-linha { font-size: 11px; font-weight: 700; margin: 2px 0 8px; padding-left: 4px; }
 

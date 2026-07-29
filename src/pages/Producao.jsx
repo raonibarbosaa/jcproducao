@@ -5,17 +5,19 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
-  MATERIAIS, nomeDoMaterial,
+  MATERIAIS, nomeDoMaterial, ehGrafica,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
+import QuadroProducao from '../components/QuadroProducao.jsx'
 
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
+  const [vista, setVista] = useState('lista')   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
   const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
   const [filtros, setFiltros] = useState({})
@@ -27,6 +29,9 @@ export default function Producao({ pedidos }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
+
+  // pedidos do fluxo da GRÁFICA (para o quadro por setor) — respeita os filtros do FiltrosBar
+  const graficaPedidos = filtraPedidos(categorizados.filter((p) => ehGrafica(p)), filtros, clientes)
 
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
@@ -118,31 +123,49 @@ export default function Producao({ pedidos }) {
   return (
     <>
       <div className="toolbar no-print">
-        <h1 className="page-title">Lista de Produção
+        <h1 className="page-title">{vista === 'quadro' ? 'Produção · Quadro (Gráfica)' : 'Lista de Produção'}
           <small>
-            {filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`}
+            {vista === 'quadro'
+              ? `${graficaPedidos.length} pedido(s) no fluxo da gráfica`
+              : (filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`)}
           </small>
         </h1>
         <div className="spacer" />
-        <select className="btn" value={filtroLinha} onChange={(e) => setFiltroLinha(e.target.value)}>
-          <option value="">Todas as linhas</option>
-          {MODO_ORDER.map((m) => <option key={m} value={m}>{MODO_NM[m]}</option>)}
-        </select>
-        <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} title="Filtrar por material">
-          <option value="">Todos os materiais</option>
-          {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
-        </select>
-        {podeEditarData && lista.length > 0 && (
+        <div className="vista-toggle">
+          <button className={`btn${vista === 'lista' ? ' primary' : ''}`} onClick={() => setVista('lista')}>☰ Lista</button>
+          <button className={`btn${vista === 'quadro' ? ' primary' : ''}`} onClick={() => setVista('quadro')} title="Quadro por setor (fluxo da gráfica)">▦ Quadro</button>
+        </div>
+        {vista === 'lista' && (
+          <select className="btn" value={filtroLinha} onChange={(e) => setFiltroLinha(e.target.value)}>
+            <option value="">Todas as linhas</option>
+            {MODO_ORDER.map((m) => <option key={m} value={m}>{MODO_NM[m]}</option>)}
+          </select>
+        )}
+        {vista === 'lista' && (
+          <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} title="Filtrar por material">
+            <option value="">Todos os materiais</option>
+            {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
+          </select>
+        )}
+        {vista === 'lista' && podeEditarData && lista.length > 0 && (
           <button className="btn" onClick={selecionarTodos}>
             {todosSelecionados ? '☑ Limpar seleção' : `☐ Selecionar todos (${idsVisiveis.length})`}
           </button>
         )}
-        <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
+        {vista === 'lista' && <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>}
       </div>
 
       <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
 
-      {/* ---------- TELA ---------- */}
+      {vista === 'quadro' && (
+        <div className="screen-only">
+          {graficaPedidos.length === 0
+            ? <div className="empty"><div className="big">🏭</div>Nenhum pedido de papel/gráfica no momento.</div>
+            : <QuadroProducao pedidos={graficaPedidos} clientes={clientes} />}
+        </div>
+      )}
+      {/* ---------- TELA (lista) ---------- */}
+      {vista === 'lista' && (
       <div className="screen-only">
         {lista.length === 0 ? (
           <div className="empty"><div className="big">🏭</div>
@@ -199,9 +222,10 @@ export default function Producao({ pedidos }) {
           ))
         )}
       </div>
+      )}
 
       {/* ---------- BARRA DE ALTERAÇÃO EM LOTE (aparece com seleção) ---------- */}
-      {podeEditarData && sel.length > 0 && (
+      {vista === 'lista' && podeEditarData && sel.length > 0 && (
         <div className="batch-bar no-print">
           <span className="bb-count">{sel.length} pedido(s) selecionado(s)</span>
           <label className="bb-field">
