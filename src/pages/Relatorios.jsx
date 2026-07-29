@@ -3,15 +3,14 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, fmtData, previsaoDe,
   linhaDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtQtd,
   vendedoresDe, materialDoItem, normaliza,
+  MATERIAIS, nomeDoMaterial, corDoMaterial, unidadeDoMaterial,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 
-const MATERIAL_NM = { papel: 'Papel', plastico: 'Plástico' }
-
-// Relatório de consumo físico (kg de plástico, unidade de papel) por período,
-// com quebra por LINHA e por ROTA. Regra: plástico = kg, papel = unidade.
-// Filtro de material (papel × plástico) e, quando "Papel", seleção de itens
-// (caixas de seleção) para gerar relatório de um, dois ou mais itens de papel.
+// Relatório de consumo físico por período, com quebra por LINHA e por ROTA.
+// Regra: plástico em kg; papel, etiquetas e alça torcida em unidade.
+// Filtro de material e, quando um material é escolhido, seleção de itens
+// (caixas de seleção) para gerar relatório de um, dois ou mais itens.
 export default function Relatorios({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const [ini, setIni] = useState('')
@@ -19,8 +18,8 @@ export default function Relatorios({ pedidos }) {
   const [vendedor, setVendedor] = useState('')
   const [linha, setLinha] = useState('')
   const [rota, setRota] = useState('')
-  const [material, setMaterial] = useState('')            // '' | 'plastico' | 'papel'
-  const [itensOff, setItensOff] = useState(() => new Set()) // itens de papel DESmarcados (chave normalizada)
+  const [material, setMaterial] = useState('')            // '' | id de material
+  const [itensOff, setItensOff] = useState(() => new Set()) // itens DESmarcados (chave normalizada)
 
   // previsão viva + só categorizados
   const base = pedidos
@@ -45,18 +44,13 @@ export default function Relatorios({ pedidos }) {
     return true
   })
 
-  const soPapel = material === 'papel'
-  const soPlast = material === 'plastico'
-  const showPlast = !soPapel   // esconde coluna de plástico quando "só Papel"
-  const showPapel = !soPlast   // esconde coluna de papel quando "só Plástico"
-
   // explode item a item: aplica a linha (por item), o material e a seleção de
-  // itens. O catálogo de itens de papel (p/ as caixas de seleção) é montado
-  // ANTES do filtro de seleção, pra o item continuar na lista mesmo desmarcado.
+  // itens. O catálogo de itens do material escolhido é montado ANTES do filtro
+  // de seleção, pra o item continuar na lista mesmo desmarcado.
   const porLinha = {}   // { LINHA: totais }
   const porRota = {}    // { ROTA: totais }
   let geral = TOTAIS_ZERO
-  const itensPapelMap = {}   // chave -> { nome, qtd }  (todos os itens de papel do escopo)
+  const itensSelMap = {}   // chave -> { nome, qtd }  (itens do material escolhido)
   for (const p of filtrados) {
     const itens = p.itens || []
     itens.forEach((it, i) => {
@@ -64,16 +58,16 @@ export default function Relatorios({ pedidos }) {
       if (linha && l !== linha) return
       const mat = materialDoItem(it, itensCad)
 
-      // cataloga item de papel do escopo (independe da seleção/desmarcação)
-      if (mat === 'papel') {
+      // cataloga itens do material escolhido (independe da desmarcação)
+      if (material && mat === material) {
         const k = normaliza(it.produto)
-        if (!itensPapelMap[k]) itensPapelMap[k] = { nome: (it.produto || '').trim() || '—', qtd: 0 }
-        itensPapelMap[k].qtd += Number(it.qtd) || 0
+        if (!itensSelMap[k]) itensSelMap[k] = { nome: (it.produto || '').trim() || '—', qtd: 0 }
+        itensSelMap[k].qtd += Number(it.qtd) || 0
       }
 
-      // filtro de material + seleção de itens de papel (caixas)
+      // filtro de material + seleção de itens (caixas)
       if (material && mat !== material) return
-      if (soPapel && itensOff.has(normaliza(it.produto))) return
+      if (material && itensOff.has(normaliza(it.produto))) return
 
       const tot = totaisPorMaterial([it], itensCad)
       porLinha[l] = somaTotais(porLinha[l] || TOTAIS_ZERO, tot)
@@ -86,14 +80,20 @@ export default function Relatorios({ pedidos }) {
   const linhasOrd = MODO_ORDER.filter((m) => porLinha[m])
   const rotasOrd = Object.keys(porRota).sort()
 
-  // itens de papel: lista p/ as caixas (alfabética) e ranking selecionado (por qtd)
-  const itensPapel = Object.entries(itensPapelMap).map(([key, v]) => ({ key, ...v }))
-  const itensPapelAlfa = [...itensPapel].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-  const itensPapelSel = itensPapel
-    .filter((it) => !itensOff.has(it.key))
-    .sort((a, b) => b.qtd - a.qtd)
-  const nSel = itensPapelSel.length
-  const nTotalItens = itensPapel.length
+  // materiais a exibir: o filtrado, ou todos os presentes (qtd > 0)
+  const matsPresentes = material
+    ? [material]
+    : MATERIAIS.map((m) => m.id).filter((id) => geral[id] > 0)
+  const colMats = matsPresentes.length ? matsPresentes : ['plastico', 'papel']
+
+  // itens do material escolhido: caixas (alfabética) e ranking selecionado (por qtd)
+  const itens = Object.entries(itensSelMap).map(([key, v]) => ({ key, ...v }))
+  const itensAlfa = [...itens].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  const itensSel = itens.filter((it) => !itensOff.has(it.key)).sort((a, b) => b.qtd - a.qtd)
+  const nSel = itensSel.length
+  const nTotalItens = itens.length
+  const nomeSel = material ? nomeDoMaterial(material) : ''
+  const unidSel = material ? unidadeDoMaterial(material) : ''
 
   const toggleItem = (k) => setItensOff((prev) => {
     const n = new Set(prev)
@@ -102,7 +102,7 @@ export default function Relatorios({ pedidos }) {
     return n
   })
   const marcarTodos = () => setItensOff(new Set())
-  const desmarcarTodos = () => setItensOff(new Set(itensPapel.map((i) => i.key)))
+  const desmarcarTodos = () => setItensOff(new Set(itens.map((i) => i.key)))
 
   const temFiltro = ini || fim || vendedor || linha || rota || material
   const limpar = () => {
@@ -113,15 +113,17 @@ export default function Relatorios({ pedidos }) {
   const periodoTxt = (ini || fim)
     ? `${ini ? fmtData(ini + 'T00:00:00') : '…'} a ${fim ? fmtData(fim + 'T00:00:00') : '…'}`
     : 'todas as datas'
-  const materialTxt = material ? ` · só ${MATERIAL_NM[material]}` : ''
-  const itensTxt = (soPapel && nTotalItens && nSel !== nTotalItens)
+  const materialTxt = material ? ` · só ${nomeSel}` : ''
+  const itensTxt = (material && nTotalItens && nSel !== nTotalItens)
     ? ` · ${nSel} de ${nTotalItens} item(ns)` : ''
+
+  const colHead = (id) => `${nomeDoMaterial(id)} (${unidadeDoMaterial(id)})`
 
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Relatórios
-          <small>consumo físico · plástico em kg · papel em unidade</small>
+          <small>consumo físico · plástico em kg · demais em unidade</small>
         </h1>
         <div className="spacer" />
         <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
@@ -145,29 +147,28 @@ export default function Relatorios({ pedidos }) {
           <option value="">Todas as rotas</option>
           {rotas.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select className="filtro-input" value={material} onChange={(e) => setMaterial(e.target.value)} title="Filtrar por material (papel × plástico)">
+        <select className="filtro-input" value={material} onChange={(e) => { setMaterial(e.target.value); setItensOff(new Set()) }} title="Filtrar por material">
           <option value="">Todos os materiais</option>
-          <option value="papel">Só Papel</option>
-          <option value="plastico">Só Plástico</option>
+          {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
         </select>
         {temFiltro && <button className="btn-clear" onClick={limpar}>✕ limpar filtros</button>}
       </div>
 
-      {/* ---------- SELEÇÃO DE ITENS (só quando Papel) ---------- */}
-      {soPapel && (
+      {/* ---------- SELEÇÃO DE ITENS (quando um material é escolhido) ---------- */}
+      {material && (
         <div className="rel-itens-sel no-print">
           <div className="ris-cab">
-            <span className="filtro-label">Itens de papel</span>
+            <span className="filtro-label">Itens de {nomeSel.toLowerCase()}</span>
             <span className="ris-count">{nSel}/{nTotalItens} selecionado(s)</span>
             <div className="spacer" />
             <button className="ris-mini" onClick={marcarTodos} disabled={!nTotalItens}>marcar todos</button>
             <button className="ris-mini" onClick={desmarcarTodos} disabled={!nTotalItens}>limpar</button>
           </div>
           {nTotalItens === 0 ? (
-            <div className="ris-vazio">Nenhum item de papel no filtro atual.</div>
+            <div className="ris-vazio">Nenhum item de {nomeSel.toLowerCase()} no filtro atual.</div>
           ) : (
             <div className="rel-chks">
-              {itensPapelAlfa.map((it) => {
+              {itensAlfa.map((it) => {
                 const on = !itensOff.has(it.key)
                 return (
                   <label key={it.key} className={`rel-chk${on ? '' : ' off'}`}>
@@ -189,18 +190,12 @@ export default function Relatorios({ pedidos }) {
 
       {/* total geral em destaque */}
       <div className="rel-cards">
-        {showPlast && (
-          <div className="rel-total-card plastico">
-            <div className="rt-label">Plástico</div>
-            <div className="rt-valor">{fmtQtd(geral.plastico)} <span>kg</span></div>
+        {matsPresentes.map((id) => (
+          <div key={id} className="rel-total-card" style={{ borderLeft: `4px solid ${corDoMaterial(id)}` }}>
+            <div className="rt-label">{nomeDoMaterial(id)}</div>
+            <div className="rt-valor">{fmtQtd(geral[id])} <span>{unidadeDoMaterial(id)}</span></div>
           </div>
-        )}
-        {showPapel && (
-          <div className="rel-total-card papel">
-            <div className="rt-label">Papel</div>
-            <div className="rt-valor">{fmtQtd(geral.papel)} <span>un</span></div>
-          </div>
-        )}
+        ))}
         {geral.outro > 0 && (
           <div className="rel-total-card outro">
             <div className="rt-label">Outros (sem material)</div>
@@ -220,22 +215,19 @@ export default function Relatorios({ pedidos }) {
               <table className="rel-tab">
                 <thead><tr>
                   <th>Linha</th>
-                  {showPlast && <th className="q">Plástico (kg)</th>}
-                  {showPapel && <th className="q">Papel (un)</th>}
+                  {colMats.map((id) => <th key={id} className="q">{colHead(id)}</th>)}
                 </tr></thead>
                 <tbody>
                   {linhasOrd.map((m) => (
                     <tr key={m}>
                       <td><span className="rel-dot" style={{ background: MODO_COR[m] }} />{MODO_NM[m]}</td>
-                      {showPlast && <td className="q">{fmtQtd(porLinha[m].plastico)}</td>}
-                      {showPapel && <td className="q">{fmtQtd(porLinha[m].papel)}</td>}
+                      {colMats.map((id) => <td key={id} className="q">{fmtQtd(porLinha[m][id])}</td>)}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot><tr>
                   <td>Total</td>
-                  {showPlast && <td className="q">{fmtQtd(geral.plastico)}</td>}
-                  {showPapel && <td className="q">{fmtQtd(geral.papel)}</td>}
+                  {colMats.map((id) => <td key={id} className="q">{fmtQtd(geral[id])}</td>)}
                 </tr></tfoot>
               </table>
             </div>
@@ -246,47 +238,44 @@ export default function Relatorios({ pedidos }) {
               <table className="rel-tab">
                 <thead><tr>
                   <th>Rota</th>
-                  {showPlast && <th className="q">Plástico (kg)</th>}
-                  {showPapel && <th className="q">Papel (un)</th>}
+                  {colMats.map((id) => <th key={id} className="q">{colHead(id)}</th>)}
                 </tr></thead>
                 <tbody>
                   {rotasOrd.map((r) => (
                     <tr key={r}>
                       <td>📍 {r}</td>
-                      {showPlast && <td className="q">{fmtQtd(porRota[r].plastico)}</td>}
-                      {showPapel && <td className="q">{fmtQtd(porRota[r].papel)}</td>}
+                      {colMats.map((id) => <td key={id} className="q">{fmtQtd(porRota[r][id])}</td>)}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot><tr>
                   <td>Total</td>
-                  {showPlast && <td className="q">{fmtQtd(geral.plastico)}</td>}
-                  {showPapel && <td className="q">{fmtQtd(geral.papel)}</td>}
+                  {colMats.map((id) => <td key={id} className="q">{fmtQtd(geral[id])}</td>)}
                 </tr></tfoot>
               </table>
             </div>
           </div>
 
-          {/* por item (só quando Papel) — venda de itens por tipo de item */}
-          {soPapel && (
+          {/* por item (quando um material é escolhido) — venda de itens por tipo */}
+          {material && (
             <div className="rel-bloco rel-item-bloco">
-              <h3>Por item · papel
+              <h3>Por item · {nomeSel.toLowerCase()}
                 {nSel !== nTotalItens && <small className="ib-sub"> ({nSel} de {nTotalItens} selecionado{nSel === 1 ? '' : 's'})</small>}
               </h3>
               {nSel === 0 ? (
-                <div className="ris-vazio">Nenhum item de papel selecionado.</div>
+                <div className="ris-vazio">Nenhum item de {nomeSel.toLowerCase()} selecionado.</div>
               ) : (
                 <table className="rel-tab">
-                  <thead><tr><th>Item</th><th className="q">Papel (un)</th></tr></thead>
+                  <thead><tr><th>Item</th><th className="q">{nomeSel} ({unidSel})</th></tr></thead>
                   <tbody>
-                    {itensPapelSel.map((it) => (
+                    {itensSel.map((it) => (
                       <tr key={it.key}>
-                        <td><span className="rel-dot" style={{ background: '#1A5FB4' }} />{it.nome}</td>
+                        <td><span className="rel-dot" style={{ background: corDoMaterial(material) }} />{it.nome}</td>
                         <td className="q">{fmtQtd(it.qtd)}</td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot><tr><td>Total</td><td className="q">{fmtQtd(geral.papel)}</td></tr></tfoot>
+                  <tfoot><tr><td>Total</td><td className="q">{fmtQtd(geral[material])}</td></tr></tfoot>
                 </table>
               )}
             </div>

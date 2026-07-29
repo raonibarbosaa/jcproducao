@@ -238,9 +238,9 @@ export default function AssistenteVoz({ pedidos }) {
             <div className="assist-aviso">🔊 Se não ouvir a resposta, aumente o volume do aparelho.</div>
 
             <div className="assist-dicas">
-              Ex.: “quantas sacolas por produto no mês”, “quais produtos de papel”,
-              “quantas sacolas da [produto] no mês”, “quantos pedidos por produto de papel no mês”,
-              “quantos pedidos pra entregar”, “quais clientes da rota 01 do Sérgio”.
+              Ex.: “quantas sacolas por produto no mês”, “quantas etiquetas por produto no mês”,
+              “quantas alças por produto no mês”, “quais produtos de papel”,
+              “quantas sacolas da [produto] no mês”, “quantos pedidos pra entregar”.
             </div>
           </div>
         </div>

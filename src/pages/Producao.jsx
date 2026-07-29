@@ -5,14 +5,12 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
+  MATERIAIS, nomeDoMaterial,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
-
-// rótulos do filtro de material (plástico = kg, papel = unidade)
-const MATERIAL_NM = { papel: 'Papel', plastico: 'Plástico' }
 
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
@@ -130,10 +128,9 @@ export default function Producao({ pedidos }) {
           <option value="">Todas as linhas</option>
           {MODO_ORDER.map((m) => <option key={m} value={m}>{MODO_NM[m]}</option>)}
         </select>
-        <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} title="Filtrar por material (papel × plástico)">
+        <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} title="Filtrar por material">
           <option value="">Todos os materiais</option>
-          <option value="papel">Só Papel</option>
-          <option value="plastico">Só Plástico</option>
+          {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
         </select>
         {podeEditarData && lista.length > 0 && (
           <button className="btn" onClick={selecionarTodos}>
@@ -271,10 +268,10 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, filtro
   return (
     <div className="print-only">
       <div className="pr-head">
-        <h1>JC Sacolas · Lista de Produção{filtroMaterial ? ` — só ${MATERIAL_NM[filtroMaterial]}` : ''}</h1>
+        <h1>JC Sacolas · Lista de Produção{filtroMaterial ? ` — só ${nomeDoMaterial(filtroMaterial)}` : ''}</h1>
         <div className="meta">
           Impresso em {hoje}<br />
-          {total} pedido(s){filtroLinha ? ` · linha ${MODO_NM[filtroLinha]}` : ''}{filtroMaterial ? ` · só ${MATERIAL_NM[filtroMaterial]}` : ''}
+          {total} pedido(s){filtroLinha ? ` · linha ${MODO_NM[filtroLinha]}` : ''}{filtroMaterial ? ` · só ${nomeDoMaterial(filtroMaterial)}` : ''}
           {resumo && <><br />{resumo}</>}
         </div>
       </div>

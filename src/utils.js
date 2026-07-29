@@ -198,12 +198,21 @@ export function nomeCliente(razaoSocial, clientes) {
 }
 
 // ITENS / PRODUTOS
-// itens = array [{ produto: 'SACOLA ...', tipo: 'plastico'|'papel'|'', unidade: 'kg'|'un'|'' }]
-// opções de tipo de material e unidade (tipo e unidade são INDEPENDENTES)
-export const TIPOS_ITEM = [
-  { id: 'plastico', nome: 'Plástico' },
-  { id: 'papel', nome: 'Papel' },
+// itens = array [{ produto: 'SACOLA ...', tipo: <id de MATERIAIS>, unidade: 'kg'|'un'|'' }]
+// MATERIAIS: fonte única dos tipos de material (id, nome, unidade padrão, cor).
+// Regra de contagem: PLÁSTICO em KG; PAPEL, ETIQUETAS e ALÇA TORCIDA em UNIDADE.
+export const MATERIAIS = [
+  { id: 'plastico', nome: 'Plástico', unidade: 'kg', cor: '#1C7A4E' },
+  { id: 'papel', nome: 'Papel', unidade: 'un', cor: '#1A5FB4' },
+  { id: 'etiquetas', nome: 'Etiquetas', unidade: 'un', cor: '#C08A1E' },
+  { id: 'alca_torcida', nome: 'Alça Torcida', unidade: 'un', cor: '#8E44AD' },
 ]
+export const MATERIAL_IDS = MATERIAIS.map((m) => m.id)
+export const nomeDoMaterial = (id) => (MATERIAIS.find((m) => m.id === id)?.nome || '')
+export const corDoMaterial = (id) => (MATERIAIS.find((m) => m.id === id)?.cor || 'var(--warn)')
+
+// opções de tipo de material e unidade (tipo e unidade são INDEPENDENTES)
+export const TIPOS_ITEM = MATERIAIS.map((m) => ({ id: m.id, nome: m.nome }))
 export const UNIDADES_ITEM = [
   { id: 'kg', nome: 'kg' },
   { id: 'un', nome: 'un' },
@@ -231,31 +240,37 @@ export function infoItem(produto, itens) {
 }
 
 // ---------- MATERIAL / UNIDADE FÍSICA (regra do negócio) ----------
-// Regra: PLÁSTICO conta em KG, PAPEL conta em UNIDADE.
 // O material vem do cadastro de Itens (tipo); se o item não estiver cadastrado,
-// infere pelo texto do produto/grupo ("PLÁST..." -> plástico, "PAPEL" -> papel).
-export const UNID_POR_MATERIAL = { plastico: 'kg', papel: 'un' }
+// infere pelo texto do produto/grupo. Etiqueta/Alça são mais específicos e vêm
+// antes de plástico/papel na inferência.
+export const UNID_POR_MATERIAL = Object.fromEntries(MATERIAIS.map((m) => [m.id, m.unidade]))
 export function unidadeDoMaterial(mat) { return UNID_POR_MATERIAL[mat] || '' }
 
 export function materialDoItem(it, itensCad) {
   const info = infoItem(it?.produto, itensCad)
-  if (info.tipo) return info.tipo // 'plastico' | 'papel'
+  if (info.tipo) return info.tipo // id de MATERIAIS (cadastro tem prioridade)
   const t = normaliza(`${it?.produto || ''} ${it?.grupo || ''}`)
+  if (/ETIQUETA/.test(t)) return 'etiquetas'
+  if (/ALCA TORCIDA/.test(t)) return 'alca_torcida'
   if (/PLAST/.test(t)) return 'plastico'
   if (/PAPEL/.test(t)) return 'papel'
   return ''
 }
 
+// totais zerados: uma chave por material + 'outro' (item sem material)
+export const TOTAIS_ZERO = Object.freeze(
+  MATERIAIS.reduce((o, m) => { o[m.id] = 0; return o }, { outro: 0 })
+)
+
 // soma as quantidades de uma lista de itens por material.
-// devolve { plastico: <kg>, papel: <un>, outro: <n> }
+// devolve { <cada material>: <qtd>, outro: <n> }
 export function totaisPorMaterial(itens, itensCad) {
-  const t = { plastico: 0, papel: 0, outro: 0 }
+  const t = { ...TOTAIS_ZERO }
   for (const it of itens || []) {
     const q = Number(it?.qtd) || 0
     if (!q) continue
     const mat = materialDoItem(it, itensCad)
-    if (mat === 'plastico') t.plastico += q
-    else if (mat === 'papel') t.papel += q
+    if (mat && mat in t) t[mat] += q
     else t.outro += q
   }
   return t
@@ -263,9 +278,10 @@ export function totaisPorMaterial(itens, itensCad) {
 
 // soma dois objetos de totais (para acumular rota -> linha -> total)
 export function somaTotais(a, b) {
-  return { plastico: a.plastico + b.plastico, papel: a.papel + b.papel, outro: a.outro + b.outro }
+  const r = {}
+  for (const k of Object.keys(TOTAIS_ZERO)) r[k] = ((a && a[k]) || 0) + ((b && b[k]) || 0)
+  return r
 }
-export const TOTAIS_ZERO = { plastico: 0, papel: 0, outro: 0 }
 
 // número de quantidade em pt-BR (kg pode ter casas; unidade é inteiro)
 export function fmtQtd(n) {
@@ -275,12 +291,11 @@ export function fmtQtd(n) {
     : v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 3 })
 }
 
-// texto "Plástico: 100 kg · Papel: 200 un"
+// texto "Plástico: 100 kg · Papel: 200 un · Etiquetas: 50 un"
 export function fmtTotais(t) {
   const partes = []
-  if (t.plastico) partes.push(`Plástico: ${fmtQtd(t.plastico)} kg`)
-  if (t.papel) partes.push(`Papel: ${fmtQtd(t.papel)} un`)
-  if (t.outro) partes.push(`Outros: ${fmtQtd(t.outro)}`)
+  for (const m of MATERIAIS) if (t && t[m.id]) partes.push(`${m.nome}: ${fmtQtd(t[m.id])} ${m.unidade}`)
+  if (t && t.outro) partes.push(`Outros: ${fmtQtd(t.outro)}`)
   return partes.length ? partes.join(' · ') : '—'
 }
 
@@ -429,22 +444,44 @@ function extraiMes(t) {
 }
 function emMes(d, mi) { if (!d || !mi) return false; const x = new Date(d); return x >= mi.ini && x <= mi.fim }
 
-// ---------- PRODUTOS DE PAPEL (para as perguntas por produto) ----------
+// ---------- PRODUTOS POR MATERIAL (para as perguntas por produto) ----------
 // palavras comuns que NÃO servem para identificar um produto pelo nome falado
-const STOP_PROD = new Set(['SACOLA', 'SACOLAS', 'CAIXA', 'CAIXAS', 'PAPEL', 'PLASTICO', 'PLASTICA', 'PRODUTO',
-  'PRODUTOS', 'ITEM', 'ITENS', 'PEDIDO', 'PEDIDOS', 'ENTREGAR', 'ENTREGA', 'MES', 'MESES', 'QUANTAS', 'QUANTOS',
-  'QUANTA', 'QUANTO', 'TEM', 'TEMOS', 'PARA', 'POR', 'COM', 'SEM', 'UNIDADE', 'UNIDADES', 'PECA', 'PECAS',
-  'QUAL', 'QUAIS', 'SABER', 'FALA', 'DIGA', 'MOSTRA', 'LISTA', 'LISTAR', 'ESSE', 'ESSA', 'ESTE', 'ESTA', 'NESSE'])
+const STOP_PROD = new Set(['SACOLA', 'SACOLAS', 'CAIXA', 'CAIXAS', 'PAPEL', 'PLASTICO', 'PLASTICA', 'ETIQUETA',
+  'ETIQUETAS', 'ALCA', 'ALCAS', 'TORCIDA', 'TORCIDAS', 'PRODUTO', 'PRODUTOS', 'ITEM', 'ITENS', 'PEDIDO', 'PEDIDOS',
+  'ENTREGAR', 'ENTREGA', 'MES', 'MESES', 'QUANTAS', 'QUANTOS', 'QUANTA', 'QUANTO', 'TEM', 'TEMOS', 'PARA', 'POR',
+  'COM', 'SEM', 'UNIDADE', 'UNIDADES', 'PECA', 'PECAS', 'QUAL', 'QUAIS', 'SABER', 'FALA', 'DIGA', 'MOSTRA',
+  'LISTA', 'LISTAR', 'ESSE', 'ESSA', 'ESTE', 'ESTA', 'NESSE'])
 
-// { chaveNormalizada -> { nome, qtd, pedidos:Set } } só de itens de PAPEL
-function mapaProdutosPapel(lista, itensCad) {
+// como falar a quantidade de cada material (singular/plural do "item" contado)
+const FALA_MATERIAL = {
+  papel: { s: 'sacola de papel', p: 'sacolas de papel' },
+  etiquetas: { s: 'etiqueta', p: 'etiquetas' },
+  alca_torcida: { s: 'alça torcida', p: 'alças torcidas' },
+  plastico: { s: 'quilo de plástico', p: 'quilos de plástico' },
+}
+const falaQtd = (mat, q) => `${q} ${q === 1 ? (FALA_MATERIAL[mat]?.s || 'item') : (FALA_MATERIAL[mat]?.p || 'itens')}`
+
+// material citado na pergunta (ou null)
+function extraiMaterialPergunta(t) {
+  if (/ETIQUETA/.test(t)) return 'etiquetas'
+  if (/ALCA/.test(t)) return 'alca_torcida'   // texto já normalizado (sem cedilha)
+  if (/PLAST/.test(t)) return 'plastico'
+  if (/PAPEL/.test(t)) return 'papel'
+  return null
+}
+
+// { chaveNormalizada -> { nome, mat, qtd, pedidos:Set } }
+// matFiltro null = todos os materiais (cada produto marcado com seu material)
+function mapaProdutosMaterial(lista, itensCad, matFiltro = null) {
   const map = {}
   for (const p of lista || []) {
     for (const it of (p.itens || [])) {
-      if (materialDoItem(it, itensCad) !== 'papel') continue
+      const mat = materialDoItem(it, itensCad)
+      if (!mat) continue
+      if (matFiltro && mat !== matFiltro) continue
       const norm = normaliza(it.produto)
       if (!norm) continue
-      if (!map[norm]) map[norm] = { nome: (it.produto || '').trim() || '—', qtd: 0, pedidos: new Set() }
+      if (!map[norm]) map[norm] = { nome: (it.produto || '').trim() || '—', mat, qtd: 0, pedidos: new Set() }
       map[norm].qtd += Number(it.qtd) || 0
       map[norm].pedidos.add(p.id != null ? p.id : p)
     }
@@ -452,8 +489,8 @@ function mapaProdutosPapel(lista, itensCad) {
   return map
 }
 
-// acha, entre os produtos de papel do escopo, o citado na pergunta (por palavras)
-function achaProdutoPapel(t, mapa) {
+// acha, entre os produtos do escopo, o citado na pergunta (por palavras)
+function achaProdutoMaterial(t, mapa) {
   const qTokens = new Set((t.split(/[^A-Z0-9]+/) || []).filter((w) => w.length >= 3 && !STOP_PROD.has(w)))
   if (!qTokens.size) return null
   let best = null, bestScore = 0
@@ -511,52 +548,56 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   const nPed = lista.length
 
   // ---------- métricas / intenções ----------
-  const querProduto = /(PRODUTO|SACOLA|ITEM|ITENS|UNIDADE|PE[CÇ]A)/.test(t)
+  const querProduto = /(PRODUTO|SACOLA|ITEM|ITENS|UNIDADE|PE[CÇ]A|ETIQUETA|ALCA)/.test(t)
   const querValor = /(VALOR|RECEBER|REAIS|DINHEIRO|FATURAR)/.test(t)
   const querClienteTop = /(QUAL CLIENTE|CLIENTE COM MAIS|MAIOR CLIENTE|MAIS PEDIDO)/.test(t)
   const querListarClientes = /CLIENTE/.test(t) &&
     /(QUAIS|QUEM|LISTA|LISTAR|MOSTRA|FALA|DIGA|CLIENTES D[AEO])/.test(t)
   const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
 
-  // ---------- PRODUTO DE PAPEL: por produto / por mês / produto específico ----------
+  // ---------- PRODUTO POR MATERIAL: por produto / por mês / produto específico ----------
   // Para essas perguntas o mês é sempre considerado (o dito, ou o atual).
   const querListarProdutos = /PRODUTO/.test(t) && /(QUAIS|QUE PRODUTOS|LISTA|LISTAR|MOSTRA|FALA|DIGA|NOMES)/.test(t)
   const querPorProduto = /(POR PRODUTO|CADA PRODUTO|PRODUTO A PRODUTO|POR ITEM|POR TIPO)/.test(t)
+  const matPerg = extraiMaterialPergunta(t)   // material citado, ou null
+  const matAgg = matPerg || 'papel'           // agregados sem material citado -> papel
+  const matLabel = (id) => nomeDoMaterial(id).toLowerCase()
   const mesProd = mesDito || mesCorrente()
   const listaProd = mesDito ? lista : lista.filter((p) => emMes(previsaoDe(p, vendedores), mesProd))
-  const mapaPapel = mapaProdutosPapel(listaProd, itensCad)
   const escProd = partes.filter((x) => !x.startsWith('em ')).join(' ')
   const escProdTxt = escProd ? ' ' + escProd : ''
 
-  // produto específico (não quando é pergunta agregada de cliente/valor/por-produto)
+  // produto específico (qualquer material) — não quando é pergunta agregada
   if (!querPorProduto && !querListarProdutos && !querListarClientes && !querClienteTop && !querValor) {
-    const prod = achaProdutoPapel(t, mapaPapel)
+    const prod = achaProdutoMaterial(t, mapaProdutosMaterial(listaProd, itensCad, matPerg))
     if (prod) {
-      const q = prod.qtd, np = prod.pedidos.size
-      return `${prod.nome}, em ${mesProd.nome}: ${q} ${q === 1 ? 'sacola' : 'sacolas'} de papel para entregar${escProdTxt}, em ${np} ${np === 1 ? 'pedido' : 'pedidos'}.`
+      const np = prod.pedidos.size
+      return `${prod.nome}, em ${mesProd.nome}: ${falaQtd(prod.mat, prod.qtd)} para entregar${escProdTxt}, em ${np} ${np === 1 ? 'pedido' : 'pedidos'}.`
     }
   }
 
-  // listar os produtos de papel do mês
+  // listar os produtos (do material) do mês
   if (querListarProdutos) {
-    const nomes = Object.values(mapaPapel).map((x) => x.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    if (!nomes.length) return `Não há produtos de papel para entregar em ${mesProd.nome}${escProdTxt}.`
+    const nomes = Object.values(mapaProdutosMaterial(listaProd, itensCad, matAgg)).map((x) => x.nome).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    if (!nomes.length) return `Não há produtos de ${matLabel(matAgg)} para entregar em ${mesProd.nome}${escProdTxt}.`
     const cap = nomes.slice(0, 12), resto = nomes.length - cap.length
-    return `Em ${mesProd.nome} há ${nomes.length} ${nomes.length === 1 ? 'produto' : 'produtos'} de papel${escProdTxt}: ${cap.join(', ')}${resto > 0 ? `, e mais ${resto}` : ''}.`
+    return `Em ${mesProd.nome} há ${nomes.length} ${nomes.length === 1 ? 'produto' : 'produtos'} de ${matLabel(matAgg)}${escProdTxt}: ${cap.join(', ')}${resto > 0 ? `, e mais ${resto}` : ''}.`
   }
 
-  // por produto (papel): fala só o TOTAL e pede o produto
+  // por produto (do material): fala só o TOTAL e pede o produto
   if (querPorProduto) {
-    const prods = Object.values(mapaPapel)
-    if (!prods.length) return `Não há sacolas de papel para entregar em ${mesProd.nome}${escProdTxt}.`
-    const totalSac = prods.reduce((s, x) => s + x.qtd, 0)
+    const prods = Object.values(mapaProdutosMaterial(listaProd, itensCad, matAgg))
+    if (!prods.length) return `Não há ${FALA_MATERIAL[matAgg]?.p || 'itens'} para entregar em ${mesProd.nome}${escProdTxt}.`
+    const total = prods.reduce((s, x) => s + x.qtd, 0)
     const pedSet = new Set(); prods.forEach((x) => x.pedidos.forEach((id) => pedSet.add(id)))
     const nP = pedSet.size, nProd = prods.length
-    const soPedidos = /PEDIDO/.test(t) && !/(SACOLA|UNIDADE|PE[CÇ]A)/.test(t) // "quantos pedidos por produto"
+    // conta PEDIDOS quando a pergunta é "quantos pedidos..."; conta UNIDADES quando é "quantas sacolas/etiquetas/alças..."
+    const contaUnidades = /QUANT\w*\s+(SACOLA|ETIQUETA|ALCA|CAIXA|UNIDADE|PECA)/.test(t)
+    const soPedidos = /PEDIDO/.test(t) && !contaUnidades
     if (soPedidos) {
-      return `Em ${mesProd.nome}, papel${escProdTxt}: ${nP} ${nP === 1 ? 'pedido' : 'pedidos'} para entregar, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'}. Diga o nome de um produto para saber quantos pedidos dele, ou pergunte "quais produtos de papel".`
+      return `Em ${mesProd.nome}, ${matLabel(matAgg)}${escProdTxt}: ${nP} ${nP === 1 ? 'pedido' : 'pedidos'} para entregar, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'}. Diga o nome de um produto para saber quantos pedidos dele, ou pergunte "quais produtos de ${matLabel(matAgg)}".`
     }
-    return `Para entregar em ${mesProd.nome}${escProdTxt}: ${totalSac} ${totalSac === 1 ? 'sacola' : 'sacolas'} de papel, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'} e ${nP} ${nP === 1 ? 'pedido' : 'pedidos'}. Diga o nome de um produto para saber a quantidade dele, ou pergunte "quais produtos de papel".`
+    return `Para entregar em ${mesProd.nome}${escProdTxt}: ${falaQtd(matAgg, total)}, em ${nProd} ${nProd === 1 ? 'produto' : 'produtos'} e ${nP} ${nP === 1 ? 'pedido' : 'pedidos'}. Diga o nome de um produto para saber a quantidade dele, ou pergunte "quais produtos de ${matLabel(matAgg)}".`
   }
 
   // cliente com mais pedidos

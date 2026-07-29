@@ -78,6 +78,15 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   empresário com deficiência visual. **Opção B (LLM Claude real) planejada** — exige backend
   para proteger a API key (Firebase Functions/Blaze ou serverless) + custo por uso.
 
+- **Materiais (fonte única `MATERIAIS` em utils):** plástico(kg), papel(un), etiquetas(un),
+  alça torcida(un) — id/nome/unidade/cor. `TIPOS_ITEM`, `UNID_POR_MATERIAL`, `TOTAIS_ZERO`,
+  `somaTotais`, `totaisPorMaterial`, `fmtTotais` são todos derivados/genéricos (N materiais).
+  Cadastro de Itens, filtro de material da Produção e Relatórios (cards/colunas + seleção de
+  itens por material + "Por item") iteram `MATERIAIS`. Inferência por nome em `materialDoItem`
+  (ETIQUETA→etiquetas, "ALCA TORCIDA"→alça, PLAST→plástico, PAPEL→papel; etiqueta/alça antes).
+  Assistente de voz por produto generalizado por material (mapaProdutosMaterial + FALA_MATERIAL).
+  Para acrescentar material novo: só adicionar em `MATERIAIS`.
+
 ## Em andamento — Fase 1 (desenho aprovado, nesta ordem)
 1. **Nova navegação + Cadastros como hub** ← COMEÇAR POR AQUI. Menu de topo mantém
    Triagem/Produção/Rota/Entregues/Relatórios/Cadastros; Cadastros vira hub com sub-abas
