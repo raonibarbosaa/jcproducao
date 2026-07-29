@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { responderPergunta } from '../utils.js'
 
@@ -24,17 +24,62 @@ export default function AssistenteVoz({ pedidos }) {
   const recRef = useRef(null)
   const ultimaRef = useRef('')       // último texto ouvido (interim ou final)
   const processadoRef = useRef(false) // já viramos o texto em resposta?
+  const vozRef = useRef(null)        // voz pt-BR escolhida (quando existir)
+  const audioOkRef = useRef(false)   // já destravamos o áudio num gesto?
+
+  // escolhe uma voz em português (as vozes chegam de forma assíncrona)
+  useEffect(() => {
+    const ss = typeof window !== 'undefined' ? window.speechSynthesis : null
+    if (!ss) return
+    const carrega = () => {
+      const vs = ss.getVoices() || []
+      vozRef.current = vs.find((v) => /pt[-_]?BR/i.test(v.lang)) || vs.find((v) => /^pt/i.test(v.lang)) || null
+    }
+    carrega()
+    ss.addEventListener?.('voiceschanged', carrega)
+    return () => ss.removeEventListener?.('voiceschanged', carrega)
+  }, [])
+
+  // Destrava o áudio da SESSÃO num gesto do usuário (iOS/Chrome mobile bloqueiam
+  // fala que não venha de um toque). Fala um utterance MUDO uma única vez —
+  // feito ao ABRIR o painel (sem microfone ativo, sem interferir no reconhecimento).
+  function destravarAudio() {
+    const ss = window.speechSynthesis
+    if (!ss) return
+    try {
+      ss.resume()
+      if (!audioOkRef.current && !ss.speaking) {
+        const u = new SpeechSynthesisUtterance(' ')
+        u.volume = 0
+        ss.speak(u)
+        audioOkRef.current = true
+      }
+    } catch { /* noop */ }
+  }
 
   function falar(msg) {
+    const ss = window.speechSynthesis
+    if (!ss || !msg) { setFase('pronto'); return }
     try {
-      window.speechSynthesis.cancel()
+      ss.resume()
       const u = new SpeechSynthesisUtterance(msg)
       u.lang = 'pt-BR'
+      if (vozRef.current) u.voice = vozRef.current
       u.rate = 0.95           // um tiquinho mais devagar, mais claro
       u.onstart = () => setFase('falando')
       u.onend = () => setFase('pronto')
       u.onerror = () => setFase('pronto')
-      window.speechSynthesis.speak(u)
+      if (ss.speaking || ss.pending) {
+        // tem fala em curso: cancela e fala com um respiro (cancel→speak
+        // imediato é engolido pelo Chrome)
+        ss.cancel()
+        setTimeout(() => { try { ss.speak(u) } catch { setFase('pronto') } }, 140)
+      } else {
+        // caminho normal: fala SÍNCRONO dentro do gesto (essencial no iOS/mobile)
+        ss.speak(u)
+      }
+      // watchdog: se a fala não começar, volta pro estado "ouvir de novo"
+      setTimeout(() => { if (!ss.speaking && !ss.pending) setFase('pronto') }, 1800)
     } catch {
       setFase('pronto')       // sem síntese: a resposta fica só na tela (grande)
     }
@@ -88,10 +133,14 @@ export default function AssistenteVoz({ pedidos }) {
     }
   }
 
-  // O "mesmo botão": uma ação por fase.
+  // O "mesmo botão": uma ação por fase. Sempre destrava o áudio (é um gesto).
   function acaoPrincipal() {
-    if (fase === 'ouvindo') {                       // ouvindo → PARA e lê a resposta (via onend)
+    destravarAudio()
+    if (fase === 'ouvindo') {                       // ouvindo → PARA e JÁ LÊ a resposta
       try { recRef.current?.stop() } catch { /* noop */ }
+      const txt = ultimaRef.current.trim()
+      // dispara a leitura AQUI (dentro do gesto) — mobile exige gesto p/ falar
+      if (txt && !processadoRef.current) responder(txt)
       return
     }
     if (fase === 'falando') {                        // lendo → para de ler
@@ -105,6 +154,7 @@ export default function AssistenteVoz({ pedidos }) {
 
   function enviarTexto(e) {
     e.preventDefault()
+    destravarAudio()
     if (!texto.trim()) return
     responder(texto.trim())
     setTexto('')
@@ -132,7 +182,7 @@ export default function AssistenteVoz({ pedidos }) {
       <button className="assist-fab"
         aria-label={aberto ? 'Fechar assistente de voz' : 'Abrir assistente de voz'}
         title="Assistente de voz"
-        onClick={() => (aberto ? fechar() : setAberto(true))}>
+        onClick={() => { if (aberto) { fechar() } else { destravarAudio(); setAberto(true) } }}>
         🎤
       </button>
 
@@ -184,6 +234,8 @@ export default function AssistenteVoz({ pedidos }) {
                 aria-label="Digite sua pergunta" />
               <button className="btn" type="submit">Perguntar</button>
             </form>
+
+            <div className="assist-aviso">🔊 Se não ouvir a resposta, aumente o volume do aparelho.</div>
 
             <div className="assist-dicas">
               Ex.: “quantos pedidos pra entregar”, “quais clientes da rota 01 do Sérgio”,
