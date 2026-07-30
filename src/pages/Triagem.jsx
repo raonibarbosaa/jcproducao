@@ -572,19 +572,25 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
                 </span>
               </div>
               {m === 'GRAFICA' && onAcabamento && (
-                <div className={`acab-row no-print${acabamentoItemOk(ac) ? '' : ' falta'}`}>
-                  <span className="acab-lbl">Laminação{acabamentoItemOk(ac) ? '' : ' ⚠'}:</span>
-                  {LAMINACOES.map((l) => {
-                    const sel = ac.laminacao === l.id
-                    return (
-                      <button key={l.id} className={`acab-pill${sel ? ' on' : ''}`}
-                        onClick={() => onAcabamento(p.idVenda, i, { laminacao: l.id })}>{l.nm}</button>
-                    )
-                  })}
-                  <span className="acab-lbl" style={{ marginLeft: 6 }}>Furo:</span>
-                  <button className={`acab-pill${ac.furo ? ' on' : ''}`}
-                    onClick={() => onAcabamento(p.idVenda, i, { furo: !ac.furo })}>{ac.furo ? 'Sim' : 'Não'}</button>
-                </div>
+                <>
+                  <div className={`acab-row no-print${acabamentoItemOk(ac) ? '' : ' falta'}`}>
+                    <span className="acab-lbl">Laminação{acabamentoItemOk(ac) ? '' : ' ⚠'}:</span>
+                    {LAMINACOES.map((l) => {
+                      const sel = ac.laminacao === l.id
+                      return (
+                        <button key={l.id} className={`acab-pill${sel ? ' on' : ''}`}
+                          onClick={() => onAcabamento(p.idVenda, i, { laminacao: l.id })}>{l.nm}</button>
+                      )
+                    })}
+                  </div>
+                  <div className="acab-row no-print">
+                    <span className="acab-lbl">Furo p/ presente:</span>
+                    <button className={`acab-pill${ac.furo === true ? ' on' : ''}`}
+                      onClick={() => onAcabamento(p.idVenda, i, { furo: true })}>Sim</button>
+                    <button className={`acab-pill${ac.furo === false ? ' on' : ''}`}
+                      onClick={() => onAcabamento(p.idVenda, i, { furo: false })}>Não</button>
+                  </div>
+                </>
               )}
             </li>
           )
