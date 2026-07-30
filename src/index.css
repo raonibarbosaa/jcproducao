@@ -418,6 +418,19 @@ input, select { font-family: var(--font); }
 .field input:focus { outline: none; border-color: var(--accent); }
 .login-err { background: rgba(229,72,77,0.12); border: 1px solid rgba(229,72,77,0.4);
   color: #ff9ea1; font-size: 13px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
+.login-ok { background: rgba(46,160,67,0.14); border: 1px solid rgba(46,160,67,0.45);
+  color: #86e6a1; font-size: 13px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; line-height: 1.4; }
+/* campo de senha com botão de mostrar/ocultar */
+.senha-wrap { position: relative; }
+.senha-wrap input { padding-right: 46px; }
+.senha-olho { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 18px; line-height: 1;
+  padding: 6px 8px; color: var(--text-dim); border-radius: 6px; }
+.senha-olho:hover { background: var(--surface); }
+.login-link { display: block; width: 100%; text-align: center; background: none; border: none;
+  color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 14px; cursor: pointer; padding: 6px; }
+.login-link:hover:not(:disabled) { text-decoration: underline; }
+.login-link:disabled { opacity: .5; cursor: default; }
 
 /* ---------- estados ---------- */
 .empty { text-align: center; color: var(--text-faint); padding: 60px 20px; font-size: 15px; }
