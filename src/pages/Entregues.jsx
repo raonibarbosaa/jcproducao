@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
@@ -11,6 +11,7 @@ export default function Entregues() {
   const { perfil, nome } = useAuth()
   const podeCancelar = perfil === 'dono' || perfil === 'designer'
   const podeBaixa = perfil === 'dono' || perfil === 'financeiro'   // baixa financeira
+  const podeRetornar = perfil === 'dono' || perfil === 'designer' || perfil === 'financeiro' // não foi entregue
   const [busca, setBusca] = useState('')
   const [motoristaFiltro, setMotoristaFiltro] = useState('')
   const [soPendentes, setSoPendentes] = useState(false)
@@ -30,6 +31,16 @@ export default function Entregues() {
     if (!confirm(`Cancelar a entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}? Ele volta para a lista de rota.`)) return
     const { id, entregueEm, motorista, pago, pagoPor, pagoEm, ...pedido } = p
     await setDoc(doc(db, 'pedidos', p.idVenda), pedido)
+    await deleteDoc(doc(db, 'entregues', p.idVenda))
+  }
+
+  // não foi entregue: devolve o pedido para a EXPEDIÇÃO (volta ao quadro de produção)
+  async function retornarExpedicao(p) {
+    if (!confirm(`O pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)} NÃO foi entregue? Ele volta para a Expedição no quadro de produção.`)) return
+    const { id, entregueEm, motorista, pago, pagoPor, pagoEm, ...pedido } = p
+    await setDoc(doc(db, 'pedidos', p.idVenda), {
+      ...pedido, etapa: 'expedicao', etapaPor: nome || '', etapaEm: new Date().toISOString(),
+    })
     await deleteDoc(doc(db, 'entregues', p.idVenda))
   }
 
@@ -116,12 +127,17 @@ export default function Entregues() {
                 ))}
               </ul>
               <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
-              {(podeCancelar || podeBaixa) && (
+              {(podeCancelar || podeBaixa || podeRetornar) && (
                 <div className="modo-btns" style={{ marginTop: 10 }}>
                   {podeBaixa && (
                     p.pago
                       ? <button className="modo-btn" onClick={() => desfazerBaixa(p)}>↩ desfazer baixa</button>
                       : <button className="modo-btn" onClick={() => darBaixa(p)} style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>💰 Dar baixa (pago)</button>
+                  )}
+                  {podeRetornar && ehGrafica(p) && (
+                    <button className="modo-btn" onClick={() => retornarExpedicao(p)} style={{ color: 'var(--warn)', borderColor: 'var(--warn)' }}>
+                      ↩ Retornar para Expedição
+                    </button>
                   )}
                   {podeCancelar && (
                     <button className="modo-btn" onClick={() => cancelarEntrega(p)} style={{ color: 'var(--danger)' }}>
