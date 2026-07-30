@@ -24,6 +24,7 @@ const ACESSO = {
   dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
+  expedicao:  ['producao'],   // só o card de Expedição no quadro (não vê valores)
 }
 
 export default function App() {

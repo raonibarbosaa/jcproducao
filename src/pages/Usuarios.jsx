@@ -13,6 +13,7 @@ const PERFIS = [
   { id: 'financeiro', nm: 'Financeiro', desc: 'Rota e Entregues' },
   { id: 'vendedor', nm: 'Vendedor', desc: 'Vê só os próprios pedidos e dá ciência' },
   { id: 'operador', nm: 'Operador', desc: 'Chão de fábrica: move só os setores liberados (não vê valores)' },
+  { id: 'expedicao', nm: 'Expedição', desc: 'Vê só o card de Expedição no quadro (não vê valores)' },
   { id: 'dono', nm: 'Dono (admin)', desc: 'Acesso total + gestão de usuários' },
 ]
 const PERFIL_NM = Object.fromEntries(PERFIS.map((p) => [p.id, p.nm]))
@@ -163,6 +164,7 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
             ? (u.setores || []).map((s) => <span key={s} className="chip">🏭 {SETOR_NM[s] || s}</span>)
             : <span className="chip rota-warn">sem setor liberado</span>
         )}
+        {u.perfil === 'expedicao' && <span className="chip">🏭 Expedição</span>}
         {inativo
           ? <span className="chip rota-warn">acesso desativado</span>
           : <span className="chip">ativo</span>}

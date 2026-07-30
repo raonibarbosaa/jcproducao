@@ -16,13 +16,11 @@ export default function QuadroProducao({ pedidos, clientes }) {
   const { perfil, nome, setores } = useAuth()
   // dono/designer movem qualquer setor; operador só nos setores liberados (o de ORIGEM)
   const ehStaff = perfil === 'dono' || perfil === 'designer'
-  const podeMoverEtapa = (etapa) => {
-    if (ehStaff) return true
-    if (perfil === 'operador') return (setores || []).includes(etapa)
-    return false
-  }
-  // colunas visíveis: staff vê todas; operador vê SÓ os setores liberados dele.
-  const colunas = ehStaff ? ETAPAS_PROD : ETAPAS_PROD.filter((e) => (setores || []).includes(e.id))
+  // setores que este usuário opera: expedicao = fixo ['expedicao']; operador = liberados dele
+  const setoresOp = perfil === 'expedicao' ? ['expedicao'] : (perfil === 'operador' ? (setores || []) : [])
+  const podeMoverEtapa = (etapa) => ehStaff || setoresOp.includes(etapa)
+  // colunas visíveis: staff vê todas; demais veem só os setores que operam.
+  const colunas = ehStaff ? ETAPAS_PROD : ETAPAS_PROD.filter((e) => setoresOp.includes(e.id))
   const [salvando, setSalvando] = useState('')
 
   const porEtapa = {}
