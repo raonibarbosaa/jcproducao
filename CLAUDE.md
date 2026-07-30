@@ -41,7 +41,15 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   objeto inteiro, como `linhasItens`). Na **Triagem**, item da linha Gráfica ganha controles
   Laminação (Nenhuma/Fosca/Brilho) + Furo (Sim/Não) — `setAcabamentoItem`. No **Quadro**, cada
   item da gráfica mostra a tag 🏷 com o acabamento (`fmtAcabamento`).
-- **Falta (fase D):** cauda Expedição→Entrega→Financeiro (baixa → Entregue).
+- **Fase D (no ar):** cauda de entrega. No **Quadro**, a Expedição ganha "✓ Expedir"
+  (`etapa='expedido'`) — o pedido sai do quadro e segue pelo fluxo atual de **Rota** (motorista,
+  romaneio, entregar → coleção `entregues`, como já era). Em **Entregues**, o Financeiro/Dono
+  dá a **baixa** (`pago`/`pagoPor`/`pagoEm` no doc de `entregues`), com chip "💰 pago" ×
+  "⏳ pendente de baixa", filtro "só pendentes" e contador no cabeçalho. Regras: `entregues` já
+  é gravável por staff (financeiro incluso). Rota NÃO foi filtrada por etapa (evita esconder
+  legado) — se quiserem que a Rota mostre só os expedidos, é um ajuste posterior.
+- **Fluxo completo (gráfica):** Triagem → Gráfica → Montagem → Expedição → (Expedir) → Rota
+  (entrega/motorista) → Entregues → (baixa financeira) → quitado. Fases A–D concluídas.
 
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),

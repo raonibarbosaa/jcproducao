@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -8,10 +8,12 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 export default function Entregues() {
   const [itens, setItens] = useState([])
   const { clientes } = useCadastros()
-  const { perfil } = useAuth()
+  const { perfil, nome } = useAuth()
   const podeCancelar = perfil === 'dono' || perfil === 'designer'
+  const podeBaixa = perfil === 'dono' || perfil === 'financeiro'   // baixa financeira
   const [busca, setBusca] = useState('')
   const [motoristaFiltro, setMotoristaFiltro] = useState('')
+  const [soPendentes, setSoPendentes] = useState(false)
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'entregues'), (snap) => {
@@ -26,9 +28,22 @@ export default function Entregues() {
   // desfaz a entrega: devolve o pedido ao fluxo (volta pra Rota/Produção) e sai do histórico
   async function cancelarEntrega(p) {
     if (!confirm(`Cancelar a entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}? Ele volta para a lista de rota.`)) return
-    const { id, entregueEm, motorista, ...pedido } = p
+    const { id, entregueEm, motorista, pago, pagoPor, pagoEm, ...pedido } = p
     await setDoc(doc(db, 'pedidos', p.idVenda), pedido)
     await deleteDoc(doc(db, 'entregues', p.idVenda))
+  }
+
+  // baixa financeira: confirma o pagamento e fecha o pedido
+  async function darBaixa(p) {
+    await updateDoc(doc(db, 'entregues', p.idVenda), {
+      pago: true, pagoPor: nome || '', pagoEm: new Date().toISOString(),
+    })
+  }
+  async function desfazerBaixa(p) {
+    if (!confirm(`Reabrir o pagamento do pedido #${p.idVenda}? Ele volta para "pendente".`)) return
+    await updateDoc(doc(db, 'entregues', p.idVenda), {
+      pago: false, pagoPor: deleteField(), pagoEm: deleteField(),
+    })
   }
 
   const lista = itens
@@ -44,17 +59,25 @@ export default function Entregues() {
       if (motoristaFiltro === '__sem__') return !p.motorista
       return p.motorista === motoristaFiltro
     })
+    .filter((p) => !soPendentes || !p.pago)
     .sort((a, b) => new Date(b.entregueEm) - new Date(a.entregueEm))
 
   const totalMes = lista.reduce((s, p) => s + (Number(p.valorTotal) || 0), 0)
+  const nPendentes = itens.filter((p) => !p.pago).length
 
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Entregues
-          <small>{lista.length} pedidos · {fmtMoeda(totalMes)}</small>
+          <small>{lista.length} pedidos · {fmtMoeda(totalMes)}{nPendentes > 0 ? ` · ${nPendentes} pendente(s) de baixa` : ''}</small>
         </h1>
         <div className="spacer" />
+        {(podeBaixa || nPendentes > 0) && (
+          <label className="filter-pill">
+            <input type="checkbox" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />
+            Só pendentes de baixa
+          </label>
+        )}
         {motoristasNasEntregas.length > 0 && (
           <select className="btn" style={{ minWidth: 170 }}
             value={motoristaFiltro} onChange={(e) => setMotoristaFiltro(e.target.value)}>
@@ -83,6 +106,9 @@ export default function Entregues() {
                 <span className="chip">{p.cidade || '—'}</span>
                 {p.motorista && <span className="chip">🚚 {p.motorista}</span>}
                 <span className="chip" style={{ color: 'var(--ok)' }}>✓ {fmtData(p.entregueEm)}</span>
+                {p.pago
+                  ? <span className="chip" style={{ borderColor: 'var(--ok)', color: 'var(--ok)' }} title={`Baixa por ${p.pagoPor || '—'}${p.pagoEm ? ` em ${fmtData(p.pagoEm)}` : ''}`}>💰 pago</span>
+                  : <span className="chip rota-warn">⏳ pendente de baixa</span>}
               </div>
               <ul className="itens">
                 {p.itens?.map((it, i) => (
@@ -90,11 +116,18 @@ export default function Entregues() {
                 ))}
               </ul>
               <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
-              {podeCancelar && (
+              {(podeCancelar || podeBaixa) && (
                 <div className="modo-btns" style={{ marginTop: 10 }}>
-                  <button className="modo-btn" onClick={() => cancelarEntrega(p)} style={{ color: 'var(--danger)' }}>
-                    ↩ Cancelar entrega
-                  </button>
+                  {podeBaixa && (
+                    p.pago
+                      ? <button className="modo-btn" onClick={() => desfazerBaixa(p)}>↩ desfazer baixa</button>
+                      : <button className="modo-btn" onClick={() => darBaixa(p)} style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>💰 Dar baixa (pago)</button>
+                  )}
+                  {podeCancelar && (
+                    <button className="modo-btn" onClick={() => cancelarEntrega(p)} style={{ color: 'var(--danger)' }}>
+                      ↩ Cancelar entrega
+                    </button>
+                  )}
                 </div>
               )}
             </div>

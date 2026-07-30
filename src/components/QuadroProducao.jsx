@@ -24,7 +24,11 @@ export default function QuadroProducao({ pedidos, clientes }) {
 
   const porEtapa = {}
   for (const e of ETAPAS_PROD) porEtapa[e.id] = []
-  for (const p of pedidos) porEtapa[etapaDe(p)].push(p)
+  // pedido expedido sai do quadro (segue pela Rota → Entregues)
+  for (const p of pedidos) {
+    if (p.etapa === 'expedido' || p.etapa === 'entregue') continue
+    porEtapa[etapaDe(p)].push(p)
+  }
   for (const e of ETAPAS_PROD) porEtapa[e.id].sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
 
   async function mover(p, destino) {
@@ -90,6 +94,12 @@ export default function QuadroProducao({ pedidos, clientes }) {
                         <button className="btn ok qc-avancar" disabled={salvando === p.idVenda}
                           onClick={() => mover(p, prox)}>
                           {salvando === p.idVenda ? 'Salvando…' : `Concluir → ${nomeEtapa(prox)}`}
+                        </button>
+                      )}
+                      {!prox && e.id === 'expedicao' && (
+                        <button className="btn ok qc-avancar" disabled={salvando === p.idVenda}
+                          onClick={() => mover(p, 'expedido')} title="Sai do quadro e segue para a Rota/Entrega">
+                          {salvando === p.idVenda ? 'Salvando…' : '✓ Expedir'}
                         </button>
                       )}
                     </div>
