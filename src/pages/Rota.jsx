@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { doc, setDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais } from '../utils.js'
@@ -10,7 +10,17 @@ export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
   const [filtros, setFiltros] = useState({})
   const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
+  const [soImprimir, setSoImprimir] = useState(null)   // "vend|rota" p/ imprimir só uma rota
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
+
+  // ao pedir p/ imprimir uma rota específica: renderiza só ela e chama window.print()
+  useEffect(() => {
+    if (!soImprimir) return
+    const t = setTimeout(() => window.print(), 60)
+    const limpa = () => setSoImprimir(null)
+    window.addEventListener('afterprint', limpa, { once: true })
+    return () => { clearTimeout(t); window.removeEventListener('afterprint', limpa) }
+  }, [soImprimir])
 
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
@@ -74,7 +84,7 @@ export default function Rota({ pedidos }) {
           </small>
         </h1>
         <div className="spacer" />
-        <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>
+        <button className="btn" onClick={() => { setSoImprimir(null); setTimeout(() => window.print(), 30) }}>🖨 Imprimir tudo</button>
       </div>
 
       <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
@@ -117,6 +127,10 @@ export default function Rota({ pedidos }) {
                           🚚 cadastre motoristas em Cadastros › Motoristas para escolher na entrega
                         </span>
                       )}
+                      <button className="btn no-print"
+                        style={{ marginLeft: motoristasAtivos.length > 0 ? 0 : 'auto' }}
+                        title="Imprimir o romaneio só desta rota"
+                        onClick={() => setSoImprimir(`${vend}|${rota}`)}>🖨 Imprimir rota</button>
                     </div>
                     <div className="cards">
                       {Object.entries(clientes).map(([cliente, ps]) => (
@@ -162,27 +176,37 @@ export default function Rota({ pedidos }) {
       <ImpressaoRota
         arvore={arvore} vendedoresOrd={vendedoresOrd}
         filtros={filtros} total={lista.length} motoristaSel={motoristaSel} itensCad={itensCad}
+        soImprimir={soImprimir}
       />
     </>
   )
 }
 
 // ============================ ROMANEIO DE ENTREGA ============================
-function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {}, itensCad }) {
+function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {}, itensCad, soImprimir }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const resumo = resumoFiltros(filtros)
+  // impressão de UMA rota só: filtra o vendedor e a rota escolhidos
+  const corte = soImprimir ? soImprimir.indexOf('|') : -1
+  const vendFiltro = soImprimir ? soImprimir.slice(0, corte) : null
+  const rotaFiltro = soImprimir ? soImprimir.slice(corte + 1) : null
+  const vends = soImprimir ? vendedoresOrd.filter((v) => v === vendFiltro) : vendedoresOrd
+  const rotaOk = ([rota]) => !soImprimir || rota === rotaFiltro
+  const totalImp = soImprimir
+    ? Object.values(arvore[vendFiltro]?.[rotaFiltro] || {}).flat().length
+    : total
   return (
     <div className="print-only">
       <div className="pr-head">
-        <h1>JC Sacolas · Romaneio de Entrega</h1>
+        <h1>JC Sacolas · Romaneio de Entrega{soImprimir ? ` · ${rotaFiltro}` : ''}</h1>
         <div className="meta">
           Impresso em {hoje}<br />
-          {total} entrega(s)
-          {resumo && <><br />{resumo}</>}
+          {totalImp} entrega(s){soImprimir ? ` · ${vendFiltro}` : ''}
+          {resumo && !soImprimir && <><br />{resumo}</>}
         </div>
       </div>
 
-      {vendedoresOrd.map((vend) => {
+      {vends.map((vend) => {
         // data(s) de entrega deste vendedor — a mesma que aparece na tela, abaixo do nome
         const datasVend = [...new Set(
           Object.values(arvore[vend])
@@ -194,7 +218,7 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
         <div key={vend} className="pr-block">
           <div className="pr-vend">{vend}</div>
           <div className="pr-data">Entrega: {datasVend}</div>
-          {Object.entries(arvore[vend]).sort().map(([rota, clientes]) => {
+          {Object.entries(arvore[vend]).sort().filter(rotaOk).map(([rota, clientes]) => {
             const motoristaRota = motoristaSel[`${vend}|${rota}`]
             const totalRota = Object.values(clientes).flat()
               .reduce((acc, p) => somaTotais(acc, totaisPorMaterial(p.itens, itensCad)), TOTAIS_ZERO)
