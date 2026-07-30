@@ -10,7 +10,7 @@ import {
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
   linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
-  LAMINACOES, acabamentoDoItem,
+  LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
 
@@ -572,8 +572,8 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
                 </span>
               </div>
               {m === 'GRAFICA' && onAcabamento && (
-                <div className="acab-row no-print">
-                  <span className="acab-lbl">Laminação:</span>
+                <div className={`acab-row no-print${acabamentoItemOk(ac) ? '' : ' falta'}`}>
+                  <span className="acab-lbl">Laminação{acabamentoItemOk(ac) ? '' : ' ⚠'}:</span>
                   {LAMINACOES.map((l) => {
                     const sel = ac.laminacao === l.id
                     return (
@@ -590,6 +590,12 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
           )
         })}
       </ul>
+
+      {p.itens.some((_, i) => linhaDoItem(p, i) === 'GRAFICA') && !acabamentosCompletos(p) && (
+        <div className="acab-falta-aviso no-print">
+          ⚠ Marque a <b>laminação</b> dos itens de gráfica — sem isso o pedido não entra no quadro de produção.
+        </div>
+      )}
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
         <span className="valor">{fmtMoeda(p.valorTotal)}</span>

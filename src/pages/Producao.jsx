@@ -5,7 +5,7 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
-  MATERIAIS, nomeDoMaterial, ehGrafica,
+  MATERIAIS, nomeDoMaterial, ehGrafica, acabamentosCompletos,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -30,8 +30,11 @@ export default function Producao({ pedidos }) {
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
 
-  // pedidos do fluxo da GRÁFICA (para o quadro por setor) — respeita os filtros do FiltrosBar
-  const graficaPedidos = filtraPedidos(categorizados.filter((p) => ehGrafica(p)), filtros, clientes)
+  // pedidos do fluxo da GRÁFICA (para o quadro por setor) — respeita os filtros do FiltrosBar.
+  // Só entram no quadro os que têm a LAMINAÇÃO marcada em todos os itens de gráfica.
+  const graficaTodos = filtraPedidos(categorizados.filter((p) => ehGrafica(p)), filtros, clientes)
+  const graficaPedidos = graficaTodos.filter((p) => acabamentosCompletos(p))
+  const aguardandoAcab = graficaTodos.length - graficaPedidos.length
 
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
@@ -159,8 +162,15 @@ export default function Producao({ pedidos }) {
 
       {vista === 'quadro' && (
         <div className="screen-only">
+          {aguardandoAcab > 0 && (
+            <div className="aviso-acab">
+              ⚠ {aguardandoAcab} pedido(s) de gráfica aguardando a marcação de <b>laminação</b> na Triagem — só entram no quadro depois de marcados.
+            </div>
+          )}
           {graficaPedidos.length === 0
-            ? <div className="empty"><div className="big">🏭</div>Nenhum pedido de papel/gráfica no momento.</div>
+            ? <div className="empty"><div className="big">🏭</div>
+                {aguardandoAcab > 0 ? 'Nenhum pedido pronto — marque a laminação na Triagem.' : 'Nenhum pedido de papel/gráfica no momento.'}
+              </div>
             : <QuadroProducao pedidos={graficaPedidos} clientes={clientes} />}
         </div>
       )}

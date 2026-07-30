@@ -350,6 +350,11 @@ input, select { font-family: var(--font); }
 }
 .acab-pill:hover { border-color: var(--accent); }
 .acab-pill.on { background: var(--accent); color: #1a1205; border-color: var(--accent); }
+.acab-row.falta .acab-lbl { color: var(--danger); }
+.acab-falta-aviso { margin-top: 8px; font-size: 12px; font-weight: 600; color: #ff9ea1;
+  background: rgba(229,72,77,0.10); border: 1px solid rgba(229,72,77,0.35); border-radius: 8px; padding: 6px 9px; }
+.aviso-acab { margin-bottom: 12px; font-size: 13px; color: #ffcf8a;
+  background: rgba(240,180,41,0.10); border: 1px solid rgba(240,180,41,0.4); border-radius: 8px; padding: 9px 12px; }
 
 /* ---------- QUADRO POR SETOR (Produção — fluxo da gráfica) ---------- */
 .vista-toggle { display: inline-flex; gap: 4px; }

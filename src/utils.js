@@ -227,10 +227,22 @@ export const LAMINACOES = [
   { id: 'brilho', nm: 'Brilho' },
 ]
 export const nomeLaminacao = (id) => (LAMINACOES.find((l) => l.id === id)?.nm || 'Nenhuma')
-// { laminacao: 'nenhuma'|'fosca'|'brilho', furo: bool } — do item idx do pedido
+export const LAMINACOES_VALIDAS = LAMINACOES.map((l) => l.id) // ['nenhuma','fosca','brilho']
+// { laminacao: '' (não marcada) | 'nenhuma'|'fosca'|'brilho', furo: bool } — do item idx
 export function acabamentoDoItem(p, idx) {
   const a = (p?.acabamentos || {})[idx] || {}
-  return { laminacao: a.laminacao || 'nenhuma', furo: !!a.furo }
+  return { laminacao: a.laminacao || '', furo: !!a.furo }
+}
+// a laminação é OBRIGATÓRIA (uma das 3 opções, incluindo "nenhuma"/sem laminação)
+export function acabamentoItemOk(ac) { return LAMINACOES_VALIDAS.includes(ac.laminacao) }
+// todos os itens da linha GRÁFICA têm a laminação marcada?
+export function acabamentosCompletos(p) {
+  const itens = p?.itens || []
+  for (let i = 0; i < itens.length; i++) {
+    if (linhaDoItem(p, i) !== 'GRAFICA') continue
+    if (!acabamentoItemOk(acabamentoDoItem(p, i))) return false
+  }
+  return true
 }
 // texto curto p/ a Montagem: "laminação fosca · com furo"
 export function fmtAcabamento(ac) {
