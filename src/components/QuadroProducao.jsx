@@ -15,11 +15,14 @@ import DataEntrega from './DataEntrega.jsx'
 export default function QuadroProducao({ pedidos, clientes }) {
   const { perfil, nome, setores } = useAuth()
   // dono/designer movem qualquer setor; operador só nos setores liberados (o de ORIGEM)
+  const ehStaff = perfil === 'dono' || perfil === 'designer'
   const podeMoverEtapa = (etapa) => {
-    if (perfil === 'dono' || perfil === 'designer') return true
+    if (ehStaff) return true
     if (perfil === 'operador') return (setores || []).includes(etapa)
     return false
   }
+  // colunas visíveis: staff vê todas; operador vê SÓ os setores liberados dele.
+  const colunas = ehStaff ? ETAPAS_PROD : ETAPAS_PROD.filter((e) => (setores || []).includes(e.id))
   const [salvando, setSalvando] = useState('')
 
   const porEtapa = {}
@@ -48,9 +51,13 @@ export default function QuadroProducao({ pedidos, clientes }) {
     }
   }
 
+  if (!colunas.length) {
+    return <div className="empty"><div className="big">🏭</div>Você não tem setores de produção liberados. Fale com o administrador.</div>
+  }
+
   return (
     <div className="quadro">
-      {ETAPAS_PROD.map((e) => (
+      {colunas.map((e) => (
         <div key={e.id} className="quadro-col">
           <div className="qc-head">{e.nome} <span className="qc-count">{porEtapa[e.id].length}</span></div>
           <div className="qc-body">
