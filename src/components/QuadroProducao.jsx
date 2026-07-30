@@ -3,7 +3,7 @@ import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   ETAPAS_PROD, etapaDe, proximaEtapa, etapaAnterior, nomeEtapa,
-  nomeCliente, fmtData, situacaoPrazo,
+  nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, fmtAcabamento,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -16,11 +16,15 @@ export default function QuadroProducao({ pedidos, clientes }) {
   const { perfil, nome, setores } = useAuth()
   // dono/designer movem qualquer setor; operador só nos setores liberados (o de ORIGEM)
   const ehStaff = perfil === 'dono' || perfil === 'designer'
-  // setores que este usuário opera: expedicao = fixo ['expedicao']; operador = liberados dele
+  const veValor = ehStaff || perfil === 'financeiro' || perfil === 'expedicao' // operador NÃO vê R$
+  // setores que este usuário pode MOVER: expedicao = só 'expedicao'; operador = liberados dele
   const setoresOp = perfil === 'expedicao' ? ['expedicao'] : (perfil === 'operador' ? (setores || []) : [])
   const podeMoverEtapa = (etapa) => ehStaff || setoresOp.includes(etapa)
-  // colunas visíveis: staff vê todas; demais veem só os setores que operam.
-  const colunas = ehStaff ? ETAPAS_PROD : ETAPAS_PROD.filter((e) => setoresOp.includes(e.id))
+  // colunas VISÍVEIS: staff e expedição veem TODAS (expedição só acompanha as outras,
+  // sem botão); operador vê só os setores que opera.
+  const colunas = (ehStaff || perfil === 'expedicao')
+    ? ETAPAS_PROD
+    : ETAPAS_PROD.filter((e) => setoresOp.includes(e.id))
   const [salvando, setSalvando] = useState('')
 
   const porEtapa = {}
@@ -86,6 +90,7 @@ export default function QuadroProducao({ pedidos, clientes }) {
                       </li>
                     ))}
                   </ul>
+                  {veValor && <div className="qcard-valor">{fmtMoeda(p.valorTotal)}</div>}
                   {p.etapaPor && (
                     <div className="qcard-log">último avanço: {p.etapaPor}{p.etapaEm ? ` · ${fmtData(p.etapaEm)}` : ''}</div>
                   )}

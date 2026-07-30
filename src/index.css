@@ -383,6 +383,7 @@ input, select { font-family: var(--font); }
 .qcard .itens { list-style: none; margin: 6px 0 0; border-top: 1px dashed var(--border); padding-top: 6px; font-size: 13px; }
 .qcard .itens li { display: flex; justify-content: space-between; gap: 10px; color: var(--text-dim); padding: 1px 0; }
 .qcard .itens .q { font-family: var(--mono); color: var(--text); }
+.qcard-valor { font-size: 14px; font-weight: 800; color: var(--text); margin-top: 7px; }
 .qcard-log { font-size: 11px; color: var(--text-faint); margin-top: 7px; }
 .qcard-acoes { display: flex; gap: 6px; margin-top: 9px; align-items: center; }
 .qc-avancar { flex: 1; justify-content: center; font-size: 13px; padding: 9px; }
