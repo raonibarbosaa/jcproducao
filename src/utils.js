@@ -219,6 +219,27 @@ export function etapaAnterior(id) {
 // pedido pertence ao fluxo da Gráfica? (tem item de linha gráfica)
 export function ehGrafica(p) { return linhasPresentes(p).includes('GRAFICA') }
 
+// ---------- ACABAMENTOS POR ITEM (fluxo da gráfica: laminação + furo) ----------
+// definidos pelo designer na Triagem; executados na Montagem.
+export const LAMINACOES = [
+  { id: 'nenhuma', nm: 'Nenhuma' },
+  { id: 'fosca', nm: 'Fosca' },
+  { id: 'brilho', nm: 'Brilho' },
+]
+export const nomeLaminacao = (id) => (LAMINACOES.find((l) => l.id === id)?.nm || 'Nenhuma')
+// { laminacao: 'nenhuma'|'fosca'|'brilho', furo: bool } — do item idx do pedido
+export function acabamentoDoItem(p, idx) {
+  const a = (p?.acabamentos || {})[idx] || {}
+  return { laminacao: a.laminacao || 'nenhuma', furo: !!a.furo }
+}
+// texto curto p/ a Montagem: "laminação fosca · com furo"
+export function fmtAcabamento(ac) {
+  const lam = ac.laminacao && ac.laminacao !== 'nenhuma'
+    ? `laminação ${nomeLaminacao(ac.laminacao).toLowerCase()}`
+    : 'sem laminação'
+  return `${lam} · ${ac.furo ? 'com furo' : 'sem furo'}`
+}
+
 // ITENS / PRODUTOS
 // itens = array [{ produto: 'SACOLA ...', tipo: <id de MATERIAIS>, unidade: 'kg'|'un'|'' }]
 // MATERIAIS: fonte única dos tipos de material (id, nome, unidade padrão, cor).

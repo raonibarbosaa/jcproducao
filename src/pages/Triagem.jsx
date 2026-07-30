@@ -10,6 +10,7 @@ import {
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
   linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
+  LAMINACOES, acabamentoDoItem,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
 
@@ -219,6 +220,20 @@ export default function Triagem({ pedidos }) {
     }
   }
 
+  // acabamento por item (laminação/furo) — só p/ itens da linha Gráfica.
+  async function setAcabamentoItem(idVenda, indice, patch) {
+    const p = pedidos.find((x) => x.idVenda === idVenda)
+    if (!p) return
+    const atual = { ...(p.acabamentos || {}) }
+    atual[indice] = { ...acabamentoDoItem(p, indice), ...patch }
+    try {
+      await updateDoc(doc(db, 'pedidos', idVenda), { acabamentos: atual })
+    } catch (err) {
+      console.error('[setAcabamentoItem] erro ao gravar:', err)
+      alert('Erro ao gravar acabamento: ' + err.message)
+    }
+  }
+
   // responsável define a cidade de um pedido sem rota -> sistema recalcula a rota
   async function definirCidade(p, cidadeNova) {
     const cidade = String(cidadeNova || '').trim().replace(/\s+/g, ' ')
@@ -340,7 +355,7 @@ export default function Triagem({ pedidos }) {
         <div className="cards screen-only">
           {lista.map((p) => (
             <CardTriagem key={p.idVenda} p={p} onCat={categorizar} onCatItem={categorizarItem} clientes={clientes}
-              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
+              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} onAcabamento={setAcabamentoItem} />
           ))}
         </div>
       )}
@@ -408,7 +423,7 @@ function ImpressaoTriagem({ lista, clientes }) {
   )
 }
 
-function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
+function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAcabamento }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const [editandoApelido, setEditandoApelido] = useState(false)
@@ -526,33 +541,51 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes }) {
       <ul className="itens">
         {p.itens.map((it, i) => {
           const m = linhaDoItem(p, i)
+          const ac = acabamentoDoItem(p, i)
           return (
-            <li key={i} style={{ alignItems: 'center' }}>
-              <span>{it.produto} <span className="g">{it.grupo}</span></span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="q">{it.qtd}</span>
-                <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
-                  {MODO_ORDER.map((opt) => {
-                    const sel = m === opt
-                    const sigla = opt === 'PRODUCAO' ? 'S' : opt === 'GLICHE' ? 'G' : 'Gr'
+            <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span>{it.produto} <span className="g">{it.grupo}</span></span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="q">{it.qtd}</span>
+                  <span style={{ display: 'inline-flex', gap: 2, marginLeft: 4 }}>
+                    {MODO_ORDER.map((opt) => {
+                      const sel = m === opt
+                      const sigla = opt === 'PRODUCAO' ? 'S' : opt === 'GLICHE' ? 'G' : 'Gr'
+                      return (
+                        <button key={opt} title={MODO_NM[opt]}
+                          onClick={() => onCatItem(p.idVenda, i, opt)}
+                          style={{
+                            width: 22, height: 22, borderRadius: 4,
+                            border: '1px solid ' + (sel ? MODO_COR[opt] : 'var(--border)'),
+                            background: sel ? MODO_COR[opt] : 'transparent',
+                            color: sel ? '#fff' : MODO_COR[opt],
+                            fontWeight: 700, fontSize: 11,
+                            cursor: 'pointer', padding: 0,
+                            lineHeight: 1,
+                          }}>
+                          {sigla}
+                        </button>
+                      )
+                    })}
+                  </span>
+                </span>
+              </div>
+              {m === 'GRAFICA' && onAcabamento && (
+                <div className="acab-row no-print">
+                  <span className="acab-lbl">Laminação:</span>
+                  {LAMINACOES.map((l) => {
+                    const sel = ac.laminacao === l.id
                     return (
-                      <button key={opt} title={MODO_NM[opt]}
-                        onClick={() => onCatItem(p.idVenda, i, opt)}
-                        style={{
-                          width: 22, height: 22, borderRadius: 4,
-                          border: '1px solid ' + (sel ? MODO_COR[opt] : 'var(--border)'),
-                          background: sel ? MODO_COR[opt] : 'transparent',
-                          color: sel ? '#fff' : MODO_COR[opt],
-                          fontWeight: 700, fontSize: 11,
-                          cursor: 'pointer', padding: 0,
-                          lineHeight: 1,
-                        }}>
-                        {sigla}
-                      </button>
+                      <button key={l.id} className={`acab-pill${sel ? ' on' : ''}`}
+                        onClick={() => onAcabamento(p.idVenda, i, { laminacao: l.id })}>{l.nm}</button>
                     )
                   })}
-                </span>
-              </span>
+                  <span className="acab-lbl" style={{ marginLeft: 6 }}>Furo:</span>
+                  <button className={`acab-pill${ac.furo ? ' on' : ''}`}
+                    onClick={() => onAcabamento(p.idVenda, i, { furo: !ac.furo })}>{ac.furo ? 'Sim' : 'Não'}</button>
+                </div>
+              )}
             </li>
           )
         })}

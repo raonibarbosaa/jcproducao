@@ -35,8 +35,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   voz só dono/designer/financeiro). `firestore.rules`: operador lê pedidos e faz update só de
   `etapa/etapaPor/etapaEm` e só quando a etapa de origem está em `setores`. ⚠️ **Publicar as
   rules no Firebase Console** (não vão pelo deploy do Pages).
-- **Falta (fases C–D):** acabamentos (laminação/furo por item) na Triagem; cauda
-  Expedição→Entrega→Financeiro (baixa).
+- **Fase C (no ar):** acabamentos POR ITEM (fluxo da gráfica). Helpers em utils:
+  `LAMINACOES` (nenhuma/fosca/brilho), `acabamentoDoItem(p,idx)`, `fmtAcabamento`. Gravado em
+  `pedidos/{idVenda}.acabamentos` (map idx → {laminacao, furo}), via `updateDoc` (substitui o
+  objeto inteiro, como `linhasItens`). Na **Triagem**, item da linha Gráfica ganha controles
+  Laminação (Nenhuma/Fosca/Brilho) + Furo (Sim/Não) — `setAcabamentoItem`. No **Quadro**, cada
+  item da gráfica mostra a tag 🏷 com o acabamento (`fmtAcabamento`).
+- **Falta (fase D):** cauda Expedição→Entrega→Financeiro (baixa → Entregue).
 
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),

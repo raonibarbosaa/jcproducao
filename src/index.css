@@ -341,8 +341,19 @@ input, select { font-family: var(--font); }
 .rel-item-bloco { margin-top: 18px; }
 .rel-item-bloco .ib-sub { font-weight: 600; color: var(--text-faint); font-size: 12px; }
 
+/* ---------- ACABAMENTOS por item (Triagem) ---------- */
+.acab-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding: 2px 0 0; }
+.acab-lbl { font-size: 11px; color: var(--text-faint); font-weight: 600; }
+.acab-pill {
+  font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-family: var(--font);
+}
+.acab-pill:hover { border-color: var(--accent); }
+.acab-pill.on { background: var(--accent); color: #1a1205; border-color: var(--accent); }
+
 /* ---------- QUADRO POR SETOR (Produção — fluxo da gráfica) ---------- */
 .vista-toggle { display: inline-flex; gap: 4px; }
+.qcard .itens .acab-tag { display: block; font-size: 11px; color: var(--text-faint); margin-top: 1px; }
 .quadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
 .quadro-col {
   flex: 1; min-width: 300px; background: var(--surface-2);

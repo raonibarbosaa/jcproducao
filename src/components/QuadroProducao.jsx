@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import {
   ETAPAS_PROD, etapaDe, proximaEtapa, etapaAnterior, nomeEtapa,
   nomeCliente, fmtData, situacaoPrazo,
+  linhaDoItem, acabamentoDoItem, fmtAcabamento,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
@@ -66,7 +67,14 @@ export default function QuadroProducao({ pedidos, clientes }) {
                   </div>
                   <ul className="itens">
                     {(p.itens || []).map((it, i) => (
-                      <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
+                      <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
+                        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <span>{it.produto}</span><span className="q">{it.qtd}</span>
+                        </span>
+                        {linhaDoItem(p, i) === 'GRAFICA' && (
+                          <span className="acab-tag">🏷 {fmtAcabamento(acabamentoDoItem(p, i))}</span>
+                        )}
+                      </li>
                     ))}
                   </ul>
                   {p.etapaPor && (
