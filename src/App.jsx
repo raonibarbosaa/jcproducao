@@ -19,12 +19,12 @@ import { situacaoPrazo } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
-  financeiro: ['rota', 'entregues'],
+  designer:   ['triagem', 'producao', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
+  financeiro: ['producao', 'rota', 'entregues'],
   dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
-  expedicao:  ['producao'],   // só o card de Expedição no quadro (não vê valores)
+  expedicao:  ['producao', 'rota'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
 }
 
 export default function App() {

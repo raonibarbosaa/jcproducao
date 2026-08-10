@@ -7,6 +7,7 @@ import { collection, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firesto
 import { auth, db, firebaseConfig } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
+import { SETORES_PROD, normSetor } from '../utils.js'
 
 const PERFIS = [
   { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção, Cadastros e Usuários' },
@@ -18,13 +19,10 @@ const PERFIS = [
 ]
 const PERFIL_NM = Object.fromEntries(PERFIS.map((p) => [p.id, p.nm]))
 
-// setores que um Operador pode ser liberado a movimentar
-const SETORES = [
-  { id: 'grafica', nm: 'Gráfica' },
-  { id: 'montagem', nm: 'Montagem' },
-  { id: 'expedicao', nm: 'Expedição' },
-  { id: 'entrega', nm: 'Entrega' },
-]
+// setores que um Operador pode ser liberado a movimentar — as colunas do quadro
+// (uma por linha de produção) + Montagem, Expedição e Entrega. Vem do utils para
+// não sair do lugar quando uma linha de produção for criada/renomeada.
+const SETORES = SETORES_PROD
 const SETOR_NM = Object.fromEntries(SETORES.map((s) => [s.id, s.nm]))
 
 export default function Usuarios() {
@@ -161,7 +159,7 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
         {u.perfil === 'vendedor' && u.vendedorNome && <span className="chip">👤 {u.vendedorNome}</span>}
         {u.perfil === 'operador' && (
           (u.setores || []).length
-            ? (u.setores || []).map((s) => <span key={s} className="chip">🏭 {SETOR_NM[s] || s}</span>)
+            ? (u.setores || []).map((s) => <span key={s} className="chip">🏭 {SETOR_NM[normSetor(s)] || s}</span>)
             : <span className="chip rota-warn">sem setor liberado</span>
         )}
         {u.perfil === 'expedicao' && <span className="chip">🏭 Expedição</span>}
@@ -189,7 +187,7 @@ function SetoresPicker({ setores, onToggle }) {
       <label>Setores liberados (o operador só movimenta pedidos nesses setores)</label>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
         {SETORES.map((s) => {
-          const on = setores.includes(s.id)
+          const on = setores.map(normSetor).includes(s.id)
           return (
             <button key={s.id} type="button" className="modo-btn" onClick={() => onToggle(s.id)}
               style={on ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
@@ -213,7 +211,11 @@ function FormUsuario({ onSalvar, onCancelar }) {
   const [setores, setSetores] = useState([])
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState('')
-  const toggleSetor = (id) => setSetores((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
+  // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
+  const toggleSetor = (id) => setSetores((s) => {
+    const atual = s.map(normSetor)
+    return atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
+  })
 
   async function salvar() {
     setErro('')
@@ -314,7 +316,11 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
   const [perfil, setPerfil] = useState(u.perfil || 'designer')
   const [vendedorNome, setVendedorNome] = useState(u.vendedorNome || '')
   const [setores, setSetores] = useState(u.setores || [])
-  const toggleSetor = (id) => setSetores((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
+  // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
+  const toggleSetor = (id) => setSetores((s) => {
+    const atual = s.map(normSetor)
+    return atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
+  })
 
   return (
     <div className="card em_dia" style={{ borderLeftColor: 'var(--accent)' }}>

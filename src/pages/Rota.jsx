@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
-import { doc, setDoc, deleteDoc } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, keyDoItem } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
+import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 
 export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
+  const { perfil } = useAuth()
+  const podeEntregar = ['dono', 'designer', 'financeiro'].includes(perfil) // só estes dão "entregue"
   const [filtros, setFiltros] = useState({})
   const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
   const [soImprimir, setSoImprimir] = useState(null)   // "vend|rota" p/ imprimir só uma rota
@@ -26,7 +29,12 @@ export default function Rota({ pedidos }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
+  // A Rota mostra só o que já foi EXPEDIDO — e por item: o pedido entra com a
+  // fatia pronta, mesmo que o resto ainda esteja em produção (entrega parcial).
+  // Pedido legado (que nunca passou pelo quadro) continua entrando inteiro.
   const lista = filtraPedidos(categorizados, filtros, clientes)
+    .map(fatiaProntos)
+    .filter((p) => p.itens.length > 0 || p._todos.length === 0)
 
   // agrupa: Vendedor -> Rota -> Cliente -> pedidos
   const arvore = {}
@@ -40,14 +48,35 @@ export default function Rota({ pedidos }) {
     arvore[vend][rota][nomeCli].push(p)
   }
 
-  // grava 1 pedido como entregue (com o motorista escolhido) e tira de pedidos
+  // Grava uma REMESSA em `entregues` (entregues/{idVenda}-{n}) com os itens que
+  // saíram agora. Se sobrou item em produção, o pedido continua em `pedidos` só
+  // com o que falta; quando não sobra nada, o pedido é apagado (como era antes).
   async function gravarEntrega(p, motorista) {
-    await setDoc(doc(db, 'entregues', p.idVenda), {
-      ...p,
+    const todos = p._todos || p.itens || []
+    const idxs = p._idxs || todos.map((_, i) => i)
+    const saindo = idxs.map((i) => todos[i])
+    const restantes = todos.filter((_, i) => !idxs.includes(i))
+    const parcial = restantes.length > 0
+    const n = (p.remessas || 0) + 1
+    const { _todos, _idxs, _pendentes, ...pedido } = p
+    await setDoc(doc(db, 'entregues', `${p.idVenda}-${n}`), {
+      ...pedido,
+      idVenda: p.idVenda,          // campo (o id do doc agora tem sufixo de remessa)
+      itens: saindo,
+      remessa: n,
+      parcial,
+      itensPendentes: restantes.length,
       motorista: motorista || '',
       entregueEm: new Date().toISOString(),
     })
-    await deleteDoc(doc(db, 'pedidos', p.idVenda))
+    if (parcial) {
+      // tira do pedido só o que foi entregue; o resto segue no fluxo de produção
+      const etapas = { ...(p.etapas || {}) }
+      for (const i of idxs) delete etapas[keyDoItem({ itens: todos }, i)]
+      await updateDoc(doc(db, 'pedidos', p.idVenda), { itens: restantes, etapas, remessas: n })
+    } else {
+      await deleteDoc(doc(db, 'pedidos', p.idVenda))
+    }
   }
 
   async function entregar(p, motorista) {
@@ -55,7 +84,10 @@ export default function Rota({ pedidos }) {
       alert('Escolha o motorista no seletor da rota antes de marcar como entregue.')
       return
     }
-    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?`)) return
+    const aviso = p._pendentes > 0
+      ? `\n\nEntrega PARCIAL: saem ${p.itens.length} item(ns) e ficam ${p._pendentes} em produção.`
+      : ''
+    if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?${aviso}`)) return
     await gravarEntrega(p, motorista)
   }
 
@@ -71,16 +103,16 @@ export default function Rota({ pedidos }) {
   }
 
   const vendedoresOrd = Object.keys(arvore).sort()
-  const filtrado = lista.length !== categorizados.length
+  // pedidos que ainda não têm NADA pronto (seguem no quadro de produção)
+  const emProducao = filtraPedidos(categorizados, filtros, clientes).length - lista.length
 
   return (
     <>
       <div className="toolbar no-print">
         <h1 className="page-title">Lista de Rota
           <small>
-            {filtrado
-              ? `${lista.length} de ${categorizados.length} pedidos`
-              : `${lista.length} pedidos para entregar`}
+            {lista.length} pedido(s) para entregar
+            {emProducao > 0 && ` · ${emProducao} ainda em produção`}
           </small>
         </h1>
         <div className="spacer" />
@@ -111,7 +143,7 @@ export default function Rota({ pedidos }) {
                         {Object.keys(clientes).length} cliente(s)
                       </span>
                       <span className="rb-totais">{fmtTotais(totalRota)}</span>
-                      {motoristasAtivos.length > 0 ? (
+                      {podeEntregar && (motoristasAtivos.length > 0 ? (
                         <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginLeft:'auto' }}>
                           <select className="btn" value={motoristaSel[`${vend}|${rota}`] || ''}
                             onChange={(e) => setMotoristaSel((s) => ({ ...s, [`${vend}|${rota}`]: e.target.value }))}>
@@ -126,9 +158,9 @@ export default function Rota({ pedidos }) {
                         <span className="no-print" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
                           🚚 cadastre motoristas em Cadastros › Motoristas para escolher na entrega
                         </span>
-                      )}
+                      ))}
                       <button className="btn no-print"
-                        style={{ marginLeft: motoristasAtivos.length > 0 ? 0 : 'auto' }}
+                        style={{ marginLeft: (podeEntregar && motoristasAtivos.length > 0) ? 0 : 'auto' }}
                         title="Imprimir o romaneio só desta rota"
                         onClick={() => setSoImprimir(`${vend}|${rota}`)}>🖨 Imprimir rota</button>
                     </div>
@@ -147,6 +179,11 @@ export default function Rota({ pedidos }) {
                                   {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
                                   <span className={`chip ${foraRota ? 'rota-warn' : ''}`}>📍 {p.cidade || '—'}</span>
                                   <DataEntrega p={p} atrasado={atrasado} />
+                                  {p._pendentes > 0 && (
+                                    <span className="chip rota-warn" title="O resto do pedido ainda está no quadro de produção">
+                                      ⏳ faltam {p._pendentes} item(ns) em produção
+                                    </span>
+                                  )}
                                   <span className="valor" style={{ marginLeft:'auto' }}>{fmtMoeda(p.valorTotal)}</span>
                                 </div>
                                 <ul className="itens">
@@ -154,10 +191,12 @@ export default function Rota({ pedidos }) {
                                     <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
                                   ))}
                                 </ul>
-                                <button className="btn ok no-print" style={{ width:'100%', justifyContent:'center', marginTop: 8 }}
-                                  onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
-                                  ✓ Entregue
-                                </button>
+                                {podeEntregar && (
+                                  <button className="btn ok no-print" style={{ width:'100%', justifyContent:'center', marginTop: 8 }}
+                                    onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
+                                    ✓ Entregue
+                                  </button>
+                                )}
                               </div>
                             )
                           })}
@@ -247,6 +286,15 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
                       </tr>
                     )))}
                   </tbody></table>
+                  {/* entrega parcial: o romaneio precisa dizer o que NÃO foi nesta viagem */}
+                  {ps.some((p) => p._pendentes > 0) && (
+                    <div className="pr-parcial">
+                      ⚠ ENTREGA PARCIAL —{' '}
+                      {ps.filter((p) => p._pendentes > 0)
+                        .map((p) => `#${p.idVenda}: ${p._pendentes} item(ns) ainda em produção`)
+                        .join(' · ')}
+                    </div>
+                  )}
                   <div className="pr-sign">
                     Recebido por: ______________________________   Obs: ______________________
                   </div>

@@ -10,9 +10,11 @@ import {
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
   linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
-  LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos,
+  LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
+  filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 
 export default function Triagem({ pedidos }) {
   const { vendedores, clientes, itens, carregando: cadCarregando } = useCadastros()
@@ -20,6 +22,7 @@ export default function Triagem({ pedidos }) {
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
   const [soPendentes, setSoPendentes] = useState(false)
+  const [filtros, setFiltros] = useState({})
   const [msg, setMsg] = useState('')
   const [importando, setImportando] = useState(false)
   const [painelExcluir, setPainelExcluir] = useState(false)
@@ -63,16 +66,33 @@ export default function Triagem({ pedidos }) {
         novos = agrupaPedidos(linhas, mapa, vendedores)
       }
 
-      // confere o histórico: pedido já entregue NÃO volta para a triagem
+      // confere o histórico: pedido já entregue NÃO volta para a triagem.
+      // Com entrega parcial, `entregues` tem uma remessa por leva — o doc antigo
+      // tinha o id = idVenda, o novo tem id "{idVenda}-{n}" + campo idVenda.
+      // Por isso as duas consultas. Só ignora o pedido quando a entrega fechou
+      // (remessa não-parcial ou registro antigo); quem tem só remessa parcial
+      // continua no fluxo com os itens que faltam.
       setMsg('Conferindo histórico de entregas…')
       const idsPlanilha = novos.map((p) => p.idVenda)
-      const jaEntregues = []
+      const remessas = []
       for (let i = 0; i < idsPlanilha.length; i += 30) {
         const chunk = idsPlanilha.slice(i, i + 30)
-        const snap = await getDocs(query(collection(db, 'entregues'), where(documentId(), 'in', chunk)))
-        snap.forEach((d) => jaEntregues.push({ id: d.id, ...d.data() }))
+        const [porId, porCampo] = await Promise.all([
+          getDocs(query(collection(db, 'entregues'), where(documentId(), 'in', chunk))),
+          getDocs(query(collection(db, 'entregues'), where('idVenda', 'in', chunk))),
+        ])
+        const vistos = new Set()
+        for (const snap of [porId, porCampo]) {
+          snap.forEach((d) => {
+            if (vistos.has(d.id)) return
+            vistos.add(d.id)
+            const dados = d.data()
+            remessas.push({ id: d.id, ...dados, idVenda: dados.idVenda || d.id })
+          })
+        }
       }
-      const idsEntregues = new Set(jaEntregues.map((e) => e.id))
+      const idsEntregues = new Set(remessas.filter((e) => !e.parcial).map((e) => e.idVenda))
+      const jaEntregues = remessas.filter((e) => idsEntregues.has(e.idVenda))
       const aImportar = novos.filter((p) => !idsEntregues.has(p.idVenda))
 
       // categoriza cada pedido (novo / atualizado-normal / atualizado-categorizado)
@@ -100,6 +120,8 @@ export default function Triagem({ pedidos }) {
           if (ja && ja.status) { dados.status = ja.status }
           if (ja && ja.linhasItens) { dados.linhasItens = ja.linhasItens }
           if (ja && ja.obs) dados.obs = ja.obs || dados.obs
+          // pedido com entrega parcial: os itens já entregues não voltam pela planilha
+          if (ja && ja.remessas) { dados.itens = ja.itens; dados.remessas = ja.remessas }
           // cidade definida manualmente não pode ser apagada por planilha sem cidade
           if (ja && ja.cidade && !dados.cidade) { dados.cidade = ja.cidade; dados.rota = ja.rota }
           batch.set(doc(db, 'pedidos', p.idVenda), dados, { merge: true })
@@ -166,72 +188,18 @@ export default function Triagem({ pedidos }) {
     }
   }
 
-  async function categorizar(idVenda, linha) {
-    // Botão grande: aplica a linha a TODOS os itens do pedido.
-    // Clicar de novo na mesma linha (quando o pedido inteiro já está nela) limpa tudo
-    // e devolve o pedido pra Triagem.
+  // Grava a triagem do pedido INTEIRO de uma vez (linhas dos itens + acabamentos).
+  // O card edita em rascunho local; nada vai pro Firestore antes do botão Salvar.
+  // Status = linha predominante, e só quando TODOS os itens têm linha (senão o
+  // pedido continua pendente na Triagem).
+  // updateDoc (não setDoc+merge): linhasItens/acabamentos precisam ser substituídos
+  // inteiros pra que remoção de chave propague.
+  async function salvarTriagem(idVenda, { linhasItens, acabamentos }) {
     const p = pedidos.find((x) => x.idVenda === idVenda)
-    if (!p) return
-    const todosNaMesma =
-      p.itens?.length
-        ? p.itens.every((_, i) => linhaDoItem(p, i) === linha)
-        : p.status === linha
-    try {
-      if (todosNaMesma) {
-        await updateDoc(doc(db, 'pedidos', idVenda), { status: '', linhasItens: {} })
-        return
-      }
-      // monta linhasItens com todos os índices apontando pra mesma linha
-      const linhasItens = {}
-      if (p.itens?.length) {
-        p.itens.forEach((_, i) => { linhasItens[i] = linha })
-      }
-      await updateDoc(doc(db, 'pedidos', idVenda), { status: linha, linhasItens })
-    } catch (err) {
-      console.error('[categorizar] erro:', err)
-      alert('Erro ao gravar: ' + err.message)
-    }
-  }
-
-  // botãozinho por item — alterna a linha só daquele item.
-  // recalcula status (linha predominante) e segura o pedido na Triagem se ainda faltar item.
-  async function categorizarItem(idVenda, indice, linha) {
-    const p = pedidos.find((x) => x.idVenda === idVenda)
-    if (!p) { console.warn('[categorizarItem] pedido não encontrado:', idVenda); return }
-    const atual = { ...(p.linhasItens || {}) }
-    if (atual[indice] === linha) {
-      delete atual[indice] // clicar de novo na mesma letra remove a linha do item
-    } else {
-      atual[indice] = linha
-    }
-    // simula o pedido com a mudança pra recalcular status e completude
-    const pSimulado = { ...p, linhasItens: atual }
-    const completo = pedidoCompleto(pSimulado)
-    const novoStatus = completo ? linhaPredominante(pSimulado) : ''
-    console.log('[categorizarItem]', { idVenda, indice, linha, atual, novoStatus })
-    // SEM merge no objeto linhasItens — substitui inteiro pra que delete propague.
-    // Mas mantém merge true no doc principal pra não apagar outros campos do pedido.
-    try {
-      await updateDoc(doc(db, 'pedidos', idVenda), { linhasItens: atual, status: novoStatus })
-      console.log('[categorizarItem] gravado ✓')
-    } catch (err) {
-      console.error('[categorizarItem] erro ao gravar:', err)
-      alert('Erro ao gravar: ' + err.message)
-    }
-  }
-
-  // acabamento por item (laminação/furo) — só p/ itens da linha Gráfica.
-  async function setAcabamentoItem(idVenda, indice, patch) {
-    const p = pedidos.find((x) => x.idVenda === idVenda)
-    if (!p) return
-    const atual = { ...(p.acabamentos || {}) }
-    atual[indice] = { ...acabamentoDoItem(p, indice), ...patch }
-    try {
-      await updateDoc(doc(db, 'pedidos', idVenda), { acabamentos: atual })
-    } catch (err) {
-      console.error('[setAcabamentoItem] erro ao gravar:', err)
-      alert('Erro ao gravar acabamento: ' + err.message)
-    }
+    if (!p) throw new Error('Pedido não encontrado: ' + idVenda)
+    const pSimulado = { ...p, linhasItens, status: '' }
+    const status = pedidoCompleto(pSimulado) ? linhaPredominante(pSimulado) : ''
+    await updateDoc(doc(db, 'pedidos', idVenda), { linhasItens, acabamentos, status })
   }
 
   // responsável define a cidade de um pedido sem rota -> sistema recalcula a rota
@@ -289,7 +257,9 @@ export default function Triagem({ pedidos }) {
 
   // recalcula a previsão com o calendário ATUAL (respeita a data manual do pedido)
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
-  const lista = (soPendentes ? base.filter((p) => !pedidoCompleto(p)) : base)
+  // vendedores presentes nos pedidos (select do filtro)
+  const vendedoresFiltro = vendedoresDe(base)
+  const lista = filtraPedidos(soPendentes ? base.filter((p) => !pedidoCompleto(p)) : base, filtros, clientes)
     .slice()
     .sort((a, b) => {
       // atrasados primeiro, depois sem definição, depois por id
@@ -303,7 +273,10 @@ export default function Triagem({ pedidos }) {
     <>
       <div className="toolbar">
         <h1 className="page-title">Triagem
-          <small>{pedidos.length} pedidos · {pedidos.filter(p=>!pedidoCompleto(p)).length} sem definição</small>
+          <small>
+            {pedidos.length} pedidos · {pedidos.filter(p=>!pedidoCompleto(p)).length} sem definição
+            {lista.length !== pedidos.length && ` · ${lista.length} exibido(s)`}
+          </small>
         </h1>
         <div className="spacer" />
         <label className="filter-pill">
@@ -321,6 +294,8 @@ export default function Triagem({ pedidos }) {
           </button>
         )}
       </div>
+
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedoresFiltro} />
 
       {ehDono && painelExcluir && (
         <div className="filter-pill" style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
@@ -349,18 +324,22 @@ export default function Triagem({ pedidos }) {
       {lista.length === 0 ? (
         <div className="empty">
           <div className="big">📋</div>
-          {pedidos.length === 0 ? 'Importe a planilha do Posseidon ou da Zeus para começar.' : 'Nada pendente — tudo categorizado!'}
+          {pedidos.length === 0
+            ? 'Importe a planilha do Posseidon ou da Zeus para começar.'
+            : resumoFiltros(filtros)
+              ? 'Nenhum pedido com esses filtros.'
+              : 'Nada pendente — tudo categorizado!'}
         </div>
       ) : (
         <div className="cards screen-only">
           {lista.map((p) => (
-            <CardTriagem key={p.idVenda} p={p} onCat={categorizar} onCatItem={categorizarItem} clientes={clientes}
-              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} onAcabamento={setAcabamentoItem} />
+            <CardTriagem key={p.idVenda} p={p} onSalvar={salvarTriagem} clientes={clientes} itensCad={itens}
+              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
           ))}
         </div>
       )}
 
-      <ImpressaoTriagem lista={lista} clientes={clientes} />
+      <ImpressaoTriagem lista={lista} clientes={clientes} filtros={filtros} />
 
       {resultadoImportacao && (
         <ModalImportacao
@@ -375,8 +354,9 @@ export default function Triagem({ pedidos }) {
 }
 
 // ============================ IMPRESSÃO DA TRIAGEM ============================
-function ImpressaoTriagem({ lista, clientes }) {
+function ImpressaoTriagem({ lista, clientes, filtros }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+  const resumo = resumoFiltros(filtros)
   const arvore = {}
   for (const p of lista) {
     const v = p.vendedor || '—'
@@ -390,7 +370,10 @@ function ImpressaoTriagem({ lista, clientes }) {
     <div className="print-only">
       <div className="pr-head">
         <h1>JC Sacolas · Triagem</h1>
-        <div className="meta">Impresso em {hoje}<br />{lista.length} pedido(s)</div>
+        <div className="meta">
+          Impresso em {hoje}<br />{lista.length} pedido(s)
+          {resumo && <><br />— {resumo}</>}
+        </div>
       </div>
       {vends.map((v) => (
         <div key={v} className="pr-block">
@@ -423,13 +406,88 @@ function ImpressaoTriagem({ lista, clientes }) {
   )
 }
 
-function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAcabamento }) {
+function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const [editandoApelido, setEditandoApelido] = useState(false)
   const [apelidoNovo, setApelidoNovo] = useState('')
+  // rascunho local da triagem: null = nada pendente (o card mostra o que está no banco).
+  // Linha do item, laminação e furo só vão pro Firestore no botão Salvar.
+  const [draft, setDraft] = useState(null)
+  const [salvando, setSalvando] = useState(false)
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   const foraRota = p.rota === 'FORA DE ROTA' || p.rota === 'SEM ROTA'
+
+  // materializa o estado do banco pra edição local, indexado pela CHAVE do item
+  // (keyDoItem) — é a migração do formato antigo por índice: quem salvar a triagem
+  // regrava o mapa já no formato novo. Também resolve o fallback de p.status
+  // (pedido antigo com status e sem linhasItens) em entradas explícitas por item.
+  function semear() {
+    const linhasItens = {}
+    const acabamentos = {}
+    ;(p.itens || []).forEach((_, i) => {
+      const k = keyDoItem(p, i)
+      const m = linhaDoItem(p, i)
+      if (m) linhasItens[k] = m
+      if (temAcabamento(p, i)) acabamentos[k] = acabamentoDoItem(p, i)
+    })
+    return { linhasItens, acabamentos }
+  }
+  const rasc = draft || semear()
+  // assinatura na ORDEM DOS ITENS (não dá pra comparar JSON: a ordem das chaves do
+  // rascunho muda conforme o usuário clica). Assim, desfazer na mão volta o card ao
+  // estado "salvo" sem precisar do Descartar.
+  const assinatura = (r) => (p.itens || []).map((_, i) => {
+    const k = keyDoItem(p, i)
+    const a = r.acabamentos[k]
+    return `${r.linhasItens[k] || ''}:${a ? `${a.laminacao || ''}${a.furo ? 'F' : ''}` : '-'}`
+  }).join('|')
+  const sujo = !!draft && assinatura(draft) !== assinatura(semear())
+  // "pedido como está na tela": status zerado porque as linhas já vêm materializadas
+  const pView = { ...p, linhasItens: rasc.linhasItens, acabamentos: rasc.acabamentos, status: '' }
+  const completo = pedidoCompleto(pView)
+
+  function editar(fn) {
+    setDraft((d) => {
+      const b = d || semear()
+      return fn({ linhasItens: { ...b.linhasItens }, acabamentos: { ...b.acabamentos } })
+    })
+  }
+  // clicar de novo na mesma letra remove a linha do item
+  const setLinhaItem = (i, linha) => editar((r) => {
+    const k = keyDoItem(p, i)
+    if (r.linhasItens[k] === linha) delete r.linhasItens[k]
+    else r.linhasItens[k] = linha
+    return r
+  })
+  // botão grande: aplica a linha a TODOS os itens; clicar de novo quando o pedido
+  // inteiro já está nela limpa tudo
+  const setLinhaTodos = (linha) => editar((r) => {
+    const todosNela = (p.itens || []).length && p.itens.every((_, i) => r.linhasItens[keyDoItem(p, i)] === linha)
+    r.linhasItens = {}
+    if (!todosNela) (p.itens || []).forEach((_, i) => { r.linhasItens[keyDoItem(p, i)] = linha })
+    return r
+  })
+  const setAcab = (i, patch) => editar((r) => {
+    const k = keyDoItem(p, i)
+    const atual = r.acabamentos[k] || { laminacao: '', furo: false }
+    r.acabamentos[k] = { ...atual, ...patch }
+    return r
+  })
+
+  async function salvarTriagemCard() {
+    if (!draft) return
+    setSalvando(true)
+    try {
+      await onSalvar(p.idVenda, draft)
+      setDraft(null)
+    } catch (err) {
+      console.error('[salvarTriagem] erro ao gravar:', err)
+      alert('Erro ao salvar: ' + err.message)
+    } finally {
+      setSalvando(false)
+    }
+  }
 
   async function salvarCidade() {
     if (!cidadeNova.trim()) return
@@ -540,8 +598,13 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
 
       <ul className="itens">
         {p.itens.map((it, i) => {
-          const m = linhaDoItem(p, i)
-          const ac = acabamentoDoItem(p, i)
+          const m = linhaDoItem(pView, i)
+          const ac = acabamentoDoItem(pView, i)
+          // acabamento aparece em TODO item de papel (qualquer linha) e em qualquer
+          // item da gráfica — na gráfica a laminação é obrigatória (trava o quadro).
+          const mostraAcab = materialDoItem(it, itensCad) === 'papel' || m === 'GRAFICA'
+          const acabObrig = m === 'GRAFICA'
+          const acabFalta = acabObrig && !acabamentoItemOk(ac)
           return (
             <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -554,7 +617,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
                       const sigla = opt === 'PRODUCAO' ? 'S' : opt === 'GLICHE' ? 'G' : 'Gr'
                       return (
                         <button key={opt} title={MODO_NM[opt]}
-                          onClick={() => onCatItem(p.idVenda, i, opt)}
+                          onClick={() => setLinhaItem(i, opt)}
                           style={{
                             width: 22, height: 22, borderRadius: 4,
                             border: '1px solid ' + (sel ? MODO_COR[opt] : 'var(--border)'),
@@ -571,24 +634,24 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
                   </span>
                 </span>
               </div>
-              {m === 'GRAFICA' && onAcabamento && (
+              {mostraAcab && (
                 <>
-                  <div className={`acab-row no-print${acabamentoItemOk(ac) ? '' : ' falta'}`}>
-                    <span className="acab-lbl">Laminação{acabamentoItemOk(ac) ? '' : ' ⚠'}:</span>
+                  <div className={`acab-row no-print${acabFalta ? ' falta' : ''}`}>
+                    <span className="acab-lbl">Laminação{acabFalta ? ' ⚠' : ''}:</span>
                     {LAMINACOES.map((l) => {
                       const sel = ac.laminacao === l.id
                       return (
                         <button key={l.id} className={`acab-pill${sel ? ' on' : ''}`}
-                          onClick={() => onAcabamento(p.idVenda, i, { laminacao: l.id })}>{l.nm}</button>
+                          onClick={() => setAcab(i, { laminacao: l.id })}>{l.nm}</button>
                       )
                     })}
                   </div>
                   <div className="acab-row no-print">
                     <span className="acab-lbl">Furo p/ presente:</span>
                     <button className={`acab-pill${ac.furo === true ? ' on' : ''}`}
-                      onClick={() => onAcabamento(p.idVenda, i, { furo: true })}>Sim</button>
+                      onClick={() => setAcab(i, { furo: true })}>Sim</button>
                     <button className={`acab-pill${ac.furo === false ? ' on' : ''}`}
-                      onClick={() => onAcabamento(p.idVenda, i, { furo: false })}>Não</button>
+                      onClick={() => setAcab(i, { furo: false })}>Não</button>
                   </div>
                 </>
               )}
@@ -597,7 +660,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
         })}
       </ul>
 
-      {p.itens.some((_, i) => linhaDoItem(p, i) === 'GRAFICA') && !acabamentosCompletos(p) && (
+      {p.itens.some((_, i) => linhaDoItem(pView, i) === 'GRAFICA') && !acabamentosCompletos(pView) && (
         <div className="acab-falta-aviso no-print">
           ⚠ Marque a <b>laminação</b> dos itens de gráfica — sem isso o pedido não entra no quadro de produção.
         </div>
@@ -610,7 +673,7 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
           {(() => {
             const cont = {}
             p.itens.forEach((_, i) => {
-              const m = linhaDoItem(p, i)
+              const m = linhaDoItem(pView, i)
               if (!m) return
               cont[m] = (cont[m] || 0) + 1
             })
@@ -632,18 +695,35 @@ function CardTriagem({ p, onCat, onCatItem, onCidade, onExcluir, clientes, onAca
       <div className="modo-btns">
         {MODO_ORDER.map((m) => {
           // botão grande "ativo" só quando TODOS os itens estão nessa linha
-          const todosNela = p.itens.length && p.itens.every((_, i) => linhaDoItem(p, i) === m)
+          const todosNela = p.itens.length && p.itens.every((_, i) => linhaDoItem(pView, i) === m)
           return (
             <button
               key={m}
               className={`modo-btn ${todosNela ? 'sel-' + m : ''}`}
-              onClick={() => onCat(p.idVenda, m)}
+              onClick={() => setLinhaTodos(m)}
               title={`Marcar TODOS os itens como ${MODO_NM[m]}`}
             >
               {MODO_NM[m]}
             </button>
           )
         })}
+      </div>
+
+      {/* nada é gravado a cada clique — a triagem do pedido só vai pro banco aqui */}
+      <div className={`triagem-salvar no-print${sujo ? ' sujo' : ''}`}>
+        {sujo ? (
+          <>
+            <span className="ts-msg pendente">● alterações não salvas</span>
+            <button className="btn" onClick={() => setDraft(null)} disabled={salvando}>Descartar</button>
+            <button className="btn ok" onClick={salvarTriagemCard} disabled={salvando}>
+              {salvando ? 'Salvando…' : '💾 Salvar triagem'}
+            </button>
+          </>
+        ) : (
+          <span className="ts-msg">
+            {completo ? '✓ triagem salva' : 'defina a linha de todos os itens para concluir'}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -805,7 +885,7 @@ function SecaoIgnorados({ ignorados, clientes }) {
           <div key={e.id}
             style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
               borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-            <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-faint)', minWidth: 60 }}>#{e.id}</span>
+            <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-faint)', minWidth: 60 }}>#{e.idVenda || e.id}</span>
             <span style={{ flex: 1 }}>{nomeCliente(e.cliente, clientes)}</span>
             <span className="q">✓ {fmtData(e.entregueEm)}</span>
           </div>

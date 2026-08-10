@@ -17,30 +17,86 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
-## Produção por setores (fluxo da gráfica) — Fase A no ar
-- Campo **`etapa`** no pedido (`grafica → montagem → expedicao`; `etapaDe(p)` cai em
-  `grafica` por padrão). Helpers em utils: `ETAPAS_PROD`, `etapaDe`, `proximaEtapa`,
-  `etapaAnterior`, `nomeEtapa`, `ehGrafica`.
-- **Quadro por setor** (`src/components/QuadroProducao.jsx`): a página Produção tem toggle
-  **Lista / Quadro**; o Quadro mostra só os pedidos da **linha Gráfica** em colunas
-  (Gráfica·Montagem·Expedição), botão "Concluir → próximo" grava `etapa`/`etapaPor`/`etapaEm`
-  (updateDoc em `pedidos/{idVenda}`). NÃO mostra valor R$. Move: só dono/designer (Fase A).
-- **Voz:** "quantos pedidos na montagem/gráfica", "o que falta expedir" (conta por `etapa`,
-  escopo gráfica; combina com vendedor/rota).
-- **Fase B (no ar):** perfil **`operador`** (chão de fábrica). `AuthContext` expõe `setores`
+## Produção POR ITEM (o item é a unidade de produção) — em obras
+> Reescreve as Fases A–D: o pedido não anda mais como bloco. Cada item percorre
+> **[linha do item] → Montagem → Expedição → expedido**, e itens do mesmo pedido que
+> estão na mesma etapa se agrupam num card só. Entrega parcial é o objetivo final.
+
+- **Chave estável do item (FEITO):** todo mapa por item é indexado por
+  `keyDoItem(p,i)` = `normaliza(produto)#ocorrência` (ex.: `SACOLA PAPEL TAM. P02#1`),
+  gravada em `it.key` no import (`carimbaKeys`, chamada por `agrupaPedidos`/`...Zeus`).
+  Antes era a POSIÇÃO no array — e como todo import sobrescreve `itens`, mudar a ordem
+  na planilha migrava linha/acabamento/etapa para o item errado. `doMapaDoItem(mapa,p,i)`
+  lê pela chave e só cai no índice quando não achou (legado); quem salva na Triagem
+  regrava o mapa já no formato novo. Vale para `linhasItens`, `acabamentos` e `etapas`.
+- **Etapas por item (FEITO):** `pedidos/{id}.etapas = { <key>: { et, por, em } }`, com
+  `et` ∈ `PRODUCAO|GLICHE|GRAFICA|montagem|expedicao|expedido`. Helpers em utils:
+  `COLUNAS_QUADRO` (3 linhas + Montagem + Expedição), `etapaDoItem`, `proximaEtapaItem`,
+  `etapaAnteriorItem`, `nomeEtapaItem`, `mapaEtapasCom(p,idxs,destino,quem)` (materializa
+  o mapa inteiro, congelando o legado, e aceita destino função p/ voltar cada item pra
+  SUA linha), `logEtapaItem`, `itemExpedido`. O campo antigo `p.etapa` (pedido inteiro)
+  virou só fallback de leitura: `montagem/expedicao/expedido` valem para todos os itens,
+  `grafica` vira a coluna da linha do item.
+- **Quadro (FEITO)** (`src/components/QuadroProducao.jsx`): 5 colunas —
+  `SILK SCREEN · GLICHE · GRÁFICA · Montagem · Expedição`. **Todo** item entra (papel,
+  plástico, alça torcida, etiqueta), não só gráfica. Card = `pedido × etapa`, listando só
+  os itens daquela etapa; chip "N de M itens" quando o pedido está dividido. Botão grande
+  move o card inteiro; com 2+ itens, cada item tem `←`/`→` para andar sozinho (é o que
+  divide o card). Em Montagem/Expedição cada item mostra a tag colorida da sua linha.
+  O filtro de linha da página esconde as colunas das outras linhas.
+  **Trava da laminação virou por ITEM:** item de gráfica sem laminação não entra (os
+  outros itens do mesmo pedido entram normal) e o quadro conta quantos faltam.
+- **Valor:** `veValor` = **só dono e financeiro** (designer e expedição não veem mais).
+  `valorDosItens(p,idxs)` soma `it.valor` — a planilha do Posseidon **não traz valor por
+  item** (a coluna `Valor` repete o total do pedido), então hoje devolve `null` e o card
+  mostra o total do pedido rotulado. Ligar valor por item depende de mapear uma coluna
+  de valor unitário no import (pendente de confirmação do cliente).
+- **Setores/permissões:** `SETORES_PROD` (em utils) = colunas do quadro + Entrega; o
+  cadastro de Usuários usa essa lista. `normSetor` traduz o `grafica` minúsculo do
+  cadastro antigo para a coluna `GRAFICA`. `firestore.rules`: operador/expedição só
+  mexem em `etapas` (+ campos antigos) — a regra não confere item a item (mapa), o
+  controle fino é o `podeMoverEtapa` da tela. ⚠️ **Publicar as rules no Console.**
+- **Voz:** "quantos pedidos na montagem/gráfica/silk/gliche" agora conta **itens** por
+  etapa e diz em quantos pedidos ("Tem 3 itens na montagem, de 2 pedidos").
+- **Rota por item + ENTREGA PARCIAL (FEITO):** helpers `pedidoSemEtapa`, `idxProntos`,
+  `fatiaProntos` (devolve o pedido só com os itens `expedido`, guardando `_todos`,
+  `_idxs` e `_pendentes`). A Rota mostra só o que foi expedido; pedido legado (sem
+  `etapa` nem `etapas`) entra inteiro — senão a Rota esvaziava no dia da virada.
+  Chip "⏳ faltam N item(ns) em produção" na parada e faixa "⚠ ENTREGA PARCIAL" no
+  romaneio impresso; os totais por rota só somam o que está saindo.
+- **Remessas (FEITO):** entregar grava `entregues/{idVenda}-{n}` com
+  `{idVenda, itens (só os que saíram), remessa, parcial, itensPendentes, motorista}`.
+  Se sobrou item, o pedido CONTINUA em `pedidos` só com o resto (`itens`, `etapas`
+  sem as chaves entregues, `remessas: n`); quando não sobra nada, o doc é apagado
+  (comportamento antigo). Em **Entregues** cada remessa é um card (chip "entrega
+  parcial", "#id · remessa N"), a baixa financeira é por remessa e o total do
+  cabeçalho conta o valor do pedido UMA vez só (sem valor por item, não dá pra
+  ratear). Cancelar entrega / retornar p/ Expedição usam `devolverAoPedido`, que
+  faz merge dos itens de volta no pedido (ou recria o pedido se ele já sumiu) e
+  marca a etapa dos que voltaram (`expedido` × `expedicao`).
+- **Import x remessa:** a checagem de "já entregue" consulta `entregues` por
+  `documentId()` (docs antigos) E por campo `idVenda` (remessas novas); só ignora o
+  pedido quando existe remessa NÃO parcial. Pedido com remessa parcial continua no
+  fluxo e o import NÃO devolve os itens já entregues (mantém `itens`/`remessas` do
+  que está no banco quando `ja.remessas` existe).
+- **FALTA:** valor por item no import (depende de o Posseidon exportar coluna de
+  valor unitário/subtotal — pendente de confirmação do cliente).
+- **Fase B (no ar, ajustada pelo item):** perfil **`operador`** (chão de fábrica). `AuthContext` expõe `setores`
   (array liberado, lido de `usuarios/{uid}.setores`). Cadastro de Usuários tem o perfil
   Operador + seleção de setores (Gráfica/Montagem/Expedição/Entrega); designer também acessa
   Usuários. No quadro, `podeMoverEtapa`: dono/designer movem tudo, operador só nos setores
   liberados (o de ORIGEM). Operador só acessa a aba **Produção** (não vê R$; voz oculta —
   voz só dono/designer/financeiro). `firestore.rules`: operador lê pedidos e faz update só de
-  `etapa/etapaPor/etapaEm` e só quando a etapa de origem está em `setores`. ⚠️ **Publicar as
+  `etapas` (mapa por item) — ver a seção de produção por item. ⚠️ **Publicar as
   rules no Firebase Console** (não vão pelo deploy do Pages).
 - **Fase C (no ar):** acabamentos POR ITEM (fluxo da gráfica). Helpers em utils:
   `LAMINACOES` (nenhuma/fosca/brilho), `acabamentoDoItem(p,idx)`, `fmtAcabamento`. Gravado em
   `pedidos/{idVenda}.acabamentos` (map idx → {laminacao, furo}), via `updateDoc` (substitui o
-  objeto inteiro, como `linhasItens`). Na **Triagem**, item da linha Gráfica ganha controles
-  Laminação (Nenhuma/Fosca/Brilho) + Furo (Sim/Não) — `setAcabamentoItem`. No **Quadro**, cada
-  item da gráfica mostra a tag 🏷 com o acabamento (`fmtAcabamento`).
+  objeto inteiro, como `linhasItens`). Na **Triagem**, os controles Laminação (Nenhuma/Fosca/
+  Brilho) + Furo (Sim/Não) aparecem em **todo item de papel** (`materialDoItem === 'papel'`,
+  qualquer linha) e em qualquer item da linha **Gráfica** — só na Gráfica a laminação é
+  obrigatória (é ela que libera o pedido pro quadro, via `acabamentosCompletos`). No **Quadro**,
+  cada item da gráfica mostra a tag 🏷 com o acabamento (`fmtAcabamento`).
 - **Fase D (no ar):** cauda de entrega. No **Quadro**, a Expedição ganha "✓ Expedir"
   (`etapa='expedido'`) — o pedido sai do quadro e segue pelo fluxo atual de **Rota** (motorista,
   romaneio, entregar → coleção `entregues`, como já era). Em **Entregues**, o Financeiro/Dono
@@ -66,6 +122,17 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Zeus** (segundo ERP): detecção implementada, mas **confirmado como NÃO usado**.
 
 ## Já feito (no ar)
+- **Triagem com rascunho + botão Salvar:** o `CardTriagem` NÃO grava mais a cada clique.
+  Linha do item (S/G/Gr e botões grandes) e acabamentos vão pro estado local `draft`
+  (`semear()` materializa o que está no banco, resolvendo o fallback de `p.status`, e `pView`
+  é o pedido "como está na tela"). O rodapé mostra "● alterações não salvas" + Descartar +
+  💾 Salvar triagem; `sujo` compara `JSON.stringify(draft)` com o estado salvo, então desfazer
+  na mão zera o aviso. Só o Salvar chama `salvarTriagem()` no pai, que grava
+  `linhasItens`/`acabamentos`/`status` num único `updateDoc` (status = `linhaPredominante`
+  quando `pedidoCompleto`). Cidade e apelido continuam gravando na hora.
+- **Filtros na Triagem:** `FiltrosBar` (cliente/apelido, nº pedido, vendedor, período de
+  entrega) igual Produção/Rota; combina com "Só sem definição", conta "N exibido(s)" no
+  título e o resumo entra no cabeçalho da impressão.
 - **Apelidos de cliente (de/para):** aba Clientes em Cadastros, resolução dinâmica no
   render via `nomeCliente()` + `normaliza()`; botão ✎ no CardTriagem. Captura automática
   de novas razões sociais em todo import.

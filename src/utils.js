@@ -24,11 +24,47 @@ export const MODO_COR = {
   GRAFICA: '#C2410C',  // laranja
 }
 
+// ---------- CHAVE ESTÁVEL DO ITEM ----------
+// Todo estado por item (linhasItens, acabamentos, etapas) é gravado num MAPA.
+// Indexar esse mapa pela POSIÇÃO no array é frágil: todo import sobrescreve `itens`
+// com o que veio da planilha, e se a ordem mudar o estado migra para o item errado
+// (linha trocada, acabamento trocado, item errado saindo na entrega).
+// Por isso a chave é derivada do próprio item: produto normalizado + nº da ocorrência
+// dele dentro do pedido ("SACOLA PAPEL TAM. P02#1"). É determinística — o import
+// grava em `it.key`, e pedido antigo (sem key) tem a mesma chave recalculada aqui.
+export function chaveItem(produto, ocorrencia) {
+  return `${normaliza(produto)}#${ocorrencia}`
+}
+// chaves de todos os itens do pedido, na ordem do array
+export function keysDoPedido(p) {
+  const vistos = {}
+  return (p?.itens || []).map((it) => {
+    const base = normaliza(it?.produto)
+    vistos[base] = (vistos[base] || 0) + 1
+    return it?.key || chaveItem(it?.produto, vistos[base])
+  })
+}
+export function keyDoItem(p, idx) {
+  const it = p?.itens?.[idx]
+  if (!it) return String(idx)
+  if (it.key) return it.key
+  return keysDoPedido(p)[idx]
+}
+// lê o mapa por item aceitando os dois formatos: chave nova e índice antigo (legado).
+// O índice só é consultado quando não há entrada pela chave — assim um pedido já
+// migrado nunca volta a ler lixo antigo.
+export function doMapaDoItem(mapa, p, idx) {
+  if (!mapa) return undefined
+  const k = keyDoItem(p, idx)
+  if (mapa[k] !== undefined) return mapa[k]
+  return mapa[idx]
+}
+
 // linha de um item específico do pedido.
 // se o pedido tem linhasItens definido por item, usa isso.
 // senão (pedidos antigos / Zeus / quando o usuário ainda não mexeu), herda de p.status.
 export function linhaDoItem(p, idx) {
-  const m = p.linhasItens && p.linhasItens[idx]
+  const m = doMapaDoItem(p.linhasItens, p, idx)
   if (m) return m
   return p.status || ''
 }
@@ -197,27 +233,117 @@ export function nomeCliente(razaoSocial, clientes) {
   return razaoSocial || ''
 }
 
-// ---------- ETAPAS DE PRODUÇÃO (fluxo por setor — linha Gráfica) ----------
-// O pedido de papel/gráfica anda como bloco: grafica -> montagem -> expedicao.
-// (entrega/financeiro/entregue entram em fase posterior)
-export const ETAPAS_PROD = [
-  { id: 'grafica', nome: 'Gráfica' },
-  { id: 'montagem', nome: 'Montagem' },
-  { id: 'expedicao', nome: 'Expedição' },
-]
-export const ETAPA_IDS = ETAPAS_PROD.map((e) => e.id)
-export const nomeEtapa = (id) => (ETAPAS_PROD.find((e) => e.id === id)?.nome || '')
-export const etapaDe = (p) => (p?.etapa && ETAPA_IDS.includes(p.etapa) ? p.etapa : 'grafica')
-export function proximaEtapa(id) {
-  const i = ETAPA_IDS.indexOf(id)
-  return i >= 0 && i < ETAPA_IDS.length - 1 ? ETAPA_IDS[i + 1] : null
-}
-export function etapaAnterior(id) {
-  const i = ETAPA_IDS.indexOf(id)
-  return i > 0 ? ETAPA_IDS[i - 1] : null
-}
 // pedido pertence ao fluxo da Gráfica? (tem item de linha gráfica)
 export function ehGrafica(p) { return linhasPresentes(p).includes('GRAFICA') }
+
+// ---------- ETAPAS POR ITEM (o item é a unidade de produção) ----------
+// Cada item anda sozinho: [linha de produção] -> Montagem -> Expedição -> expedido.
+// A 1a coluna é a LINHA do próprio item (Silk screen, Gliche ou Gráfica), então
+// itens de plástico, alça torcida e etiqueta também andam pelo quadro.
+// Gravado em pedidos/{id}.etapas = { <chaveDoItem>: { et, por, em } }.
+// O campo antigo p.etapa (pedido inteiro) vira fallback de leitura — legado.
+export const COLUNAS_QUADRO = [
+  ...MODO_ORDER.map((m) => ({ id: m, nome: MODO_NM[m], linha: true })),
+  { id: 'montagem', nome: 'Montagem', linha: false },
+  { id: 'expedicao', nome: 'Expedição', linha: false },
+]
+export const ETAPA_IDS_ITEM = COLUNAS_QUADRO.map((c) => c.id)
+export const nomeEtapaItem = (id) =>
+  (id === 'expedido' ? 'Expedido' : COLUNAS_QUADRO.find((c) => c.id === id)?.nome || '')
+
+// setores que um operador pode ser liberado a movimentar (ids = ids das colunas).
+// 'entrega' fica fora do quadro, mas segue no cadastro de usuários.
+export const SETORES_PROD = [
+  ...COLUNAS_QUADRO.map((c) => ({ id: c.id, nm: c.nome })),
+  { id: 'entrega', nm: 'Entrega' },
+]
+// usuário cadastrado antes das colunas por linha guardou 'grafica' minúsculo
+export const normSetor = (s) => (s === 'grafica' ? 'GRAFICA' : s === 'silk' ? 'PRODUCAO' : s)
+
+export function etapaDoItem(p, idx) {
+  const raw = doMapaDoItem(p?.etapas, p, idx)
+  const et = typeof raw === 'string' ? raw : raw?.et
+  if (et === 'expedido' || ETAPA_IDS_ITEM.includes(et)) return et
+  // legado: o pedido inteiro andava num campo só. 'grafica' virou a coluna da linha.
+  const leg = p?.etapa
+  if (leg === 'montagem' || leg === 'expedicao' || leg === 'expedido') return leg
+  if (leg === 'entregue') return 'expedido'
+  return linhaDoItem(p, idx) // item ainda na própria linha de produção
+}
+export const itemExpedido = (p, idx) => etapaDoItem(p, idx) === 'expedido'
+// quem/quando moveu esse item pela última vez (cai no log antigo do pedido inteiro)
+export function logEtapaItem(p, idx) {
+  const raw = doMapaDoItem(p?.etapas, p, idx)
+  if (raw && typeof raw === 'object' && raw.por) return { por: raw.por, em: raw.em || '' }
+  if (p?.etapaPor) return { por: p.etapaPor, em: p.etapaEm || '' }
+  return null
+}
+// quem avança quem
+export function proximaEtapaItem(et) {
+  if (MODO_ORDER.includes(et)) return 'montagem'
+  if (et === 'montagem') return 'expedicao'
+  if (et === 'expedicao') return 'expedido'
+  return null
+}
+export function etapaAnteriorItem(et, linha) {
+  if (et === 'montagem') return linha || null
+  if (et === 'expedicao') return 'montagem'
+  if (et === 'expedido') return 'expedicao'
+  return null
+}
+// materializa o mapa de etapas de TODOS os itens (congela o fallback do legado)
+// e aplica a etapa nova nos índices pedidos. Devolve o mapa pronto pro updateDoc.
+// `destino` pode ser um id de etapa ou uma função (idx) => etapa — o card de
+// Montagem/Expedição pode ter itens de linhas diferentes voltando cada um pra sua.
+export function mapaEtapasCom(p, idxs, destino, quem) {
+  const alvo = new Set(idxs)
+  const paraOnde = typeof destino === 'function' ? destino : () => destino
+  const mapa = {}
+  const agora = new Date().toISOString()
+  ;(p.itens || []).forEach((_, i) => {
+    const k = keyDoItem(p, i)
+    const anterior = doMapaDoItem(p?.etapas, p, i)
+    const base = (typeof anterior === 'object' && anterior) ? anterior : {}
+    const novo = alvo.has(i) ? paraOnde(i) : null
+    mapa[k] = novo
+      ? { et: novo, por: quem || '', em: agora }
+      : { et: etapaDoItem(p, i), por: base.por || '', em: base.em || '' }
+  })
+  return mapa
+}
+
+// pedido que nunca passou pelo quadro (nem `etapa` antigo, nem mapa `etapas`).
+// É o legado que já estava em campo — tudo dele conta como pronto para entregar,
+// senão a Rota esvaziava no dia que a produção por item entrou no ar.
+export function pedidoSemEtapa(p) {
+  return !p?.etapa && !(p?.etapas && Object.keys(p.etapas).length)
+}
+// índices dos itens liberados para a Rota/entrega
+export function idxProntos(p) {
+  const todos = (p?.itens || []).map((_, i) => i)
+  if (pedidoSemEtapa(p)) return todos
+  return todos.filter((i) => itemExpedido(p, i))
+}
+// devolve o pedido "fatiado" só com o que já pode ser entregue, guardando o
+// original em _todos/_idxs (a entrega precisa saber o que sobra no pedido).
+export function fatiaProntos(p) {
+  const idxs = idxProntos(p)
+  return {
+    ...p,
+    itens: idxs.map((i) => p.itens[i]),
+    _todos: p.itens || [],
+    _idxs: idxs,
+    _pendentes: (p.itens || []).length - idxs.length,
+  }
+}
+
+// valor dos itens escolhidos — só quando a planilha trouxe valor POR ITEM.
+// Sem essa coluna, devolve null e a tela mostra o total do pedido.
+export function valorDosItens(p, idxs) {
+  const itens = (idxs || []).map((i) => p.itens?.[i]).filter(Boolean)
+  if (!itens.length || itens.some((it) => !(Number(it.valor) > 0))) return null
+  return itens.reduce((s, it) => s + Number(it.valor), 0)
+}
 
 // ---------- ACABAMENTOS POR ITEM (fluxo da gráfica: laminação + furo) ----------
 // definidos pelo designer na Triagem; executados na Montagem.
@@ -230,8 +356,12 @@ export const nomeLaminacao = (id) => (LAMINACOES.find((l) => l.id === id)?.nm ||
 export const LAMINACOES_VALIDAS = LAMINACOES.map((l) => l.id) // ['nenhuma','fosca','brilho']
 // { laminacao: '' (não marcada) | 'nenhuma'|'fosca'|'brilho', furo: bool } — do item idx
 export function acabamentoDoItem(p, idx) {
-  const a = (p?.acabamentos || {})[idx] || {}
+  const a = doMapaDoItem(p?.acabamentos, p, idx) || {}
   return { laminacao: a.laminacao || '', furo: !!a.furo }
+}
+// tem acabamento gravado para esse item? (distingue "não marcado" de "marcado nenhuma")
+export function temAcabamento(p, idx) {
+  return doMapaDoItem(p?.acabamentos, p, idx) !== undefined
 }
 // a laminação é OBRIGATÓRIA (uma das 3 opções, incluindo "nenhuma"/sem laminação)
 export function acabamentoItemOk(ac) { return LAMINACOES_VALIDAS.includes(ac.laminacao) }
@@ -525,11 +655,14 @@ function extraiMaterialPergunta(t) {
   return null
 }
 
-// setor/etapa citado na pergunta (fluxo da gráfica) — ou null
+// setor/etapa citado na pergunta — ou null. As colunas de linha (silk/gliche/
+// gráfica) também são etapas: é onde o item está antes da montagem.
 function extraiEtapa(t) {
   if (/MONTAGEM/.test(t)) return 'montagem'
   if (/EXPEDI/.test(t)) return 'expedicao'    // expedição / expedir
-  if (/\bGRAFICA\b/.test(t)) return 'grafica'
+  if (/\bGRAFICA\b/.test(t)) return 'GRAFICA'
+  if (/SILK/.test(t)) return 'PRODUCAO'
+  if (/GLICHE|CLICHE/.test(t)) return 'GLICHE'
   return null
 }
 
@@ -618,14 +751,24 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
     /(QUAIS|QUEM|LISTA|LISTAR|MOSTRA|FALA|DIGA|CLIENTES D[AEO])/.test(t)
   const falaDePedido = /(PEDIDO|ENTREG)/.test(t)
 
-  // ---------- ETAPA / SETOR (fluxo da gráfica): "quantos pedidos na montagem" ----------
+  // ---------- ETAPA / SETOR: "quantos pedidos na montagem" ----------
+  // A produção anda por ITEM, então a conta é de itens — e diz em quantos pedidos.
   const etapaPerg = extraiEtapa(t)
   if (etapaPerg && /(PEDIDO|QUANT|FALTA|SETOR|ANDAMENTO|PRODUCAO)/.test(t)) {
-    const graf = lista.filter((p) => ehGrafica(p))
-    const n = graf.filter((p) => etapaDe(p) === etapaPerg).length
+    let itens = 0
+    const peds = new Set()
+    for (const p of lista) {
+      (p.itens || []).forEach((_, i) => {
+        if (etapaDoItem(p, i) !== etapaPerg) return
+        itens++; peds.add(p.idVenda)
+      })
+    }
     const escSemLinha = partes.filter((x) => !(linha && x === `na ${linha.nome}`)).join(' ')
     const escE = escSemLinha ? ' ' + escSemLinha : ''
-    return `${n === 1 ? 'Tem 1 pedido' : `Tem ${n} pedidos`} na ${nomeEtapa(etapaPerg).toLowerCase()}${escE}.`
+    const nm = nomeEtapaItem(etapaPerg).toLowerCase()
+    if (!itens) return `Não tem nenhum item na ${nm}${escE}.`
+    return `${itens === 1 ? 'Tem 1 item' : `Tem ${itens} itens`} na ${nm}, `
+      + `${peds.size === 1 ? 'de 1 pedido' : `de ${peds.size} pedidos`}${escE}.`
   }
 
   // ---------- PRODUTO POR MATERIAL: por produto / por mês / produto específico ----------
@@ -846,7 +989,14 @@ export function agrupaPedidos(linhas, mapa, cadastros) {
     const v = Number(row[mapa.valor]) || 0
     if (v > porId[id].valorTotal) porId[id].valorTotal = v
   }
-  return Object.values(porId)
+  return Object.values(porId).map(carimbaKeys)
+}
+
+// grava a chave estável em cada item (o estado por item é indexado por ela)
+export function carimbaKeys(p) {
+  const ks = keysDoPedido(p)
+  if (p.itens) p.itens = p.itens.map((it, i) => ({ ...it, key: ks[i] }))
+  return p
 }
 
 // ============================================================
@@ -946,5 +1096,5 @@ export function agrupaPedidosZeus(linhas, mapa, cadastros) {
       itens: [],
     }
   }
-  return Object.values(porId)
+  return Object.values(porId).map(carimbaKeys)
 }

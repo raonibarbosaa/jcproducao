@@ -353,12 +353,27 @@ input, select { font-family: var(--font); }
 .acab-row.falta .acab-lbl { color: var(--danger); }
 .acab-falta-aviso { margin-top: 8px; font-size: 12px; font-weight: 600; color: #ff9ea1;
   background: rgba(229,72,77,0.10); border: 1px solid rgba(229,72,77,0.35); border-radius: 8px; padding: 6px 9px; }
+/* barra "Salvar triagem" no rodapé do card (rascunho local x gravado) */
+.triagem-salvar {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border);
+}
+.triagem-salvar.sujo { border-top-color: var(--accent); }
+.triagem-salvar .ts-msg { font-size: 12px; color: var(--text-faint); margin-right: auto; }
+.triagem-salvar .ts-msg.pendente { color: var(--accent); font-weight: 700; }
+
 .aviso-acab { margin-bottom: 12px; font-size: 13px; color: #ffcf8a;
   background: rgba(240,180,41,0.10); border: 1px solid rgba(240,180,41,0.4); border-radius: 8px; padding: 9px 12px; }
 
 /* ---------- QUADRO POR SETOR (Produção — fluxo da gráfica) ---------- */
 .vista-toggle { display: inline-flex; gap: 4px; }
 .qcard .itens .acab-tag { display: block; font-size: 11px; color: var(--text-faint); margin-top: 1px; }
+/* tag da linha de produção dentro dos cards de Montagem/Expedição */
+.linha-tag {
+  display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .3px;
+  color: #fff; border-radius: 4px; padding: 1px 5px; margin-right: 5px; vertical-align: 1px;
+}
+.qcard-valor small { font-weight: 400; color: var(--text-faint); font-size: 10px; }
 .quadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
 .quadro-col {
   flex: 1; min-width: 300px; background: var(--surface-2);
@@ -497,6 +512,7 @@ input, select { font-family: var(--font); }
     break-inside: avoid;
   }
   .pr-ped.parada { border: 1px solid #444; padding: 7px 9px; margin-bottom: 8px; }
+  .pr-parcial { margin-top: 4px; font-size: 11px; font-weight: 700; border: 1px dashed #000; padding: 3px 6px; }
   .pr-ped .top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
   .pr-ped .top .nm { font-weight: 700; }
   .pr-ped .top .cid { color: #333; font-weight: 600; }

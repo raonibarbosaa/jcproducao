@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
+import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
@@ -26,33 +26,54 @@ export default function Entregues() {
   // motoristas que aparecem no histórico (inclui inativos/antigos)
   const motoristasNasEntregas = [...new Set(itens.map((p) => p.motorista).filter(Boolean))].sort()
 
-  // desfaz a entrega: devolve o pedido ao fluxo (volta pra Rota/Produção) e sai do histórico
+  // Devolve os itens desta REMESSA para o pedido e apaga o registro da entrega.
+  // Se o pedido ainda existe (entrega parcial: o resto ficou em produção), os itens
+  // voltam para dentro dele; se não existe mais, o pedido é recriado só com eles.
+  // `destino` é a etapa em que os itens voltam: 'expedido' (pronto, cai na Rota)
+  // ou 'expedicao' (volta pro quadro de produção).
+  async function devolverAoPedido(p, destino) {
+    const { id, entregueEm, motorista, pago, pagoPor, pagoEm,
+            remessa, parcial, itensPendentes, ...pedido } = p
+    const voltando = pedido.itens || []
+    const marca = { et: destino, por: nome || '', em: new Date().toISOString() }
+    const ref = doc(db, 'pedidos', p.idVenda)
+    const atual = await getDoc(ref)
+    if (atual.exists()) {
+      const dados = atual.data()
+      const jaTem = new Set((dados.itens || []).map((it, i) => it.key || keyDoItem(dados, i)))
+      const novos = voltando.filter((it, i) => !jaTem.has(it.key || keyDoItem({ itens: voltando }, i)))
+      const etapas = { ...(dados.etapas || {}) }
+      novos.forEach((it, i) => { etapas[it.key || keyDoItem({ itens: novos }, i)] = marca })
+      await updateDoc(ref, { itens: [...(dados.itens || []), ...novos], etapas })
+    } else {
+      const etapas = {}
+      voltando.forEach((it, i) => { etapas[it.key || keyDoItem({ itens: voltando }, i)] = marca })
+      await setDoc(ref, { ...pedido, itens: voltando, etapas, remessas: remessa ? remessa - 1 : 0 })
+    }
+    await deleteDoc(doc(db, 'entregues', p.id))
+  }
+
+  // desfaz a entrega: devolve o pedido ao fluxo (volta pra Rota) e sai do histórico
   async function cancelarEntrega(p) {
-    if (!confirm(`Cancelar a entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}? Ele volta para a lista de rota.`)) return
-    const { id, entregueEm, motorista, pago, pagoPor, pagoEm, ...pedido } = p
-    await setDoc(doc(db, 'pedidos', p.idVenda), pedido)
-    await deleteDoc(doc(db, 'entregues', p.idVenda))
+    if (!confirm(`Cancelar a entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${p.remessa ? ` (remessa ${p.remessa})` : ''}? ${p.itens?.length || 0} item(ns) voltam para a lista de rota.`)) return
+    await devolverAoPedido(p, 'expedido')
   }
 
   // não foi entregue: devolve o pedido para a EXPEDIÇÃO (volta ao quadro de produção)
   async function retornarExpedicao(p) {
-    if (!confirm(`O pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)} NÃO foi entregue? Ele volta para a Expedição no quadro de produção.`)) return
-    const { id, entregueEm, motorista, pago, pagoPor, pagoEm, ...pedido } = p
-    await setDoc(doc(db, 'pedidos', p.idVenda), {
-      ...pedido, etapa: 'expedicao', etapaPor: nome || '', etapaEm: new Date().toISOString(),
-    })
-    await deleteDoc(doc(db, 'entregues', p.idVenda))
+    if (!confirm(`O pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)} NÃO foi entregue? ${p.itens?.length || 0} item(ns) voltam para a Expedição no quadro de produção.`)) return
+    await devolverAoPedido(p, 'expedicao')
   }
 
-  // baixa financeira: confirma o pagamento e fecha o pedido
+  // baixa financeira: confirma o pagamento e fecha a remessa
   async function darBaixa(p) {
-    await updateDoc(doc(db, 'entregues', p.idVenda), {
+    await updateDoc(doc(db, 'entregues', p.id), {
       pago: true, pagoPor: nome || '', pagoEm: new Date().toISOString(),
     })
   }
   async function desfazerBaixa(p) {
     if (!confirm(`Reabrir o pagamento do pedido #${p.idVenda}? Ele volta para "pendente".`)) return
-    await updateDoc(doc(db, 'entregues', p.idVenda), {
+    await updateDoc(doc(db, 'entregues', p.id), {
       pago: false, pagoPor: deleteField(), pagoEm: deleteField(),
     })
   }
@@ -73,7 +94,16 @@ export default function Entregues() {
     .filter((p) => !soPendentes || !p.pago)
     .sort((a, b) => new Date(b.entregueEm) - new Date(a.entregueEm))
 
-  const totalMes = lista.reduce((s, p) => s + (Number(p.valorTotal) || 0), 0)
+  // Total: com entrega parcial o mesmo pedido aparece em várias remessas, então o
+  // valor do pedido só pode ser contado UMA vez (enquanto não houver valor por item).
+  const valorRemessa = (p) => valorDosItens(p, (p.itens || []).map((_, i) => i))
+  let totalMes = 0
+  const jaContado = new Set()
+  for (const p of lista) {
+    const v = valorRemessa(p)
+    if (v !== null) { totalMes += v; continue }
+    if (!jaContado.has(p.idVenda)) { jaContado.add(p.idVenda); totalMes += Number(p.valorTotal) || 0 }
+  }
   const nPendentes = itens.filter((p) => !p.pago).length
 
   return (
@@ -106,15 +136,20 @@ export default function Entregues() {
       ) : (
         <div className="cards">
           {lista.map((p) => (
-            <div key={p.idVenda} className="card em_dia">
+            <div key={p.id} className="card em_dia">
               <div className="card-top">
                 <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
-                <div className="idv">#{p.idVenda}</div>
+                <div className="idv">#{p.idVenda}{p.remessa > 1 ? ` · remessa ${p.remessa}` : ''}</div>
               </div>
               <div className="meta-row">
                 {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
                 <span className="chip">{p.vendedor}</span>
                 <span className="chip">{p.cidade || '—'}</span>
+                {p.parcial && (
+                  <span className="chip rota-warn" title="O resto do pedido ficou em produção">
+                    📦 entrega parcial · faltaram {p.itensPendentes} item(ns)
+                  </span>
+                )}
                 {p.motorista && <span className="chip">🚚 {p.motorista}</span>}
                 <span className="chip" style={{ color: 'var(--ok)' }}>✓ {fmtData(p.entregueEm)}</span>
                 {p.pago
@@ -126,7 +161,11 @@ export default function Entregues() {
                   <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
                 ))}
               </ul>
-              <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
+              <div className="valor" style={{ marginTop: 8 }}>
+                {valorRemessa(p) !== null
+                  ? fmtMoeda(valorRemessa(p))
+                  : <>{fmtMoeda(p.valorTotal)} {p.parcial && <small style={{ color: 'var(--text-faint)', fontWeight: 400 }}>total do pedido</small>}</>}
+              </div>
               {(podeCancelar || podeBaixa || podeRetornar) && (
                 <div className="modo-btns" style={{ marginTop: 10 }}>
                   {podeBaixa && (

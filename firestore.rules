@@ -36,15 +36,19 @@ service cloud.firestore {
       allow read: if ehStaff() || ehOperador() || ehExpedicao()
         || (ehVendedor() && resource.data.vendedor == meuVendedor());
       allow create, delete: if ehStaff();
-      // staff atualiza qualquer campo; operador/expedição só avançam a etapa
-      // e só a partir do setor de ORIGEM que operam.
+      // staff atualiza qualquer campo; operador/expedição só mexem nas ETAPAS.
+      // A etapa agora é POR ITEM (mapa `etapas`), então a regra não tem como conferir
+      // item a item de qual setor cada um saiu — isso é conferido na tela
+      // (podeMoverEtapa no QuadroProducao). Aqui garantimos duas coisas: que nenhum
+      // outro campo é tocado e que o operador tem pelo menos um setor liberado.
       allow update: if ehStaff()
         || (ehOperador()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['etapa', 'etapaPor', 'etapaEm'])
-            && (resource.data.get('etapa', 'grafica') in meu().get('setores', [])))
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm'])
+            && meu().get('setores', []).size() > 0)
         || (ehExpedicao()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['etapa', 'etapaPor', 'etapaEm'])
-            && resource.data.get('etapa', 'grafica') == 'expedicao');
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm']));
     }
 
     // Entregues: somente staff.

@@ -5,7 +5,7 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
-  MATERIAIS, nomeDoMaterial, ehGrafica, acabamentosCompletos,
+  MATERIAIS, nomeDoMaterial,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -30,11 +30,11 @@ export default function Producao({ pedidos }) {
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
 
-  // pedidos do fluxo da GRÁFICA (para o quadro por setor) — respeita os filtros do FiltrosBar.
-  // Só entram no quadro os que têm a LAMINAÇÃO marcada em todos os itens de gráfica.
-  const graficaTodos = filtraPedidos(categorizados.filter((p) => ehGrafica(p)), filtros, clientes)
-  const graficaPedidos = graficaTodos.filter((p) => acabamentosCompletos(p))
-  const aguardandoAcab = graficaTodos.length - graficaPedidos.length
+  // quadro por setor: TODO pedido categorizado entra (o item é que anda pela sua linha
+  // — papel, plástico, alça torcida e etiqueta). Respeita os filtros do FiltrosBar;
+  // o filtro de linha vai para o quadro, que esconde as colunas das outras linhas.
+  // A trava da laminação é por item, dentro do próprio quadro.
+  const pedidosQuadro = filtraPedidos(categorizados, filtros, clientes)
 
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
@@ -162,16 +162,11 @@ export default function Producao({ pedidos }) {
 
       {vista === 'quadro' && (
         <div className="screen-only">
-          {aguardandoAcab > 0 && (
-            <div className="aviso-acab">
-              ⚠ {aguardandoAcab} pedido(s) de gráfica aguardando a marcação de <b>laminação</b> na Triagem — só entram no quadro depois de marcados.
-            </div>
-          )}
-          {graficaPedidos.length === 0
+          {pedidosQuadro.length === 0
             ? <div className="empty"><div className="big">🏭</div>
-                {aguardandoAcab > 0 ? 'Nenhum pedido pronto — marque a laminação na Triagem.' : 'Nenhum pedido de papel/gráfica no momento.'}
+                {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
-            : <QuadroProducao pedidos={graficaPedidos} clientes={clientes} />}
+            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} filtroLinha={filtroLinha} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}
