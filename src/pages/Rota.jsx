@@ -6,6 +6,7 @@ import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
+import SeloLinha from '../components/SeloLinha.jsx'
 
 export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
@@ -188,7 +189,7 @@ export default function Rota({ pedidos }) {
                                 </div>
                                 <ul className="itens">
                                   {p.itens.map((it, i) => (
-                                    <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
+                                    <li key={i}><span><SeloLinha linha={it._linha} />{it.produto}</span><span className="q">{it.qtd}</span></li>
                                   ))}
                                 </ul>
                                 {podeEntregar && (
@@ -281,7 +282,7 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
                   <table className="pr-itens"><tbody>
                     {ps.flatMap((p) => p.itens.map((it, i) => (
                       <tr key={`${p.idVenda}-${i}`}>
-                        <td>{it.produto} <span className="ref">#{p.idVenda}</span></td>
+                        <td><SeloLinha linha={it._linha} />{it.produto} <span className="ref">#{p.idVenda}</span></td>
                         <td className="q">{it.qtd}</td>
                       </tr>
                     )))}

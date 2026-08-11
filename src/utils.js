@@ -24,6 +24,14 @@ export const MODO_COR = {
   GRAFICA: '#C2410C',  // laranja
 }
 
+// selo quadrado da linha — o mesmo símbolo que o designer marca na Triagem.
+// Acompanha o produto em TODA tela por onde ele passa (quadro, lista, rota, romaneio).
+export const SIGLA_LINHA = {
+  PRODUCAO: 'S',
+  GLICHE: 'G',
+  GRAFICA: 'Gr',
+}
+
 // ---------- CHAVE ESTÁVEL DO ITEM ----------
 // Todo estado por item (linhasItens, acabamentos, etapas) é gravado num MAPA.
 // Indexar esse mapa pela POSIÇÃO no array é frágil: todo import sobrescreve `itens`
@@ -330,7 +338,9 @@ export function fatiaProntos(p) {
   const idxs = idxProntos(p)
   return {
     ...p,
-    itens: idxs.map((i) => p.itens[i]),
+    // _linha carimbada aqui: depois da fatia o índice muda, e a Rota/romaneio
+    // precisam do selo da linha de cada item
+    itens: idxs.map((i) => ({ ...p.itens[i], _linha: linhaDoItem(p, i) })),
     _todos: p.itens || [],
     _idxs: idxs,
     _pendentes: (p.itens || []).length - idxs.length,

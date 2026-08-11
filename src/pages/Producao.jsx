@@ -5,20 +5,23 @@ import {
   MODO_ORDER, MODO_NM, MODO_COR, MODO_DESC, fmtData, situacaoPrazo, ORIGEM_NM,
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
-  MATERIAIS, nomeDoMaterial,
+  MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 import QuadroProducao from '../components/QuadroProducao.jsx'
+import SubTabs from '../components/SubTabs.jsx'
+import SeloLinha from '../components/SeloLinha.jsx'
 
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
-  const { perfil, nome } = useAuth()
+  const { perfil, nome, setores } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
   const [vista, setVista] = useState(['operador', 'expedicao'].includes(perfil) ? 'quadro' : 'lista')   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
+  const [linhaEscolhida, setLinhaPainel] = useState('')  // aba do quadro ('' = automática)
   const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
   const [filtros, setFiltros] = useState({})
   const [sel, setSel] = useState([])       // idVenda selecionados p/ alteração em lote
@@ -35,6 +38,26 @@ export default function Producao({ pedidos }) {
   // o filtro de linha vai para o quadro, que esconde as colunas das outras linhas.
   // A trava da laminação é por item, dentro do próprio quadro.
   const pedidosQuadro = filtraPedidos(categorizados, filtros, clientes)
+
+  // ---------- painéis por linha (abas do quadro) ----------
+  // Cada linha tem o SEU painel; o badge conta os itens que estão no fluxo dela
+  // (fora os já expedidos e os de gráfica que ainda esperam a laminação).
+  const contaLinha = {}
+  for (const p of pedidosQuadro) {
+    (p.itens || []).forEach((_, i) => {
+      const l = linhaDoItem(p, i)
+      if (!l || etapaDoItem(p, i) === 'expedido') return
+      if (l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) return
+      contaLinha[l] = (contaLinha[l] || 0) + 1
+    })
+  }
+  const abasLinha = MODO_ORDER.map((m) => ({ id: m, label: MODO_NM[m], badge: contaLinha[m] || 0 }))
+  // sem escolha do usuário: abre na linha que o operador opera, senão na que tem serviço
+  const linhaOperador = (setores || []).map(normSetor).find((s) => MODO_ORDER.includes(s))
+  const linhaPainel = linhaEscolhida
+    || linhaOperador
+    || MODO_ORDER.find((m) => contaLinha[m])
+    || MODO_ORDER[0]
 
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
@@ -126,10 +149,10 @@ export default function Producao({ pedidos }) {
   return (
     <>
       <div className="toolbar no-print">
-        <h1 className="page-title">{vista === 'quadro' ? 'Produção · Quadro (Gráfica)' : 'Lista de Produção'}
+        <h1 className="page-title">{vista === 'quadro' ? `Produção · ${MODO_NM[linhaPainel]}` : 'Lista de Produção'}
           <small>
             {vista === 'quadro'
-              ? `${graficaPedidos.length} pedido(s) no fluxo da gráfica`
+              ? `${contaLinha[linhaPainel] || 0} item(ns) no fluxo desta linha`
               : (filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`)}
           </small>
         </h1>
@@ -162,11 +185,14 @@ export default function Producao({ pedidos }) {
 
       {vista === 'quadro' && (
         <div className="screen-only">
+          {/* um painel por LINHA de produção: cada aba tem o próprio fluxo
+              [linha] → Montagem → Expedição, com os itens só daquela linha */}
+          <SubTabs abas={abasLinha} ativa={linhaPainel} onTrocar={setLinhaPainel} />
           {pedidosQuadro.length === 0
             ? <div className="empty"><div className="big">🏭</div>
                 {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
-            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} filtroLinha={filtroLinha} />}
+            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} linha={linhaPainel} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}
@@ -282,7 +308,7 @@ function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
       </div>
       <ul className="itens">
         {p.itens.map((it, i) => (
-          <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
+          <li key={i}><span><SeloLinha linha={p._linhaCard} />{it.produto}</span><span className="q">{it.qtd}</span></li>
         ))}
       </ul>
       {p.obs && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 6 }}>⚠ {p.obs}</div>}
@@ -331,7 +357,7 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, filtro
                           </div>
                           <table className="pr-itens"><tbody>
                             {p.itens.map((it, i) => (
-                              <tr key={i}><td>{it.produto}</td><td className="q">{it.qtd}</td></tr>
+                              <tr key={i}><td><SeloLinha linha={p._linhaCard} />{it.produto}</td><td className="q">{it.qtd}</td></tr>
                             ))}
                           </tbody></table>
                           {p.obs && <div className="pr-obs">⚠ {p.obs}</div>}

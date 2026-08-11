@@ -37,15 +37,22 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   SUA linha), `logEtapaItem`, `itemExpedido`. O campo antigo `p.etapa` (pedido inteiro)
   virou só fallback de leitura: `montagem/expedicao/expedido` valem para todos os itens,
   `grafica` vira a coluna da linha do item.
-- **Quadro (FEITO)** (`src/components/QuadroProducao.jsx`): 5 colunas —
-  `SILK SCREEN · GLICHE · GRÁFICA · Montagem · Expedição`. **Todo** item entra (papel,
-  plástico, alça torcida, etiqueta), não só gráfica. Card = `pedido × etapa`, listando só
-  os itens daquela etapa; chip "N de M itens" quando o pedido está dividido. Botão grande
-  move o card inteiro; com 2+ itens, cada item tem `←`/`→` para andar sozinho (é o que
-  divide o card). Em Montagem/Expedição cada item mostra a tag colorida da sua linha.
-  O filtro de linha da página esconde as colunas das outras linhas.
+- **Quadro = UM PAINEL POR LINHA (FEITO)** (`src/components/QuadroProducao.jsx` recebe
+  `linha`): a página Produção tem `SubTabs` SILK SCREEN · GLICHE · GRÁFICA (badge = itens
+  no fluxo daquela linha) e cada painel mostra 3 colunas — `[linha] → Montagem →
+  Expedição` — só com os itens dela. Aba inicial: a linha do operador (`setores`), senão
+  a primeira com serviço. **Todo** item entra (papel, plástico, alça torcida, etiqueta).
+  Card = `pedido × etapa`, listando só os itens daquela etapa; chip "N de M itens" quando
+  o pedido está dividido. Botão grande move o card inteiro; com 2+ itens, cada item tem
+  `←`/`→` para andar sozinho (é o que divide o card).
   **Trava da laminação virou por ITEM:** item de gráfica sem laminação não entra (os
   outros itens do mesmo pedido entram normal) e o quadro conta quantos faltam.
+- **Selo da linha (FEITO):** `src/components/SeloLinha.jsx` — quadradinho colorido
+  `S`/`G`/`Gr` (`SIGLA_LINHA` + `MODO_COR`), o mesmo símbolo marcado na Triagem, colado
+  no nome do produto em TODA tela por onde o item passa: quadro (todas as colunas), lista
+  de produção, Rota, Entregues e os dois romaneios impressos. No `@media print` vira
+  quadrado branco com moldura preta (impressora P&B). `fatiaProntos` carimba `_linha` em
+  cada item porque depois da fatia o índice muda.
 - **Valor:** `veValor` = **só dono e financeiro** (designer e expedição não veem mais).
   `valorDosItens(p,idxs)` soma `it.valor` — a planilha do Posseidon **não traz valor por
   item** (a coluna `Valor` repete o total do pedido), então hoje devolve `null` e o card

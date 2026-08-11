@@ -3,18 +3,20 @@ import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   COLUNAS_QUADRO, etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
-  mapaEtapasCom, normSetor, MODO_COR, MODO_NM,
+  mapaEtapasCom, normSetor, MODO_COR,
   nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, acabamentoItemOk, fmtAcabamento, valorDosItens, logEtapaItem,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
+import SeloLinha from './SeloLinha.jsx'
 
-// Quadro de produção POR ITEM: [linha do item] → Montagem → Expedição.
+// Quadro de produção POR ITEM, um PAINEL POR LINHA (aba SILK/GLICHE/GRÁFICA):
+// cada painel mostra [linha] → Montagem → Expedição só com os itens daquela linha.
 // O item é a unidade — itens do mesmo pedido que estão na mesma etapa aparecem
 // juntos num card; quando um adianta, o card se divide sozinho.
 // NÃO mostra valor para operador/designer/expedição (só dono e financeiro).
-export default function QuadroProducao({ pedidos, clientes, filtroLinha }) {
+export default function QuadroProducao({ pedidos, clientes, linha }) {
   const { perfil, nome, setores } = useAuth()
   const ehStaff = perfil === 'dono' || perfil === 'designer'
   const veValor = perfil === 'dono' || perfil === 'financeiro'
@@ -23,13 +25,13 @@ export default function QuadroProducao({ pedidos, clientes, filtroLinha }) {
     ? ['expedicao']
     : (perfil === 'operador' ? (setores || []).map(normSetor) : [])
   const podeMoverEtapa = (etapa) => ehStaff || setoresOp.includes(etapa)
-  // colunas VISÍVEIS: staff, expedição e financeiro veem todas (expedição só age na
-  // Expedição; financeiro é só leitura); operador vê só os setores que opera.
-  let colunas = (ehStaff || perfil === 'expedicao' || perfil === 'financeiro')
-    ? COLUNAS_QUADRO
-    : COLUNAS_QUADRO.filter((c) => setoresOp.includes(c.id))
-  // filtro de linha da página: esconde as colunas das outras linhas
-  if (filtroLinha) colunas = colunas.filter((c) => !c.linha || c.id === filtroLinha)
+  // o painel é de UMA linha: a coluna dela + Montagem + Expedição.
+  // Staff, expedição e financeiro veem as três (expedição só age na Expedição;
+  // financeiro é só leitura); operador vê só os setores que opera.
+  let colunas = COLUNAS_QUADRO.filter((c) => !c.linha || c.id === linha)
+  if (!(ehStaff || perfil === 'expedicao' || perfil === 'financeiro')) {
+    colunas = colunas.filter((c) => setoresOp.includes(c.id))
+  }
   const [salvando, setSalvando] = useState('')
 
   // monta os cards: um por (pedido × etapa), com os índices dos itens que estão ali
@@ -39,11 +41,9 @@ export default function QuadroProducao({ pedidos, clientes, filtroLinha }) {
   for (const p of pedidos) {
     const grupos = {}
     ;(p.itens || []).forEach((_, i) => {
-      const linha = linhaDoItem(p, i)
-      if (!linha) return                       // item ainda sem linha: fica na Triagem
+      if (linhaDoItem(p, i) !== linha) return   // painel desta linha só (item sem linha fica na Triagem)
       const et = etapaDoItem(p, i)
-      if (et === 'expedido') return            // já saiu do quadro (segue pela Rota)
-      if (filtroLinha && linha !== filtroLinha) return
+      if (et === 'expedido') return             // já saiu do quadro (segue pela Rota)
       // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
       if (linha === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) { aguardandoAcab++; return }
       ;(grupos[et] ??= []).push(i)
@@ -113,17 +113,12 @@ export default function QuadroProducao({ pedidos, clientes, filtroLinha }) {
                     <ul className="itens">
                       {idxs.map((i) => {
                         const it = p.itens[i]
-                        const linha = linhaDoItem(p, i)
                         const antItem = etapaAnteriorItem(c.id, linha)
                         return (
                           <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                             <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                              <span>
-                                {!c.linha && (
-                                  <span className="linha-tag" style={{ background: MODO_COR[linha] }}>{MODO_NM[linha]}</span>
-                                )}
-                                {it.produto}
-                              </span>
+                              {/* o selo da linha anda junto com o produto em toda etapa */}
+                              <span><SeloLinha linha={linha} />{it.produto}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 <span className="q">{it.qtd}</span>
                                 {/* avança/volta SÓ este item — é o que separa o card em dois */}
@@ -165,7 +160,7 @@ export default function QuadroProducao({ pedidos, clientes, filtroLinha }) {
                         {!c.linha && (
                           <button className="mini-btn" title={`Voltar ${idxs.length > 1 ? 'os itens' : 'o item'} para a etapa anterior`}
                             disabled={!!salvando}
-                            onClick={() => mover(p, idxs, (i) => etapaAnteriorItem(c.id, linhaDoItem(p, i)), marca)}
+                            onClick={() => mover(p, idxs, etapaAnteriorItem(c.id, linha), marca)}
                           >←</button>
                         )}
                         {prox && prox !== 'expedido' && (

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens, linhaDoItem } from '../utils.js'
+import SeloLinha from '../components/SeloLinha.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
@@ -158,7 +159,7 @@ export default function Entregues() {
               </div>
               <ul className="itens">
                 {p.itens?.map((it, i) => (
-                  <li key={i}><span>{it.produto}</span><span className="q">{it.qtd}</span></li>
+                  <li key={i}><span><SeloLinha linha={linhaDoItem(p, i)} />{it.produto}</span><span className="q">{it.qtd}</span></li>
                 ))}
               </ul>
               <div className="valor" style={{ marginTop: 8 }}>
