@@ -62,7 +62,7 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   cadastro de Usuários usa essa lista. `normSetor` traduz o `grafica` minúsculo do
   cadastro antigo para a coluna `GRAFICA`. `firestore.rules`: operador/expedição só
   mexem em `etapas` (+ campos antigos) — a regra não confere item a item (mapa), o
-  controle fino é o `podeMoverEtapa` da tela. ⚠️ **Publicar as rules no Console.**
+  controle fino é o `podeMoverEtapa` da tela. ✅ Rules publicadas (11/08/2026).
 - **Voz:** "quantos pedidos na montagem/gráfica/silk/gliche" agora conta **itens** por
   etapa e diz em quantos pedidos ("Tem 3 itens na montagem, de 2 pedidos").
 - **Rota por item + ENTREGA PARCIAL (FEITO):** helpers `pedidoSemEtapa`, `idxProntos`,
@@ -94,8 +94,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   Usuários. No quadro, `podeMoverEtapa`: dono/designer movem tudo, operador só nos setores
   liberados (o de ORIGEM). Operador só acessa a aba **Produção** (não vê R$; voz oculta —
   voz só dono/designer/financeiro). `firestore.rules`: operador lê pedidos e faz update só de
-  `etapas` (mapa por item) — ver a seção de produção por item. ⚠️ **Publicar as
-  rules no Firebase Console** (não vão pelo deploy do Pages).
+  `etapas` (mapa por item) — ver a seção de produção por item. ✅ Rules publicadas
+  (11/08/2026). Lembrete: rules NÃO vão pelo deploy do Pages — publicar sempre com
+  `npx firebase deploy --only firestore:rules` depois de editar `firestore.rules`.
 - **Fase C (no ar):** acabamentos POR ITEM (fluxo da gráfica). Helpers em utils:
   `LAMINACOES` (nenhuma/fosca/brilho), `acabamentoDoItem(p,idx)`, `fmtAcabamento`. Gravado em
   `pedidos/{idVenda}.acabamentos` (map idx → {laminacao, furo}), via `updateDoc` (substitui o
@@ -229,8 +230,7 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **App.jsx:** consulta de pedidos filtra `where('vendedor','==', vendedorNome)` quando o
   perfil é vendedor. `AuthContext` expõe `vendedorNome`.
 - **Segurança real:** `firestore.rules` reescrito — staff (dono/designer/financeiro) total;
-  vendedor lê só os próprios pedidos; coleção `ciencias` preparada. ⚠️ As regras precisam ser
-  PUBLICADAS no Firebase Console (não vão pelo deploy do Pages).
+  vendedor lê só os próprios pedidos; coleção `ciencias` preparada. ✅ Publicadas (11/08/2026).
 - **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
   vendedor→rota.
 - **Fase C (em produção):** ciência por rota. Coleção `ciencias` (append/log) com
