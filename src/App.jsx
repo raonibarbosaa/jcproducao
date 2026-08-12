@@ -16,17 +16,18 @@ import MeusPedidos from './pages/MeusPedidos.jsx'
 import Ciencia from './pages/Ciencia.jsx'
 import Auditoria from './pages/Auditoria.jsx'
 import Conciliacao from './pages/Conciliacao.jsx'
+import Carga from './pages/Carga.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo, veAssistenteVoz } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
+  designer:   ['triagem', 'producao', 'carga', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
   financeiro: ['producao', 'rota', 'entregues'],
-  dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'auditoria', 'conciliacao'],
+  dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
-  expedicao:  ['producao', 'rota'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
+  expedicao:  ['producao', 'carga', 'rota'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
 }
 
 export default function App() {
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="/" element={<Navigate to={`/${primeira}`} replace />} />
         {abas.includes('triagem') && <Route path="/triagem" element={<Triagem pedidos={pedidos} />} />}
         {abas.includes('producao') && <Route path="/producao" element={<Producao pedidos={pedidos} />} />}
+        {abas.includes('carga') && <Route path="/carga" element={<Carga pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}
         {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios pedidos={pedidos} />} />}

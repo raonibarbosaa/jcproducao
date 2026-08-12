@@ -84,6 +84,15 @@ service cloud.firestore {
       allow update, delete: if ehStaff();
     }
 
+    // Cargas: a viagem do caminhão, montada pela EXPEDIÇÃO. Ela cria, confere e
+    // marca a saída — mas continua sem dar a entrega, que é o que abre a cobrança
+    // (isso segue em `entregues`, só para staff).
+    match /cargas/{id} {
+      allow read: if ehStaff() || ehExpedicao() || ehOperador();
+      allow create, update: if ehStaff() || ehExpedicao();
+      allow delete: if ehStaff();
+    }
+
     // Auditoria: log APPEND-ONLY de quem moveu cada item no quadro.
     // Escreve quem pode mover (staff, operador, expedição) — o registro vai no
     // mesmo writeBatch da mudança de etapa. Lê SÓ o dono. Ninguém edita nem

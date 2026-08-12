@@ -327,6 +327,58 @@ export function qtdNoPainel(painel, p, idx, mat) {
 }
 export const itemPertenceAoPainel = (painel, p, idx, mat) => qtdNoPainel(painel, p, idx, mat) > 0
 
+// ---------- CARGA (a viagem do caminhão) ----------
+// A tela de Rota mostra o que ESTÁ pronto agora — é uma foto do momento. A carga
+// é outra coisa: o documento de uma viagem. O operador da expedição escolhe o que
+// entra neste caminhão (podendo misturar rotas e deixar pedido para trás), confere
+// item a item ao carregar, e o romaneio passa a ser o papel dessa carga.
+// Snapshot de propósito: o que foi expedido depois não entra numa carga já montada.
+export const STATUS_CARGA = { MONTANDO: 'montando', SAIU: 'saiu', CONCLUIDA: 'concluida' }
+
+// itens de um pedido que estão expedidos e portanto podem entrar numa carga
+export function itensParaCarga(p) {
+  return (p?.itens || []).map((it, i) => ({
+    idVenda: p.idVenda,
+    itemKey: keyDoItem(p, i),
+    produto: it.produto || '',
+    qtd: qtdNaEtapa(p, i, 'expedido'),
+    qtdItem: arredondaQtd(it.qtd),
+    linha: linhaDoItem(p, i),
+    material: '',            // preenchido na tela, que tem o cadastro de Itens
+    conferido: false,
+  })).filter((x) => x.qtd > 0)
+}
+
+// próximo número da carga. Volume é de poucas por dia e um operador só, então
+// max+1 basta; se um dia duas telas criarem no mesmo segundo, o número repete —
+// o id do documento continua único, só o rótulo colide.
+export const proximoNumeroCarga = (cargas) =>
+  (cargas || []).reduce((m, c) => Math.max(m, Number(c.numero) || 0), 0) + 1
+
+export const cargaAberta = (cargas) =>
+  (cargas || []).find((c) => c.status === STATUS_CARGA.MONTANDO) || null
+
+export function progressoConferencia(carga) {
+  const itens = carga?.itens || []
+  return { total: itens.length, conferidos: itens.filter((i) => i.conferido).length }
+}
+export const cargaConferida = (carga) => {
+  const { total, conferidos } = progressoConferencia(carga)
+  return total > 0 && conferidos === total
+}
+
+// pedidos distintos e rotas de uma carga (para o cabeçalho e o romaneio)
+export const pedidosDaCarga = (carga) => [...new Set((carga?.itens || []).map((i) => i.idVenda))]
+export function agrupaCargaPorPedido(carga, pedidos) {
+  const porId = new Map((pedidos || []).map((p) => [String(p.idVenda), p]))
+  const mapa = {}
+  for (const it of carga?.itens || []) {
+    ;(mapa[it.idVenda] ??= { idVenda: it.idVenda, p: porId.get(String(it.idVenda)) || null, itens: [] })
+      .itens.push(it)
+  }
+  return Object.values(mapa)
+}
+
 // ---------- ORDEM DO FLUXO / PROGRESSO DA ROTA NO SETOR ----------
 // posição da etapa no caminho do item: linha → montagem → expedição → expedido.
 export const posNoFluxo = (et) =>

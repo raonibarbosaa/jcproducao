@@ -7,6 +7,7 @@ import VoltarAoTopo from './VoltarAoTopo.jsx'
 const LABEL = {
   triagem: 'Triagem',
   producao: 'Produção',
+  carga: 'Entregas',
   rota: 'Rota',
   entregues: 'Entregues',
   relatorios: 'Relatórios',

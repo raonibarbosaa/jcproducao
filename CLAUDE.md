@@ -431,6 +431,29 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   ("LUX BEACHWEAR" × "LUX BEACH WEAR"), mas **não é fuzzy**: "SAF FUNERARIA" × "ATUAL
   MODAS" (mesmo número, cliente outro) tem que continuar caindo na revisão.
 
+## Controle de entregas — a CARGA é a viagem (12/08/2026)
+Aba **Entregas** (`Carga.jsx`), para **expedição** + staff. A tela de Rota mostra o que
+está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
+- **Coleção `cargas`:** `{numero, status, motorista, itens[], pedidos[], rotas[], criadaEm,
+  criadaPor, saiuEm, saiuPor}`. `status` ∈ `montando|saiu|concluida` (`STATUS_CARGA`).
+  Item da carga = `{idVenda, itemKey, produto, qtd, qtdItem, linha, conferido}` — snapshot
+  de propósito: o que for expedido depois NÃO entra numa carga já montada.
+- **Fluxo:** montar (escolhe pedido a pedido, pode misturar rotas e deixar para trás) →
+  conferir item a item ao carregar → 🚚 marcar saída (carimba `saidaEm/saidaMotorista/
+  saidaPor` nos pedidos, o mesmo campo que o quadro do vendedor lê) → romaneio impresso.
+- **A expedição NÃO dá a entrega.** Ela monta, confere e marca a saída; a entrega (que
+  abre a cobrança) segue com dono/designer/financeiro na tela de Rota. Rules: `cargas`
+  create/update para staff + expedição, delete só staff.
+- ⚠️ **Pedido não pode entrar em duas cargas.** A tela desconta, item a item, o que já
+  está comprometido com carga `montando` ou `saiu`. E o caso inverso é real: expediram 40
+  (foram numa carga), depois expediram os outros 60 — esses 60 PODEM ir numa carga nova,
+  por isso a conta é por quantidade e não por "item já usado".
+- **Numeração:** `proximoNumeroCarga` = max + 1 da lista carregada. Volume é de poucas por
+  dia com um operador só; se duas telas criarem no mesmo segundo o rótulo repete (o id do
+  documento continua único).
+- Helpers em utils: `itensParaCarga`, `cargaAberta`, `progressoConferencia`,
+  `cargaConferida`, `pedidosDaCarga`, `agrupaCargaPorPedido`.
+
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
   da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava
