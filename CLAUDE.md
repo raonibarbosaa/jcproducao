@@ -312,10 +312,14 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   removido.
 - **Quadro do VENDEDOR — BLOCOS POR ROTA (FEITO; era 11 colunas):**
   `src/components/QuadroVendedor.jsx`, aba "▦ Acompanhar" dentro de Meus Pedidos (a
-  lista com a ciência continua em "☰ Meus pedidos"). Não é mais um kanban: cada bloco é
-  **Data → Rota** (rota na ordem do cadastro, `ordemRota`), com o **pipeline resumido
-  numa linha** (`ETAPAS_VENDEDOR`, só as etapas que têm item) e os pedidos embaixo, cada
-  ITEM com a etapa onde está. A pergunta do vendedor não é "o que está na montagem", é
+  lista com a ciência continua em "☰ Meus pedidos"). Não é mais um kanban: o nível de
+  cima é a **ROTA** (na ordem do cadastro, `ordemRota`) e dentro dela cada **DATA** é uma
+  viagem daquela rota, com o **pipeline resumido numa linha** (`ETAPAS_VENDEDOR`, só as
+  etapas que têm item) e os pedidos embaixo, cada ITEM com a etapa onde está. A rota vem
+  primeiro porque é assim que o vendedor pensa ("como está minha ROTA 01") — com a data
+  no topo, a mesma rota se espalhava por vários blocos. O cabeçalho da rota soma a rota
+  inteira; o pipeline é por viagem. (Na PRODUÇÃO é o contrário — lá a data vem primeiro,
+  porque quem produz prioriza por prazo.) A pergunta do vendedor não é "o que está na montagem", é
   "como está a rota do meu cliente" — 11 colunas obrigavam a varrer a tela para
   responder isso, e no celular era rolagem horizontal. Cabe em 375px (media query em
   `.qv-itens li` joga a etapa para a linha de baixo).

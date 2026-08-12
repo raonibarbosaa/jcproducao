@@ -411,9 +411,12 @@ input, select { font-family: var(--font); }
 /* ---------- Acompanhamento do VENDEDOR: blocos por rota ---------- */
 .qv { display: flex; flex-direction: column; gap: 14px; }
 .qv-resumo { font-size: 12px; color: var(--text-faint); margin: 6px 2px 10px; }
+/* dentro do bloco da rota, cada ciclo é uma data de entrega (uma viagem) */
+.qv-ciclo { display: flex; flex-direction: column; gap: 8px; }
+.qv-ciclo + .qv-ciclo { border-top: 1px solid var(--border); padding-top: 12px; }
 .qv-data {
-  font-size: 13px; font-weight: 800; color: var(--text);
-  text-transform: uppercase; letter-spacing: .4px; margin: 6px 0 8px;
+  font-size: 12px; font-weight: 800; color: var(--text);
+  text-transform: uppercase; letter-spacing: .4px;
 }
 .qv-data.atrasado { color: var(--danger); }
 .qv-rota {

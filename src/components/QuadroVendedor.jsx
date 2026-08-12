@@ -18,20 +18,28 @@ import SeloLinha from './SeloLinha.jsx'
 export default function QuadroVendedor({ pedidos, clientes }) {
   const { vendedores: cadastros } = useCadastros()
 
-  // agrupa Data de entrega → Rota. O nível "vendedor" não existe aqui: todos os
-  // pedidos são do mesmo vendedor. Rotas na ordem do cadastro (a sequência real).
+  // Agrupa ROTA → Data de entrega. A rota vem primeiro porque é assim que o
+  // vendedor pensa ("como está minha ROTA 01") — com a data no topo, a mesma rota
+  // se espalhava por vários blocos. Dentro dela, cada DATA é uma viagem daquela
+  // rota, e é por viagem que o pipeline faz sentido. O nível "vendedor" não
+  // existe aqui: todos os pedidos são do mesmo. Rotas na ordem do cadastro.
   const mapa = {}
   for (const p of pedidos || []) {
-    const k = `${p.previsao || '9999'}|${p.rota || 'SEM ROTA'}`
-    ;(mapa[k] ??= {
-      chave: k, previsao: p.previsao || '', rota: p.rota || 'SEM ROTA',
-      vendedor: p.vendedor || '', pedidos: [],
-    }).pedidos.push(p)
+    const r = p.rota || 'SEM ROTA'
+    const rota = (mapa[r] ??= { rota: r, vendedor: p.vendedor || '', datas: {}, pedidos: [] })
+    rota.pedidos.push(p)
+    const d = p.previsao || ''
+    ;(rota.datas[d] ??= { previsao: d, pedidos: [] }).pedidos.push(p)
   }
-  const grupos = Object.values(mapa).sort((a, b) =>
-    (a.previsao || '9999').localeCompare(b.previsao || '9999')
-    || (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
-    || a.rota.localeCompare(b.rota))
+  const grupos = Object.values(mapa)
+    .map((r) => ({
+      ...r,
+      ciclos: Object.values(r.datas).sort((a, b) =>
+        (a.previsao || '9999').localeCompare(b.previsao || '9999')),
+    }))
+    .sort((a, b) =>
+      (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+      || a.rota.localeCompare(b.rota))
 
   if (!grupos.length) {
     return <div className="empty"><div className="big">📦</div>Nenhum pedido para acompanhar com esses filtros.</div>
@@ -39,40 +47,46 @@ export default function QuadroVendedor({ pedidos, clientes }) {
 
   return (
     <div className="qv">
-      {grupos.map((g, gi) => {
-        const cont = contaEtapasVendedor(g.pedidos)
-        const totalItens = Object.values(cont).reduce((s, n) => s + n, 0)
-        const entregues = cont.entregue || 0
-        const atrasada = situacaoPrazo(g.previsao) === 'atrasado' && entregues < totalItens
-        const novaData = gi === 0 || grupos[gi - 1].previsao !== g.previsao
+      {grupos.map((g) => {
+        const contRota = contaEtapasVendedor(g.pedidos)
+        const totalRota = Object.values(contRota).reduce((s, n) => s + n, 0)
+        const entreguesRota = contRota.entregue || 0
         return (
-          <div key={g.chave}>
-            {novaData && (
-              <div className={`qv-data${atrasada ? ' atrasado' : ''}`}>📅 {fmtData(g.previsao)}</div>
-            )}
-            <div className="qv-rota">
-              <div className="qv-rota-top">
-                <span className="qv-rota-nome">📍 {g.rota}</span>
-                <span className="qv-rota-qtd">{totalItens} {totalItens === 1 ? 'item' : 'itens'}</span>
-                {entregues === totalItens
-                  ? <span className="qv-tudo">✓ rota entregue</span>
-                  : <span className="qv-parcial">{entregues} de {totalItens} entregues</span>}
-              </div>
-              {/* pipeline: só as etapas que têm alguma coisa, na ordem do fluxo */}
-              <div className="qv-pipe">
-                {ETAPAS_VENDEDOR.filter((e) => cont[e.id]).map((e) => (
-                  <span key={e.id} className={`qv-etapa${e.id === 'entregue' ? ' ok' : ''}`}>
-                    {e.nome} <b>{cont[e.id]}</b>
-                  </span>
-                ))}
-              </div>
-              <div className="qv-cards">
-                {g.pedidos
-                  .slice()
-                  .sort((a, b) => nomeCliente(a.cliente, clientes).localeCompare(nomeCliente(b.cliente, clientes)))
-                  .map((p) => <CardPedido key={p.idVenda} p={p} clientes={clientes} />)}
-              </div>
+          <div key={g.rota} className="qv-rota">
+            <div className="qv-rota-top">
+              <span className="qv-rota-nome">📍 {g.rota}</span>
+              <span className="qv-rota-qtd">{totalRota} {totalRota === 1 ? 'item' : 'itens'}</span>
+              {entreguesRota === totalRota
+                ? <span className="qv-tudo">✓ rota entregue</span>
+                : <span className="qv-parcial">{entreguesRota} de {totalRota} entregues</span>}
             </div>
+
+            {/* cada DATA é uma viagem desta rota — é por viagem que o pipeline conta */}
+            {g.ciclos.map((c) => {
+              const cont = contaEtapasVendedor(c.pedidos)
+              const total = Object.values(cont).reduce((s, n) => s + n, 0)
+              const atrasada = situacaoPrazo(c.previsao) === 'atrasado' && (cont.entregue || 0) < total
+              return (
+                <div key={c.previsao || 'sem-data'} className="qv-ciclo">
+                  <div className={`qv-data${atrasada ? ' atrasado' : ''}`}>
+                    📅 {c.previsao ? fmtData(c.previsao) : 'sem data de entrega'}
+                  </div>
+                  <div className="qv-pipe">
+                    {ETAPAS_VENDEDOR.filter((e) => cont[e.id]).map((e) => (
+                      <span key={e.id} className={`qv-etapa${e.id === 'entregue' ? ' ok' : ''}`}>
+                        {e.nome} <b>{cont[e.id]}</b>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="qv-cards">
+                    {c.pedidos
+                      .slice()
+                      .sort((a, b) => nomeCliente(a.cliente, clientes).localeCompare(nomeCliente(b.cliente, clientes)))
+                      .map((p) => <CardPedido key={p.idVenda} p={p} clientes={clientes} />)}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )
       })}
