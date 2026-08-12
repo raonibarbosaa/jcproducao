@@ -388,6 +388,21 @@ input, select { font-family: var(--font); }
 .qc-count { background: var(--accent); color: #1a1205; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 1px 9px; }
 .qc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 48px; }
 .qc-vazio { color: var(--text-faint); font-size: 13px; text-align: center; padding: 10px; }
+/* produção parcial: quanto avançar deste item */
+.qtd-input {
+  width: 62px; padding: 2px 6px; font-size: 12px; font-family: var(--mono);
+  text-align: right; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px;
+}
+.qtd-input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+/* tira as setinhas do number: elas roubam espaço e ninguém usa aqui */
+.qtd-input::-webkit-outer-spin-button, .qtd-input::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+.qtd-input { -moz-appearance: textfield; }
+/* "50 de 100" — o quanto está NESTA etapa contra o total do item */
+.q-de { color: var(--text-faint); font-weight: 400; font-size: 11px; }
+
 /* fila agrupada: Data de entrega -> Vendedor + Rota (ordem do cadastro) */
 .qc-grupo { display: flex; flex-direction: column; gap: 10px; }
 .qc-data {

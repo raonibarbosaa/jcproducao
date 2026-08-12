@@ -313,12 +313,19 @@ export function itemNoPainel(painel, mat) {
 // do item na Triagem depois que ele já andou e voltou fazia o item sumir do
 // quadro: o painel da linha velha cobrava a linha nova e o da nova cobrava a
 // etapa nova, e nenhum dos dois aceitava.
-export function itemPertenceAoPainel(painel, p, idx, mat) {
-  const et = etapaDoItem(p, idx)
-  if (et === 'expedido') return false          // saiu do quadro, segue pela Rota
-  if (painel?.tipo === 'linha') return MODO_ORDER.includes(et) && painel.linha === linhaDoItem(p, idx)
-  return painel?.etapa === et && itemNoPainel(painel, mat)
+// Quanto deste item está NESTE painel. Com produção parcial o mesmo item aparece
+// em mais de uma coluna (50 na linha, 50 na montagem) — por isso a resposta é uma
+// quantidade, e "pertence ao painel" é só "quantidade > 0". Manter as duas coisas
+// na MESMA função é o que impede o quadro e os contadores de discordarem.
+export function qtdNoPainel(painel, p, idx, mat) {
+  if (painel?.tipo === 'linha') {
+    if (painel.linha !== linhaDoItem(p, idx)) return 0
+    return qtdNaEtapa(p, idx, painel.linha)
+  }
+  if (!itemNoPainel(painel, mat)) return 0
+  return qtdNaEtapa(p, idx, painel?.etapa)
 }
+export const itemPertenceAoPainel = (painel, p, idx, mat) => qtdNoPainel(painel, p, idx, mat) > 0
 
 // ---------- ORDEM DO FLUXO / PROGRESSO DA ROTA NO SETOR ----------
 // posição da etapa no caminho do item: linha → montagem → expedição → expedido.
@@ -434,6 +441,32 @@ export function contaEtapasVendedor(pedidos) {
   return cont
 }
 
+// Materializa `etapas` inteiro aplicando movimentos de QUANTIDADE.
+// movimentos = [{ idx, de, para, qtd }]. Materializa o mapa todo (como o
+// mapaEtapasCom fazia) para congelar o legado: item que não se move fica gravado
+// já no formato novo, e nunca mais depende do fallback de leitura.
+export function mapaEtapasComQtd(p, movimentos, quem) {
+  const porIdx = new Map((movimentos || []).map((m) => [m.idx, m]))
+  const agora = new Date().toISOString()
+  const mapa = {}
+  ;(p.itens || []).forEach((_, i) => {
+    const k = keyDoItem(p, i)
+    const m = porIdx.get(i)
+    const movido = m ? moveQtdItem(p, i, m.de, m.para, m.qtd) : null
+    if (movido) {
+      mapa[k] = { ...movido, por: quem || '', em: agora }
+    } else {
+      const d = distribuicaoDoItem(p, i)
+      const ant = doMapaDoItem(p?.etapas, p, i)
+      mapa[k] = {
+        montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
+        por: ant?.por || '', em: ant?.em || '',
+      }
+    }
+  })
+  return mapa
+}
+
 // Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
 // materiais vazio = todos os materiais (padrão de quem não foi restringido).
 export function podeNoMaterial(materiais, mat) {
@@ -457,17 +490,21 @@ export function paineisVisiveis({ perfil, setores, materiais }) {
   })
 }
 
+// A etapa "principal" do item: a MAIS ATRASADA que ainda tem quantidade — é onde
+// o trabalho está. Com produção parcial o item pode estar em duas etapas ao mesmo
+// tempo (50 na linha, 50 na montagem); esta função existe para as telas que
+// precisam de UM valor (quadro do vendedor, badge, auditoria). Quem precisa da
+// divisão usa distribuicaoDoItem/qtdNaEtapa.
 export function etapaDoItem(p, idx) {
-  const raw = doMapaDoItem(p?.etapas, p, idx)
-  const et = typeof raw === 'string' ? raw : raw?.et
-  if (et === 'expedido' || ETAPA_IDS_ITEM.includes(et)) return et
-  // legado: o pedido inteiro andava num campo só. 'grafica' virou a coluna da linha.
-  const leg = p?.etapa
-  if (leg === 'montagem' || leg === 'expedicao' || leg === 'expedido') return leg
-  if (leg === 'entregue') return 'expedido'
-  return linhaDoItem(p, idx) // item ainda na própria linha de produção
+  const d = distribuicaoDoItem(p, idx)
+  const linha = linhaDoItem(p, idx)
+  if (linha && d[linha] > 0) return linha
+  for (const e of ['montagem', 'expedicao', 'expedido']) if (d[e] > 0) return e
+  if (d.entregue > 0) return 'entregue'          // item já foi todo entregue
+  return linha || ''                              // nada em lugar nenhum
 }
-export const itemExpedido = (p, idx) => etapaDoItem(p, idx) === 'expedido'
+// tem ALGO expedido — com produção parcial, 50 de 100 já contam para a Rota
+export const itemExpedido = (p, idx) => qtdNaEtapa(p, idx, 'expedido') > 0
 
 // ---------- QUANTIDADE POR ETAPA (produção parcial) ----------
 // O item deixou de andar inteiro: de um item de 100 sacolas, 50 podem estar na
@@ -628,7 +665,14 @@ export function fatiaProntos(p) {
     ...p,
     // _linha carimbada aqui: depois da fatia o índice muda, e a Rota/romaneio
     // precisam do selo da linha de cada item
-    itens: idxs.map((i) => ({ ...p.itens[i], _linha: linhaDoItem(p, i) })),
+    // qtd = só o que está expedido (produção parcial): o romaneio e a entrega
+    // precisam do que REALMENTE sai, não do total do item
+    itens: idxs.map((i) => ({
+      ...p.itens[i],
+      qtd: qtdNaEtapa(p, i, 'expedido'),
+      _qtdItem: arredondaQtd(p.itens[i]?.qtd),
+      _linha: linhaDoItem(p, i),
+    })),
     _todos: p.itens || [],
     _idxs: idxs,
     _pendentes: (p.itens || []).length - idxs.length,

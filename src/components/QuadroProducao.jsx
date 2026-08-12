@@ -3,11 +3,12 @@ import { collection, doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
-  mapaEtapasCom, normSetor, MODO_COR,
+  normSetor, MODO_COR,
   nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, acabamentoItemOk, fmtAcabamento, valorDosItens, logEtapaItem,
   materialDoItem, montagemDoMaterial, itemPertenceAoPainel, podeNoMaterial, MONTAGENS,
   registrosAuditoria, pegarIP, progressoNoPainel, ordemRota,
+  qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -33,6 +34,10 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
   // 2º eixo da permissão: com que material eu trabalho ([] = todos)
   const meusMateriais = perfil === 'operador' ? (materiais || []) : []
   const [salvando, setSalvando] = useState('')
+  // quanto mover de cada item: { "idVenda|painel|idx": número }. Vazio = tudo
+  // que está naquela etapa (o caso comum é concluir a quantidade inteira).
+  const [qtds, setQtds] = useState({})
+  const poeQtd = (k, v) => setQtds((s) => ({ ...s, [k]: v }))
   // IP pego uma vez por sessão da tela — não atrasa cada movimento
   const [ip, setIp] = useState('')
   useEffect(() => { pegarIP().then(setIp) }, [])
@@ -93,20 +98,33 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     gruposPorPainel[pa.id] = lista
   }
 
-  // move os itens escolhidos (o card inteiro ou um item só) para outra etapa
-  async function mover(p, idxs, destino, marca) {
-    if (!destino || salvando) return
+  // Move QUANTIDADE dos itens escolhidos para outra etapa.
+  // movimentos = [{ idx, de, para, qtd }] — com produção parcial o item pode
+  // avançar só em parte, e o resto continua onde estava.
+  async function mover(p, movimentos, marca) {
+    const mov = (movimentos || []).filter((m) => m.para && m.qtd > 0)
+    if (!mov.length || salvando) return
     setSalvando(marca)
     try {
       // etapa + auditoria no MESMO batch: ou as duas coisas acontecem, ou nenhuma.
       // Assim nunca existe item movido sem registro de quem moveu.
       const batch = writeBatch(db)
-      batch.update(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasCom(p, idxs, destino, nome) })
+      const idxs = mov.map((m) => m.idx)
+      const destino = (i) => mov.find((m) => m.idx === i)?.para
+      batch.update(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasComQtd(p, mov, nome) })
       const quem = {
         porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
         perfil: perfil || '', ip,
       }
       const regs = registrosAuditoria(p, idxs, destino, quem, (i) => materialDoItem(p.itens[i], itensCad))
+      // a auditoria registra QUANTO andou e DE ONDE. O `de` não pode sair de
+      // etapaDoItem: com o item dividido, ela devolve a etapa mais atrasada, que
+      // não é necessariamente a coluna de onde a pessoa moveu.
+      regs.forEach((r, n) => {
+        r.qtd = mov[n]?.qtd ?? r.qtd
+        r.qtdItem = arredondaQtd(p.itens[mov[n]?.idx]?.qtd)
+        r.de = mov[n]?.de ?? r.de
+      })
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
     } catch (e) {
@@ -171,6 +189,20 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                 const nmProx = (prox === 'montagem' && destinos.size === 1 && [...destinos][0])
                   ? MONTAGENS.find((m) => m.id === [...destinos][0]).nome
                   : nomeEtapaItem(prox)
+                // movimentos do CARD inteiro: cada item leva a quantidade digitada
+                // (ou tudo que tem nesta etapa, que é o caso comum)
+                const movsPara = (paraFn) => idxs.map((i) => {
+                  const aqui = qtdNoPainel(pa, p, i, materialDoItem(p.itens[i], itensCad))
+                  const dig = qtds[`${marca}|${i}`]
+                  const q = dig === '' || dig === undefined ? aqui : Math.min(arredondaQtd(dig), aqui)
+                  return { idx: i, de: pa.etapa, para: typeof paraFn === 'function' ? paraFn(i) : paraFn, qtd: q }
+                })
+                // o card só está "inteiro" quando ninguém digitou uma parte
+                const parcialDigitada = idxs.some((i) => {
+                  const dig = qtds[`${marca}|${i}`]
+                  if (dig === '' || dig === undefined) return false
+                  return arredondaQtd(dig) < qtdNoPainel(pa, p, i, materialDoItem(p.itens[i], itensCad))
+                })
                 return (
                   <div key={marca} className={`qcard ${atrasado ? 'atrasado' : ''}`}>
                     <div className="qcard-top">
@@ -193,23 +225,41 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                         const lItem = linhaDoItem(p, i)
                         const antItem = anteriorDe(i)
                         const semMat = pa.tipo === 'montagem' && !materialDoItem(it, itensCad)
+                        // quantidade DESTE item nesta etapa (pode ser parte do total)
+                        const aqui = qtdNoPainel(pa, p, i, materialDoItem(it, itensCad))
+                        const total = arredondaQtd(it.qtd)
+                        const un = unidadeDoMaterial(materialDoItem(it, itensCad))
+                        const chave = `${marca}|${i}`
+                        const digitado = qtds[chave]
+                        const aMover = digitado === '' || digitado === undefined
+                          ? aqui
+                          : Math.min(arredondaQtd(digitado), aqui)
                         return (
                           <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                             <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                               {/* o selo da linha anda junto com o produto em toda etapa */}
                               <span><SeloLinha linha={lItem} />{it.produto}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <span className="q">{it.qtd}</span>
-                                {/* avança/volta SÓ este item — é o que separa o card em dois */}
-                                {podeMoverEtapa(pa.etapa) && idxs.length > 1 && (
-                                  <span style={{ display: 'inline-flex', gap: 2 }}>
+                                <span className="q" title={aqui < total ? `${fmtQtd(total)} ${un} no pedido` : ''}>
+                                  {fmtQtd(aqui)}
+                                  {aqui < total && <small className="q-de"> de {fmtQtd(total)}</small>}
+                                </span>
+                                {/* avança/volta SÓ este item, e só a quantidade digitada */}
+                                {podeMoverEtapa(pa.etapa) && (
+                                  <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
+                                    <input className="qtd-input" type="number" min="0" max={aqui}
+                                      step={un === 'kg' ? '0.001' : '1'}
+                                      placeholder={String(aqui)}
+                                      value={digitado ?? ''}
+                                      onChange={(e) => poeQtd(chave, e.target.value)}
+                                      title={`Quanto avançar (de ${fmtQtd(aqui)} ${un})`} />
                                     {antItem && (
-                                      <button className="mini-btn" title={`Voltar só este item para ${nomeEtapaItem(antItem)}`}
-                                        disabled={!!salvando} onClick={() => mover(p, [i], antItem, marca)}>←</button>
+                                      <button className="mini-btn" title={`Voltar ${fmtQtd(aMover)} para ${nomeEtapaItem(antItem)}`}
+                                        disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: antItem, qtd: aMover }], marca)}>←</button>
                                     )}
                                     {prox && (
-                                      <button className="mini-btn" title={`Avançar só este item para ${nomeEtapaItem(prox)}`}
-                                        disabled={!!salvando} onClick={() => mover(p, [i], prox, marca)}>→</button>
+                                      <button className="mini-btn" title={`Avançar ${fmtQtd(aMover)} para ${nomeEtapaItem(prox)}`}
+                                        disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: prox, qtd: aMover }], marca)}>→</button>
                                     )}
                                   </span>
                                 )}
@@ -244,20 +294,24 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                         {pa.tipo !== 'linha' && (
                           <button className="mini-btn" title={`Voltar ${idxs.length > 1 ? 'os itens' : 'o item'} para a etapa anterior`}
                             disabled={!!salvando}
-                            onClick={() => mover(p, idxs, anteriorDe, marca)}
+                            onClick={() => mover(p, movsPara(anteriorDe), marca)}
                           >←</button>
                         )}
                         {prox && prox !== 'expedido' && (
                           <button className="btn ok qc-avancar" disabled={!!salvando}
-                            onClick={() => mover(p, idxs, prox, marca)}>
-                            {salvando === marca ? 'Salvando…' : `Concluir → ${nmProx}`}
+                            onClick={() => mover(p, movsPara(prox), marca)}>
+                            {salvando === marca
+                              ? 'Salvando…'
+                              : `${parcialDigitada ? 'Concluir parte' : 'Concluir'} → ${nmProx}`}
                           </button>
                         )}
                         {prox === 'expedido' && (
                           <button className="btn ok qc-avancar" disabled={!!salvando}
                             title="Sai do quadro e segue para a Rota/Entrega"
-                            onClick={() => mover(p, idxs, 'expedido', marca)}>
-                            {salvando === marca ? 'Salvando…' : '✓ Expedir'}
+                            onClick={() => mover(p, movsPara('expedido'), marca)}>
+                            {salvando === marca
+                              ? 'Salvando…'
+                              : (parcialDigitada ? '✓ Expedir parte' : '✓ Expedir')}
                           </button>
                         )}
                       </div>
