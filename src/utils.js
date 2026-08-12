@@ -320,6 +320,49 @@ export function itemPertenceAoPainel(painel, p, idx, mat) {
   return painel?.etapa === et && itemNoPainel(painel, mat)
 }
 
+// ---------- ORDEM DO FLUXO / PROGRESSO DA ROTA NO SETOR ----------
+// posição da etapa no caminho do item: linha → montagem → expedição → expedido.
+export const posNoFluxo = (et) =>
+  (MODO_ORDER.includes(et) ? 0 : ({ montagem: 1, expedicao: 2, expedido: 3 }[et] ?? 0))
+
+// o item passa por este painel em ALGUM momento? (não importa onde ele está agora)
+export function itemPassaPeloPainel(painel, p, idx, mat) {
+  if (painel?.tipo === 'linha') return linhaDoItem(p, idx) === painel.linha
+  if (painel?.tipo === 'montagem') return itemNoPainel(painel, mat)
+  return true // expedição: todo item passa por lá
+}
+export const jaPassouDoPainel = (painel, et) => posNoFluxo(et) > posNoFluxo(painel?.etapa)
+
+// Progresso de um grupo (data+vendedor+rota) NESTE setor: de todos os itens que
+// precisam passar por aqui, quantos já passaram. Conta também os que ainda nem
+// chegaram (estão numa etapa anterior) e os travados na laminação — é justamente
+// isso que avisa "a rota está incompleta" ANTES de a data chegar. Agrupar sozinho
+// deixa os pedidos juntos, mas não denuncia o que falta.
+export function progressoNoPainel(painel, pedidos, itensCad, materiaisDoUsuario) {
+  let total = 0
+  let feitos = 0
+  for (const p of pedidos || []) {
+    ;(p.itens || []).forEach((_, i) => {
+      if (!linhaDoItem(p, i)) return // ainda na Triagem
+      const mat = materialDoItem(p.itens[i], itensCad)
+      if (!podeNoMaterial(materiaisDoUsuario, mat)) return
+      if (!itemPassaPeloPainel(painel, p, i, mat)) return
+      total++
+      if (jaPassouDoPainel(painel, etapaDoItem(p, i))) feitos++
+    })
+  }
+  return { total, feitos }
+}
+
+// Ordem da rota no cadastro do VENDEDOR — a sequência real em que ele roda, que
+// é a ordem em que a produção deve fechar as rotas. Alfabético só coincide
+// enquanto as rotas se chamarem ROTA 01/02/03. Rota fora do cadastro vai pro fim.
+export function ordemRota(vendedorNome, rota, cadastros) {
+  const v = (cadastros || []).find((x) => normaliza(x.nome) === normaliza(vendedorNome))
+  const i = (v?.rotas || []).findIndex((r) => normaliza(r.nome) === normaliza(rota))
+  return i >= 0 ? i : 999
+}
+
 // Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
 // materiais vazio = todos os materiais (padrão de quem não foi restringido).
 export function podeNoMaterial(materiais, mat) {

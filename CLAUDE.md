@@ -50,6 +50,24 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   "Concluir →" diz a montagem de destino quando o card inteiro vai pra mesma.
   **Trava da laminação por ITEM:** item de gráfica sem laminação não entra (os outros
   itens do mesmo pedido entram normal) e o quadro conta quantos faltam.
+- **Fila AGRUPADA por Data → Vendedor → Rota (FEITO):** a fila de cada setor era uma
+  lista solta ordenada só pela previsão, e os pedidos de uma mesma rota ficavam
+  espalhados — chegava o dia do caminhão e faltavam pedidos da rota que ninguém viu que
+  eram do mesmo bolo. Agora cada coluna quebra em grupos com faixa de **data**
+  (`.qc-data`, some quando repete; vermelha se atrasada) e faixa de **rota + vendedor**
+  (`.qc-rota`). **Data vem PRIMEIRO de propósito**: com vendedor na frente, a rota que
+  sai daqui a três semanas apareceria antes da que sai sexta. As rotas seguem
+  `ordemRota()` = a **posição no cadastro do vendedor** (a sequência real em que ele
+  roda), não alfabético — alfabético só coincide enquanto elas se chamarem ROTA 01/02/03.
+  O card mostra a **cidade** (a rota já está na faixa).
+- **Contador de rota por setor (FEITO):** `progressoNoPainel()` na faixa da rota —
+  "4 de 7" = itens daquela rota que já passaram DESTE setor. O total conta a rota
+  INTEIRA, inclusive itens que ainda nem chegaram ao setor e os travados na laminação:
+  é isso que denuncia rota incompleta ANTES da data. Agrupar sozinho junta os pedidos,
+  mas não avisa o que falta. Helpers: `posNoFluxo` (linha 0 → montagem 1 → expedição 2 →
+  expedido 3), `itemPassaPeloPainel` (por linha / por material / expedição pega todos),
+  `jaPassouDoPainel`. Respeita o filtro de material do operador (o contador bate com o
+  que ele vê).
 - **Montagem POR MATERIAL (FEITO):** quem monta sacola de papel não é quem monta a de
   plástico. `MONTAGENS` (utils) = papel · plástico · etiq./alça. **A etapa gravada
   continua `'montagem'`** — a divisão é DERIVADA no render por `materialDoItem`

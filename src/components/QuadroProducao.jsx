@@ -7,9 +7,10 @@ import {
   nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, acabamentoItemOk, fmtAcabamento, valorDosItens, logEtapaItem,
   materialDoItem, montagemDoMaterial, itemPertenceAoPainel, podeNoMaterial, MONTAGENS,
-  registrosAuditoria, pegarIP,
+  registrosAuditoria, pegarIP, progressoNoPainel, ordemRota,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
 import SeloLinha from './SeloLinha.jsx'
 
@@ -21,6 +22,7 @@ import SeloLinha from './SeloLinha.jsx'
 // NÃO mostra valor para operador/designer/expedição (só dono e financeiro).
 export default function QuadroProducao({ pedidos, clientes, itensCad, paineis }) {
   const { user, perfil, nome, setores, materiais } = useAuth()
+  const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
   const ehStaff = perfil === 'dono' || perfil === 'designer'
   const veValor = perfil === 'dono' || perfil === 'financeiro'
   // setores que este usuário pode MOVER: expedicao = só 'expedicao'; operador = liberados dele
@@ -59,8 +61,36 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     })
     for (const [id, idxs] of Object.entries(grupos)) porPainel[id].push({ p, idxs })
   }
+  // AGRUPA A FILA: Data de entrega → Vendedor → Rota (na ordem do cadastro do
+  // vendedor). A produção fecha uma rota inteira antes de ir para a próxima, e a
+  // data vem primeiro para o que sai sexta não ficar atrás do que sai daqui a
+  // três semanas. O contador da faixa conta a rota INTEIRA neste setor — inclusive
+  // o que ainda não chegou aqui —, que é o que denuncia rota incompleta antes da data.
+  const chaveGrupo = (p) => `${p.previsao || '9999'}|${p.vendedor || '—'}|${p.rota || 'SEM ROTA'}`
+  const gruposPorPainel = {}
   for (const pa of paineis) {
-    porPainel[pa.id].sort((a, b) => (a.p.previsao || '').localeCompare(b.p.previsao || ''))
+    const mapa = {}
+    for (const card of porPainel[pa.id]) {
+      const k = chaveGrupo(card.p)
+      ;(mapa[k] ??= {
+        chave: k,
+        previsao: card.p.previsao || '',
+        vendedor: card.p.vendedor || '—',
+        rota: card.p.rota || 'SEM ROTA',
+        cards: [],
+      }).cards.push(card)
+    }
+    const lista = Object.values(mapa)
+    for (const g of lista) {
+      const daRota = pedidos.filter((p) => chaveGrupo(p) === g.chave)
+      g.progresso = progressoNoPainel(pa, daRota, itensCad, meusMateriais)
+    }
+    lista.sort((a, b) =>
+      (a.previsao || '9999').localeCompare(b.previsao || '9999')
+      || a.vendedor.localeCompare(b.vendedor)
+      || (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+      || a.rota.localeCompare(b.rota))
+    gruposPorPainel[pa.id] = lista
   }
 
   // move os itens escolhidos (o card inteiro ou um item só) para outra etapa
@@ -112,7 +142,22 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
             </div>
             <div className="qc-body">
               {porPainel[pa.id].length === 0 && <div className="qc-vazio">— nada aqui —</div>}
-              {porPainel[pa.id].map(({ p, idxs }) => {
+              {gruposPorPainel[pa.id].map((g, gi, todos) => (
+                <div key={g.chave} className="qc-grupo">
+                  {/* a data só reaparece quando muda — dentro dela, as rotas */}
+                  {(gi === 0 || todos[gi - 1].previsao !== g.previsao) && (
+                    <div className={`qc-data${situacaoPrazo(g.previsao) === 'atrasado' ? ' atrasado' : ''}`}>
+                      📅 {fmtData(g.previsao)}
+                    </div>
+                  )}
+                  <div className="qc-rota">
+                    <span>📍 {g.rota} · {g.vendedor}</span>
+                    <span className={`qc-prog${g.progresso.feitos >= g.progresso.total ? ' ok' : ''}`}
+                      title="Itens desta rota que já passaram por este setor (conta os que ainda não chegaram aqui)">
+                      {g.progresso.feitos} de {g.progresso.total}
+                    </span>
+                  </div>
+              {g.cards.map(({ p, idxs }) => {
                 const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
                 const prox = proximaEtapaItem(pa.etapa)
                 const marca = `${p.idVenda}|${pa.id}`
@@ -133,7 +178,8 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                       <span className="idv">#{p.idVenda}</span>
                     </div>
                     <div className="qcard-meta">
-                      <span className="chip">📍 {p.rota || p.cidade || '—'}</span>
+                      {/* a ROTA está na faixa do grupo — aqui vale a cidade da entrega */}
+                      <span className="chip">📍 {p.cidade || p.rota || '—'}</span>
                       <DataEntrega p={p} atrasado={atrasado} />
                       {parcial && (
                         <span className="chip" title="Os outros itens deste pedido estão em outra etapa">
@@ -219,6 +265,8 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                   </div>
                 )
               })}
+                </div>
+              ))}
             </div>
           </div>
         ))}

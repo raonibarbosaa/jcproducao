@@ -388,6 +388,25 @@ input, select { font-family: var(--font); }
 .qc-count { background: var(--accent); color: #1a1205; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 1px 9px; }
 .qc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 48px; }
 .qc-vazio { color: var(--text-faint); font-size: 13px; text-align: center; padding: 10px; }
+/* fila agrupada: Data de entrega -> Vendedor + Rota (ordem do cadastro) */
+.qc-grupo { display: flex; flex-direction: column; gap: 10px; }
+.qc-data {
+  font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase;
+  letter-spacing: .4px; padding-top: 8px; margin-top: 2px; border-top: 1px solid var(--border);
+}
+.qc-data.atrasado { color: var(--danger); }
+.qc-grupo:first-child .qc-data { border-top: none; padding-top: 0; margin-top: 0; }
+.qc-rota {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font-size: 12px; font-weight: 700; color: var(--text-faint);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px;
+}
+.qc-prog {
+  font-family: var(--mono); font-size: 11px; font-weight: 800; color: var(--text);
+  background: var(--surface-2); border-radius: 8px; padding: 1px 7px; white-space: nowrap;
+}
+.qc-prog.ok { color: var(--ok); }
 .qcard {
   background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
   border-radius: 10px; padding: 10px 12px;
