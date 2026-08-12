@@ -363,6 +363,77 @@ export function ordemRota(vendedorNome, rota, cadastros) {
   return i >= 0 ? i : 999
 }
 
+// ---------- VISÃO DO VENDEDOR: o pedido INTEIRO, item a item ----------
+// Etapas na linguagem de quem VENDE, não de quem produz: as três montagens viram
+// uma só (a divisão por material é assunto interno da fábrica) e o fim da linha
+// ganha os estados que o vendedor pergunta — pronto, saiu, entregue.
+export const ETAPAS_VENDEDOR = [
+  { id: 'triagem', nome: 'Em triagem' },
+  { id: 'PRODUCAO', nome: MODO_NM.PRODUCAO },
+  { id: 'GLICHE', nome: MODO_NM.GLICHE },
+  { id: 'GRAFICA', nome: MODO_NM.GRAFICA },
+  { id: 'montagem', nome: 'Montagem' },
+  { id: 'expedicao', nome: 'Expedição' },
+  { id: 'pronto', nome: 'Pronto p/ sair' },
+  { id: 'saiu', nome: 'Saiu p/ entrega' },
+  { id: 'entregue', nome: 'Entregue' },
+]
+export const nomeEtapaVendedor = (id) => ETAPAS_VENDEDOR.find((e) => e.id === id)?.nome || ''
+
+// em que etapa (na linguagem do vendedor) está este item já unificado
+export function etapaVendedor(item, pedido) {
+  if (item?.entregue) return 'entregue'
+  if (!item?.linha) return 'triagem'              // ainda sem classificação
+  const et = item.etapa
+  if (et === 'expedido') return saiuParaEntrega(pedido) ? 'saiu' : 'pronto'
+  // etapa de linha diz só "não saiu da linha"; QUAL linha é o linhasItens atual
+  if (MODO_ORDER.includes(et)) return item.linha
+  return et                                       // montagem | expedicao
+}
+
+// Junta o pedido VIVO (coleção `pedidos`) com as remessas já entregues (coleção
+// `entregues`) num objeto só por idVenda. Sem isso o pedido aparece partido para
+// o vendedor: entrega parcial deixa metade dos itens em cada coleção, e pedido
+// totalmente entregue some de `pedidos` — existe só como remessa.
+export function unificaPedidosVendedor(pedidos, entregues) {
+  const mapa = {}
+  const garante = (id, base) => (mapa[id] ??= { ...base, idVenda: id, itens: [] })
+  // pedidos primeiro: quem está vivo tem os dados mais atuais (rota, previsão)
+  for (const p of pedidos || []) {
+    const u = garante(p.idVenda, p)
+    ;(p.itens || []).forEach((it, i) => {
+      u.itens.push({
+        produto: it.produto, qtd: it.qtd,
+        linha: linhaDoItem(p, i), etapa: etapaDoItem(p, i), entregue: false,
+      })
+    })
+  }
+  for (const e of entregues || []) {
+    const u = garante(e.idVenda, e)
+    ;(e.itens || []).forEach((it, i) => {
+      u.itens.push({
+        produto: it.produto, qtd: it.qtd,
+        linha: linhaDoItem(e, i), etapa: 'expedido', entregue: true,
+        remessa: e.remessa || 1, entregueEm: e.entregueEm, motorista: e.motorista, pago: !!e.pago,
+      })
+    })
+  }
+  // cada item já sabe a etapa do vendedor (o pedido inteiro decide 'pronto' × 'saiu')
+  for (const u of Object.values(mapa)) {
+    for (const it of u.itens) it.etapaVend = etapaVendedor(it, u)
+  }
+  return Object.values(mapa)
+}
+
+// quantos itens em cada etapa — é o pipeline que o vendedor lê de uma vez
+export function contaEtapasVendedor(pedidos) {
+  const cont = {}
+  for (const p of pedidos || []) for (const it of p.itens || []) {
+    cont[it.etapaVend] = (cont[it.etapaVend] || 0) + 1
+  }
+  return cont
+}
+
 // Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
 // materiais vazio = todos os materiais (padrão de quem não foi restringido).
 export function podeNoMaterial(materiais, mat) {
@@ -1052,6 +1123,7 @@ export function filtraPedidos(lista, f, clientes) {
   const cli = normaliza(f.cliente || '')
   const ped = normaliza(f.pedido || '')
   const vend = f.vendedor || ''
+  const rota = f.rota || ''
   const ini = f.dataIni ? new Date(f.dataIni + 'T00:00:00') : null
   const fim = f.dataFim ? new Date(f.dataFim + 'T23:59:59') : null
   return lista.filter((p) => {
@@ -1062,6 +1134,7 @@ export function filtraPedidos(lista, f, clientes) {
     }
     if (ped && !normaliza(p.idVenda).includes(ped)) return false
     if (vend && (p.vendedor || '—') !== vend) return false
+    if (rota && (p.rota || 'SEM ROTA') !== rota) return false
     if (ini || fim) {
       if (!p.previsao) return false
       const d = new Date(p.previsao)
@@ -1084,6 +1157,7 @@ export function resumoFiltros(f) {
   if (f.cliente) partes.push(`cliente "${f.cliente}"`)
   if (f.pedido) partes.push(`pedido ${f.pedido}`)
   if (f.vendedor) partes.push(`vendedor ${f.vendedor}`)
+  if (f.rota) partes.push(`rota ${f.rota}`)
   if (f.dataIni || f.dataFim) {
     const a = f.dataIni ? fmtData(f.dataIni + 'T00:00:00') : '…'
     const b = f.dataFim ? fmtData(f.dataFim + 'T00:00:00') : '…'

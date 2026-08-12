@@ -161,27 +161,6 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Fluxo completo (gráfica):** Triagem → Gráfica → Montagem → Expedição → (Expedir) → Rota
   (entrega/motorista) → Entregues → (baixa financeira) → quitado. Fases A–D concluídas.
 
-## PENDENTE — próxima sessão
-**Levar o agrupamento e o contador da produção para o quadro do VENDEDOR**
-(`QuadroVendedor.jsx`). Hoje as 11 colunas dele são listas soltas ordenadas por
-`previsao`; a fila da fábrica já quebra em Data → Vendedor → Rota com o contador
-"4 de 7". O que já se sabe antes de desenhar:
-- **O nível "Vendedor" some**: o quadro do vendedor só tem os pedidos dele, então o
-  agrupamento útil é **Data → Rota** (rota na ordem do cadastro, via `ordemRota`).
-- **O contador não encaixa direto.** `progressoNoPainel` só entende os 7 painéis
-  (`PAINEIS_QUADRO`); as colunas Em triagem / Pronto p/ sair / Saiu / Entregue ficam
-  de fora. Decidir: (a) contador só nas 7 colunas de fábrica, (b) generalizar
-  `posNoFluxo` para incluir triagem/saída/entrega, ou (c) um contador diferente para o
-  vendedor — do tipo "5 de 8 itens da rota já entregues", que é a pergunta que ELE faz.
-  A (c) é provavelmente a certa: o vendedor não quer saber de setor, quer saber quanto
-  do pedido do cliente dele já chegou.
-- **Coluna Entregue**: os cards vêm de `entregues` (uma remessa por card), não de
-  `pedidos` — conferir se `previsao`/`rota` estão nos docs para agrupar igual (vêm do
-  spread do pedido em `Rota.jsx`, então devem estar; confirmar em dado real).
-- Junto disso, reavaliar **juntar as 3 montagens numa coluna só** no quadro do
-  vendedor: 11 colunas no celular é muito, e a divisão por material é assunto interno
-  da fábrica (ver a decisão original na seção do quadro do vendedor).
-
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),
   `gh-pages` = build publicado.
@@ -331,16 +310,33 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   o `allow update` da expedição ganhou `saidaEm`/`saidaMotorista`/`saidaPor` no `hasOnly`
   — o `deleteField` do cancelamento também passa, porque `affectedKeys()` inclui campo
   removido.
-- **Quadro do VENDEDOR (FEITO):** `src/components/QuadroVendedor.jsx`, aba "▦ Acompanhar"
-  dentro de Meus Pedidos (a lista com a ciência continua em "☰ Meus pedidos"). **11
-  colunas**: Em triagem → os 7 painéis → Pronto p/ sair → Saiu para entrega → Entregue.
+- **Quadro do VENDEDOR — BLOCOS POR ROTA (FEITO; era 11 colunas):**
+  `src/components/QuadroVendedor.jsx`, aba "▦ Acompanhar" dentro de Meus Pedidos (a
+  lista com a ciência continua em "☰ Meus pedidos"). Não é mais um kanban: cada bloco é
+  **Data → Rota** (rota na ordem do cadastro, `ordemRota`), com o **pipeline resumido
+  numa linha** (`ETAPAS_VENDEDOR`, só as etapas que têm item) e os pedidos embaixo, cada
+  ITEM com a etapa onde está. A pergunta do vendedor não é "o que está na montagem", é
+  "como está a rota do meu cliente" — 11 colunas obrigavam a varrer a tela para
+  responder isso, e no celular era rolagem horizontal. Cabe em 375px (media query em
+  `.qv-itens li` joga a etapa para a linha de baixo).
   **Só leitura** — e a segurança não depende disso: o App consulta com
-  `where('vendedor','==')` e a regra impõe o mesmo no servidor. Duas diferenças
-  deliberadas em relação ao quadro da fábrica: **nada some** (item de gráfica sem
-  laminação continua na coluna da gráfica; pedido sem triagem tem coluna própria — sumir
-  da tela = vendedor achando que o pedido se perdeu) e item sem material cai em UMA
-  montagem só, não nas três. A coluna Entregue lê `entregues` filtrado por vendedor,
-  com chip de remessa e de baixa financeira (`pago`).
+  `where('vendedor','==')` e a regra impõe o mesmo no servidor.
+- **`unificaPedidosVendedor` (utils) junta as DUAS coleções:** o pedido do vendedor
+  vivia partido — o que está em produção em `pedidos`, o que saiu em `entregues` (e
+  pedido entregue por inteiro **some** de `pedidos`, existe só como remessa). O helper
+  devolve UM objeto por `idVenda` com todos os itens, cada um com `etapaVend`. Pedido
+  vivo é a base quando existe (dados mais atuais); senão a remessa. Duas remessas do
+  mesmo pedido = um card só. `contaEtapasVendedor` faz o pipeline.
+- **`ETAPAS_VENDEDOR` é o fluxo na linguagem de quem VENDE:** triagem → 3 linhas →
+  **Montagem (uma só)** → expedição → pronto → saiu → entregue. As 3 montagens viram uma:
+  a divisão por material é assunto interno da fábrica e não muda nada para o vendedor
+  (por isso a tela dele não precisa mais do cadastro de Itens). `etapaVendedor()` usa a
+  linha ATUAL do item, não a etapa gravada — mesma regra de `itemPertenceAoPainel`.
+- **Filtros no quadro do vendedor (FEITO):** `FiltrosBar` ganhou `semVendedor` (na tela
+  dele todos os pedidos são dele, o seletor não separaria nada) e `rotas` (seletor novo,
+  `f.rota` em `filtraPedidos`/`resumoFiltros`) — a rota manda na tela, então é o filtro
+  mais natural ali. O filtro roda **depois** da unificação, então alcança também o que
+  já foi entregue.
 - **`itemPertenceAoPainel` (utils) é a fonte ÚNICA de "onde este item está"** — usada
   pelo quadro da fábrica, pelo badge das abas e pelo quadro do vendedor, para os três
   nunca discordarem. Ela conserta um bug ANTIGO: etapa de linha (`PRODUCAO`/`GLICHE`/

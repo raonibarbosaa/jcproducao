@@ -407,6 +407,57 @@ input, select { font-family: var(--font); }
   background: var(--surface-2); border-radius: 8px; padding: 1px 7px; white-space: nowrap;
 }
 .qc-prog.ok { color: var(--ok); }
+
+/* ---------- Acompanhamento do VENDEDOR: blocos por rota ---------- */
+.qv { display: flex; flex-direction: column; gap: 14px; }
+.qv-resumo { font-size: 12px; color: var(--text-faint); margin: 6px 2px 10px; }
+.qv-data {
+  font-size: 13px; font-weight: 800; color: var(--text);
+  text-transform: uppercase; letter-spacing: .4px; margin: 6px 0 8px;
+}
+.qv-data.atrasado { color: var(--danger); }
+.qv-rota {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.qv-rota-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.qv-rota-nome { font-weight: 800; font-size: 15px; }
+.qv-rota-qtd { font-size: 12px; color: var(--text-faint); }
+.qv-tudo { font-size: 12px; font-weight: 700; color: var(--ok); margin-left: auto; }
+.qv-parcial { font-size: 12px; font-weight: 700; color: var(--text-faint); margin-left: auto; }
+/* pipeline da rota: só as etapas que têm alguma coisa */
+.qv-pipe { display: flex; flex-wrap: wrap; gap: 6px; }
+.qv-etapa {
+  font-size: 11px; font-weight: 700; color: var(--text-faint);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px; white-space: nowrap;
+}
+.qv-etapa b { color: var(--text); font-family: var(--mono); margin-left: 2px; }
+.qv-etapa.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.qv-etapa.ok b { color: var(--ok); }
+.qv-cards { display: flex; flex-direction: column; gap: 8px; }
+.qv-card { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
+.qv-card-top { display: flex; align-items: baseline; gap: 8px; }
+.qv-card-top .cliente { font-weight: 700; font-size: 14px; }
+.qv-card-top .idv { font-size: 12px; color: var(--text-faint); margin-left: auto; }
+.qv-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.qv-itens { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; }
+.qv-itens li {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+  padding: 4px 0; border-top: 1px dashed var(--border);
+}
+.qv-item-nome { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.qv-itens .q { font-family: var(--mono); font-weight: 700; }
+.qv-item-etapa {
+  font-size: 11px; font-weight: 700; color: var(--text-faint);
+  background: var(--surface); border-radius: 6px; padding: 2px 8px;
+  white-space: nowrap; min-width: 96px; text-align: center;
+}
+.qv-item-etapa.ok { color: var(--ok); }
+@media (max-width: 560px) {
+  .qv-itens li { grid-template-columns: 1fr auto; }
+  .qv-item-etapa { grid-column: 1 / -1; justify-self: start; min-width: 0; }
+}
 .qcard {
   background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
   border-radius: 10px; padding: 10px 12px;

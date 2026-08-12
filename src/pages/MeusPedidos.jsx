@@ -5,9 +5,11 @@ import {
   previsaoDe, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
   nomeCliente, MODO_NM, linhaDoItem, pegarIP,
   indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora,
+  unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import QuadroVendedor from '../components/QuadroVendedor.jsx'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
 // Tela do perfil VENDEDOR: vê apenas os próprios pedidos (filtrados no App e
@@ -15,11 +17,14 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 // da rota é só um atalho que dá ciência nos que ainda faltam. Assim um pedido
 // que entra na rota depois nunca fica coberto por uma ciência que não o viu.
 export default function MeusPedidos({ pedidos }) {
-  const { vendedores, clientes, itens: itensCad } = useCadastros()
+  // sem cadastro de Itens: as três montagens viram uma só na visão do vendedor,
+  // então o material do item deixou de importar aqui
+  const { vendedores, clientes } = useCadastros()
   const { user, vendedorNome, nome } = useAuth()
   const [ciencias, setCiencias] = useState([])
   const [entregues, setEntregues] = useState([])
   const [vista, setVista] = useState('lista')   // 'lista' (ciência) | 'quadro' (acompanhar)
+  const [filtros, setFiltros] = useState({})    // só no quadro
   const [salvando, setSalvando] = useState('')
 
   useEffect(() => {
@@ -52,6 +57,17 @@ export default function MeusPedidos({ pedidos }) {
     arvore[r].push(p)
   }
   const rotas = Object.keys(arvore).sort()
+
+  // ---------- quadro de acompanhamento ----------
+  // O pedido vive partido entre duas coleções: o que está em produção fica em
+  // `pedidos`, o que já saiu vira remessa em `entregues` (e some de `pedidos`
+  // quando saiu tudo). Aqui os dois viram um pedido só, item a item.
+  const entreguesBase = entregues.map((e) => ({ ...e, previsao: previsaoDe(e, vendedores) }))
+  const unificados = unificaPedidosVendedor(base, entreguesBase)
+  const doQuadro = filtraPedidos(unificados, filtros, clientes)
+  const rotasFiltro = [...new Set(unificados.map((p) => p.rota || 'SEM ROTA'))]
+    .sort((a, b) => (ordemRota(vendedorNome, a, vendedores) - ordemRota(vendedorNome, b, vendedores))
+      || a.localeCompare(b))
 
   // dá ciência num pedido só ou em todos os que faltam na rota (mesmo caminho)
   async function darCiencia(ps, marca) {
@@ -99,7 +115,13 @@ export default function MeusPedidos({ pedidos }) {
 
       {vista === 'quadro' && (
         <div className="screen-only">
-          <QuadroVendedor pedidos={base} entregues={entregues} clientes={clientes} itensCad={itensCad} />
+          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor rotas={rotasFiltro} />
+          {resumoFiltros(filtros) && (
+            <div className="qv-resumo">
+              {doQuadro.length} de {unificados.length} pedido(s) · {resumoFiltros(filtros)}
+            </div>
+          )}
+          <QuadroVendedor pedidos={doQuadro} clientes={clientes} />
         </div>
       )}
 
