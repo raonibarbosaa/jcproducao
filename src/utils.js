@@ -936,6 +936,11 @@ export function casaCliente(a, b) {
 
 // Separa o que dá para aplicar do que precisa de olho humano.
 // `pedidos` = os que estão HOJE na coleção pedidos (ainda em produção).
+// Devolve os TRÊS conjuntos da comparação por número, porque cada um responde a
+// uma pergunta diferente:
+//   aplicar/revisar  → está nos dois lados (o que a conciliação resolve)
+//   naoEncontrados   → só na planilha (nada a fazer: já saiu ou nunca entrou)
+//   foraDaPlanilha   → só no banco  (o que vai SOBRAR na produção depois)
 export function classificaConciliacao(entradas, pedidos, clientes) {
   const porId = new Map((pedidos || []).map((p) => [String(p.idVenda), p]))
   const vistos = new Set()
@@ -951,7 +956,10 @@ export function classificaConciliacao(entradas, pedidos, clientes) {
     if (casaCliente(e.cliente, nomeSis) || casaCliente(e.cliente, p.cliente)) aplicar.push({ ...e, p })
     else revisar.push({ ...e, p, clienteSistema: nomeSis })
   }
-  return { aplicar, revisar, naoEncontrados }
+  const foraDaPlanilha = (pedidos || [])
+    .filter((p) => !vistos.has(String(p.idVenda)))
+    .sort((a, b) => (Number(a.idVenda) || 0) - (Number(b.idVenda) || 0))
+  return { aplicar, revisar, naoEncontrados, foraDaPlanilha }
 }
 
 // ---------- MÊS (para as perguntas por produto/por mês) ----------

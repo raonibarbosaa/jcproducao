@@ -75,6 +75,20 @@ export default function Conciliacao({ pedidos }) {
     setBackupFeito(true)
   }
 
+  // CSV com TODOS os pedidos que estão hoje na produção — para analisar por
+  // número fora do sistema (Excel) sem depender desta tela
+  function baixarPedidosDoSistema() {
+    const cab = 'pedido;cliente;vendedor;rota;status;itens;valor\n'
+    const linhas = (pedidos || [])
+      .slice()
+      .sort((a, b) => (Number(a.idVenda) || 0) - (Number(b.idVenda) || 0))
+      .map((p) => [
+        p.idVenda, nomeCliente(p.cliente, clientes), p.vendedor || '', p.rota || '',
+        p.status || 'sem triagem', (p.itens || []).length, p.valorTotal || 0,
+      ].join(';')).join('\n')
+    baixar(`pedidos-na-producao-${(pedidos || []).length}.csv`, '\ufeff' + cab + linhas, 'text/csv;charset=utf-8')
+  }
+
   function baixarCSV(lista, nomeArq, comSistema) {
     const cab = comSistema
       ? 'pedido;cliente na planilha;cliente no sistema;aba\n'
@@ -83,6 +97,15 @@ export default function Conciliacao({ pedidos }) {
       ? `${e.idVenda};${e.cliente};${e.clienteSistema || ''};${e.aba}`
       : `${e.idVenda};${e.cliente};${e.aba}`).join('\n')
     baixar(nomeArq, '﻿' + cab + linhas, 'text/csv;charset=utf-8')
+  }
+
+  function baixarForaDaPlanilha() {
+    const cab = 'pedido;cliente;vendedor;rota;status;itens;valor\n'
+    const linhas = analise.foraDaPlanilha.map((p) => [
+      p.idVenda, nomeCliente(p.cliente, clientes), p.vendedor || '', p.rota || '',
+      p.status || 'sem triagem', (p.itens || []).length, p.valorTotal || 0,
+    ].join(';')).join('\n')
+    baixar(`seguem-na-producao-${analise.foraDaPlanilha.length}.csv`, '\ufeff' + cab + linhas, 'text/csv;charset=utf-8')
   }
 
   async function aplicar() {
@@ -145,10 +168,16 @@ export default function Conciliacao({ pedidos }) {
           <b> ENTREGUE</b> cujo número seja da <b>nossa numeração</b> e que ainda estejam
           na produção. Pedido que não existir aqui é apenas listado — nada é criado.
         </p>
-        <label className="btn primary" style={{ display: 'inline-block', cursor: 'pointer' }}>
-          📄 Escolher planilha (.xlsx)
-          <input type="file" accept=".xlsx,.xls" onChange={lerPlanilha} style={{ display: 'none' }} />
-        </label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label className="btn primary" style={{ display: 'inline-block', cursor: 'pointer' }}>
+            📄 Escolher planilha (.xlsx)
+            <input type="file" accept=".xlsx,.xls" onChange={lerPlanilha} style={{ display: 'none' }} />
+          </label>
+          {/* independe da planilha: serve para conferir os números fora do sistema */}
+          <button className="btn" onClick={baixarPedidosDoSistema}>
+            ⬇ Baixar os {(pedidos || []).length} pedidos da produção (CSV)
+          </button>
+        </div>
         {msg && <div className="filter-pill" style={{ marginTop: 12 }}>{msg}</div>}
       </div>
 
@@ -168,6 +197,7 @@ export default function Conciliacao({ pedidos }) {
             <Cartao n={analise.aplicar.length} rotulo="vão ser marcados" cor="var(--ok)" />
             <Cartao n={analise.revisar.length} rotulo="para revisar (cliente diferente)" cor="var(--accent)" />
             <Cartao n={analise.naoEncontrados.length} rotulo="não estão na produção" />
+            <Cartao n={analise.foraDaPlanilha.length} rotulo="seguem na produção (fora da planilha)" />
             <Cartao n={analise.total} rotulo="linhas ENTREGUE lidas" />
           </div>
 
@@ -189,6 +219,11 @@ export default function Conciliacao({ pedidos }) {
               {analise.naoEncontrados.length > 0 && (
                 <button className="btn" onClick={() => baixarCSV(analise.naoEncontrados, 'nao-encontrados.csv', false)}>
                   ⬇ Não encontrados (CSV)
+                </button>
+              )}
+              {analise.foraDaPlanilha.length > 0 && (
+                <button className="btn" onClick={baixarForaDaPlanilha}>
+                  ⬇ Seguem na produção (CSV)
                 </button>
               )}
             </div>
@@ -214,6 +249,9 @@ export default function Conciliacao({ pedidos }) {
             itens={analise.revisar} clientes={clientes} mostraSistema />
           <Lista titulo="Não estão na produção (já entregues antes, ou nunca existiram aqui)"
             itens={analise.naoEncontrados} clientes={clientes} semPedido />
+
+          <ListaPedidos titulo="Seguem na produção — estão no sistema e a planilha não menciona"
+            itens={analise.foraDaPlanilha} clientes={clientes} />
 
           <div className="card em_dia">
             <h3 style={{ marginTop: 0 }}>Por aba da planilha</h3>
@@ -242,6 +280,39 @@ function Cartao({ n, rotulo, cor }) {
     <div className="rel-total-card" style={cor ? { borderLeft: `4px solid ${cor}` } : null}>
       <div className="rt-label">{rotulo}</div>
       <div className="rt-valor" style={cor ? { color: cor } : null}>{n}</div>
+    </div>
+  )
+}
+
+function ListaPedidos({ titulo, itens, clientes }) {
+  if (!itens.length) return null
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18 }}>
+      <h3 style={{ marginTop: 0 }}>
+        {titulo} <span style={{ fontWeight: 400, color: 'var(--text-faint)' }}>({itens.length})</span>
+      </h3>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="rel-tab">
+          <thead><tr><th>Pedido</th><th>Cliente</th><th>Vendedor</th><th>Rota</th><th className="q">Itens</th><th className="q">Valor</th></tr></thead>
+          <tbody>
+            {itens.slice(0, MOSTRAR).map((p) => (
+              <tr key={p.idVenda}>
+                <td>#{p.idVenda}</td>
+                <td>{nomeCliente(p.cliente, clientes)}</td>
+                <td>{p.vendedor || '—'}</td>
+                <td>{p.rota || '—'}</td>
+                <td className="q">{(p.itens || []).length}</td>
+                <td className="q">{fmtMoeda(p.valorTotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {itens.length > MOSTRAR && (
+        <p style={{ color: 'var(--text-faint)', fontSize: 12, marginBottom: 0 }}>
+          mostrando {MOSTRAR} de {itens.length} — baixe o CSV para a lista completa
+        </p>
+      )}
     </div>
   )
 }
