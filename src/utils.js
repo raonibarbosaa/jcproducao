@@ -468,6 +468,78 @@ export function etapaDoItem(p, idx) {
   return linhaDoItem(p, idx) // item ainda na própria linha de produção
 }
 export const itemExpedido = (p, idx) => etapaDoItem(p, idx) === 'expedido'
+
+// ---------- QUANTIDADE POR ETAPA (produção parcial) ----------
+// O item deixou de andar inteiro: de um item de 100 sacolas, 50 podem estar na
+// montagem e 50 ainda na linha, e essa metade segue sozinha até a entrega.
+//
+// A distribuição fica em `etapas[key]` e NÃO partindo o item em dois no array
+// `itens`: todo import do Posseidon sobrescreve `itens`, então a divisão se
+// perderia no import seguinte. O mapa `etapas` é indexado pela chave estável.
+//
+// Guardamos SÓ o que já avançou; a quantidade na linha é o RESTO:
+//     linha = qtd do item − (montagem + expedicao + expedido + entregue)
+// Se o import mudar a quantidade do item, a linha se ajusta sozinha — nunca fica
+// um total em desacordo com a soma das partes.
+export const ETAPAS_QTD = ['montagem', 'expedicao', 'expedido', 'entregue']
+
+// kg entra em jogo (plástico), então soma/subtração precisam de arredondamento:
+// 0.1 + 0.2 em ponto flutuante não é 0.3, e isso viraria "resta 0.00000001 kg"
+export const arredondaQtd = (n) => Math.round((Number(n) || 0) * 1000) / 1000
+
+// distribuição da quantidade do item entre as etapas, já com o legado resolvido
+export function distribuicaoDoItem(p, idx) {
+  const qtd = arredondaQtd(p?.itens?.[idx]?.qtd)
+  const linha = linhaDoItem(p, idx) || 'triagem'
+  const dist = { [linha]: 0, montagem: 0, expedicao: 0, expedido: 0, entregue: 0 }
+  const bruto = doMapaDoItem(p?.etapas, p, idx)
+  if (bruto && typeof bruto === 'object' && !Array.isArray(bruto)) {
+    if (bruto.et) {
+      // legado: o item inteiro numa etapa só. Etapa de linha não precisa de
+      // nada — o resto cobre.
+      if (ETAPAS_QTD.includes(bruto.et)) dist[bruto.et] = qtd
+    } else {
+      for (const e of ETAPAS_QTD) dist[e] = Math.max(0, arredondaQtd(bruto[e]))
+    }
+  } else {
+    // legado mais antigo ainda: o pedido inteiro andava no campo `p.etapa`
+    const leg = p?.etapa === 'entregue' ? 'expedido' : p?.etapa
+    if (ETAPAS_QTD.includes(leg)) dist[leg] = qtd
+  }
+  const avancado = ETAPAS_QTD.reduce((s, e) => s + dist[e], 0)
+  dist[linha] = Math.max(0, arredondaQtd(qtd - avancado))
+  return dist
+}
+
+// quanto deste item está NESTA etapa ('PRODUCAO'|'GLICHE'|'GRAFICA' = a linha)
+export function qtdNaEtapa(p, idx, etapa) {
+  const d = distribuicaoDoItem(p, idx)
+  return arredondaQtd(d[etapa])
+}
+
+// o que ainda não terminou (tudo menos o que já foi entregue)
+export const qtdPendente = (p, idx) => {
+  const d = distribuicaoDoItem(p, idx)
+  return arredondaQtd(Object.entries(d).reduce((s, [e, n]) => s + (e === 'entregue' ? 0 : n), 0))
+}
+
+// Move `qtd` de uma etapa para outra e devolve a entrada nova de `etapas[key]`.
+// Guarda só as etapas avançadas — a linha continua sendo o resto.
+export function moveQtdItem(p, idx, de, para, qtd) {
+  const d = distribuicaoDoItem(p, idx)
+  const mover = Math.min(arredondaQtd(qtd), arredondaQtd(d[de]))   // nunca move mais do que tem
+  if (mover <= 0) return null
+  const novo = {}
+  for (const e of ETAPAS_QTD) novo[e] = arredondaQtd(d[e])
+  if (ETAPAS_QTD.includes(de)) novo[de] = arredondaQtd(novo[de] - mover)
+  if (ETAPAS_QTD.includes(para)) novo[para] = arredondaQtd(novo[para] + mover)
+  return novo
+}
+
+// item terminado: tudo entregue (é o que permite tirar o pedido de `pedidos`)
+export const itemTodoEntregue = (p, idx) => qtdPendente(p, idx) <= 0
+export const pedidoTodoEntregue = (p) =>
+  (p?.itens || []).length > 0 && (p.itens || []).every((_, i) => itemTodoEntregue(p, i))
 // quem/quando moveu esse item pela última vez (cai no log antigo do pedido inteiro)
 export function logEtapaItem(p, idx) {
   const raw = doMapaDoItem(p?.etapas, p, idx)
