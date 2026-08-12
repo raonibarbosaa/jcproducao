@@ -615,6 +615,30 @@ input, select { font-family: var(--font); }
   .assist-fab, .assist-panel, .assist-overlay { display: none !important; }
 }
 
+/* ===================== VOLTAR AO TOPO ===================== */
+.topo-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 59;
+  width: 48px; height: 48px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font-size: 22px; line-height: 1; cursor: pointer; box-shadow: var(--shadow);
+}
+/* sobe acima do 🎤 do assistente (78px + respiro) quando ele está na tela */
+.topo-fab.com-voz { bottom: 110px; }
+.topo-fab:hover { background: var(--surface); }
+.topo-fab:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+/* o cabeçalho é sticky: sem esta margem o scrollIntoView encosta o topo do
+   formulário embaixo dele e o título "Editar…" fica escondido */
+.painel-edicao { scroll-margin-top: 84px; }
+
+/* formulário de edição pisca ao abrir — confirma que o clique fez algo */
+@keyframes edicao-pisca {
+  0%   { box-shadow: 0 0 0 0 var(--accent); }
+  35%  { box-shadow: 0 0 0 4px var(--accent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.edicao-destaque > .card { animation: edicao-pisca 1.2s ease-out; }
+
 /* ===================== ASSISTENTE DE VOZ (acessível — baixa visão) ===================== */
 .assist-fab {
   position: fixed; right: 20px; bottom: 20px; z-index: 60;

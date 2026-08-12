@@ -16,7 +16,7 @@ import MeusPedidos from './pages/MeusPedidos.jsx'
 import Ciencia from './pages/Ciencia.jsx'
 import Auditoria from './pages/Auditoria.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
-import { situacaoPrazo } from './utils.js'
+import { situacaoPrazo, veAssistenteVoz } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
@@ -76,7 +76,7 @@ export default function App() {
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>
-    {['dono', 'designer', 'financeiro'].includes(perfil) && <AssistenteVoz pedidos={pedidos} />}
+    {veAssistenteVoz(perfil) && <AssistenteVoz pedidos={pedidos} />}
     </>
   )
 }

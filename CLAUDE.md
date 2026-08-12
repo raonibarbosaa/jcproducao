@@ -349,6 +349,25 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   andado e voltado fazia o item **sumir do quadro** (o painel da linha velha cobrava a
   linha nova; o da nova cobrava a etapa nova).
 
+## Navegação / usabilidade
+- **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
+  da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava
+  que o botão estava quebrado. O componente traz o formulário para a tela ao abrir e o faz
+  piscar uma vez. Envolve os 4 formulários de Cadastros (vendedor, motorista, cliente,
+  item); **Usuários não precisa** — lá o form abre no lugar do próprio card.
+  ⚠️ A posição sai de `scrollIntoView` + `scroll-margin-top: 84px` (`.painel-edicao`), e
+  **não** de conta na mão com `getBoundingClientRect`: o formulário entra ACIMA da lista,
+  empurra o conteúdo e o navegador reajusta a rolagem (scroll anchoring) depois que a
+  conta já foi feita — testado, rolava para o lado errado. O `scroll-margin-top` é o que
+  impede o título de ficar embaixo do cabeçalho sticky.
+- **`VoltarAoTopo` (FEITO):** botão flutuante em TODAS as telas (renderizado no `Layout`),
+  aparece depois de 400px de rolagem. `desviaDaVoz` sobe para `bottom: 110px` quando o
+  🎤 do assistente está na tela (o FAB da voz tem 78px) — `veAssistenteVoz(perfil)` em
+  utils é a fonte única para App e Layout não divergirem.
+- Os dois respeitam `prefers-reduced-motion`. O `PainelEdicao` ainda tem rede de segurança:
+  se a rolagem suave não executar (ambiente sem animação), ele vai direto — senão o
+  usuário cai de novo no "cliquei e nada aconteceu", que é o bug que isto conserta.
+
 ## Design / identidade
 - **Dashboards (Produção e Rota):** linha de produção = faixa colorida forte
   (`.linha-bloco`/`.linha-head`, cor de `MODO_COR`), rota = badge/banda destacada

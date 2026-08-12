@@ -784,6 +784,10 @@ export const fmtDataHora = (iso) =>
 // sobrou — o resto continua na fábrica, não saiu com ninguém.
 export const saiuParaEntrega = (p) => !!p?.saidaEm
 
+// quem enxerga o assistente de voz (o FAB 🎤). Fonte única: o App decide se
+// renderiza e o Layout precisa saber para não encostar o "voltar ao topo" nele.
+export const veAssistenteVoz = (perfil) => ['dono', 'designer', 'financeiro'].includes(perfil)
+
 export function fmtMoeda(v) {
   const n = Number(v) || 0
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

@@ -1,6 +1,8 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { veAssistenteVoz } from '../utils.js'
 import Footer from './Footer.jsx'
+import VoltarAoTopo from './VoltarAoTopo.jsx'
 
 const LABEL = {
   triagem: 'Triagem',
@@ -58,6 +60,8 @@ export default function Layout({ abas, contadores, children }) {
         {children}
         <Footer />
       </main>
+
+      <VoltarAoTopo desviaDaVoz={veAssistenteVoz(perfil)} />
     </div>
   )
 }

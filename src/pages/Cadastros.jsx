@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { doc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
+import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM } from '../utils.js'
@@ -80,11 +81,13 @@ function AbaVendedores() {
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
       {editando !== null && (
-        <FormVendedor
-          inicial={editando === 'novo' ? null : vendedores[editando]}
-          onSalvar={(dados) => salvarVendedor(dados, editando)}
-          onCancelar={() => setEditando(null)}
-        />
+        <PainelEdicao>
+          <FormVendedor
+            inicial={editando === 'novo' ? null : vendedores[editando]}
+            onSalvar={(dados) => salvarVendedor(dados, editando)}
+            onCancelar={() => setEditando(null)}
+          />
+        </PainelEdicao>
       )}
 
       {vendedores.length === 0 ? (
@@ -278,11 +281,13 @@ function AbaMotoristas() {
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
       {editando !== null && (
-        <FormMotorista
-          inicial={editando === 'novo' ? null : motoristas[editando]}
-          onSalvar={(dados) => salvarMotorista(dados, editando)}
-          onCancelar={() => setEditando(null)}
-        />
+        <PainelEdicao>
+          <FormMotorista
+            inicial={editando === 'novo' ? null : motoristas[editando]}
+            onSalvar={(dados) => salvarMotorista(dados, editando)}
+            onCancelar={() => setEditando(null)}
+          />
+        </PainelEdicao>
       )}
 
       {motoristas.length === 0 ? (
@@ -429,11 +434,13 @@ function AbaClientes() {
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
       {editando !== null && (
-        <FormCliente
-          inicial={editando === 'novo' ? null : clientes[editando]}
-          onSalvar={(dados) => salvarCliente(dados, editando)}
-          onCancelar={() => setEditando(null)}
-        />
+        <PainelEdicao>
+          <FormCliente
+            inicial={editando === 'novo' ? null : clientes[editando]}
+            onSalvar={(dados) => salvarCliente(dados, editando)}
+            onCancelar={() => setEditando(null)}
+          />
+        </PainelEdicao>
       )}
 
       {clientes.length > 0 && (
@@ -585,11 +592,13 @@ function AbaItens() {
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
       {editando !== null && (
-        <FormItem
-          inicial={editando === 'novo' ? null : itens[editando]}
-          onSalvar={(dados) => salvarItem(dados, editando)}
-          onCancelar={() => setEditando(null)}
-        />
+        <PainelEdicao>
+          <FormItem
+            inicial={editando === 'novo' ? null : itens[editando]}
+            onSalvar={(dados) => salvarItem(dados, editando)}
+            onCancelar={() => setEditando(null)}
+          />
+        </PainelEdicao>
       )}
 
       {/* filtros */}
