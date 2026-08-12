@@ -17,6 +17,38 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
+## Produção PARCIAL por QUANTIDADE (12/08/2026)
+> O item deixou de andar inteiro. De 100 sacolas, 50 podem estar na montagem e 50 na
+> linha, e essa metade segue sozinha até a entrega e a baixa financeira.
+
+- **Onde mora:** `etapas[key] = { montagem, expedicao, expedido, entregue, por, em }`.
+  Guarda **só o que avançou**; a quantidade na linha é o RESTO (`qtd do item − soma`).
+  Se um reimport mudar a quantidade (100 → 120), a linha vira 70 sozinha — guardar os
+  dois lados deixaria o total em desacordo com as partes, e ninguém veria.
+  **Não partir o item em dois no array `itens`:** todo import sobrescreve `itens`.
+- **Helpers (utils):** `distribuicaoDoItem`, `qtdNaEtapa`, `qtdPendente`, `moveQtdItem`,
+  `mapaEtapasComQtd(p, [{idx,de,para,qtd}], quem)`, `itemTodoEntregue`,
+  `pedidoTodoEntregue`, `arredondaQtd` (3 casas — plástico é kg, e 0.1+0.2 deixaria
+  "resta 0.00000001 kg" pendente para sempre).
+- **`qtdNoPainel` é a fonte única** de "quanto deste item está nesta coluna";
+  `itemPertenceAoPainel` é só `> 0`. Por isso o quadro e os contadores não divergem.
+  O mesmo item aparece em VÁRIAS colunas — a premissa antiga ("some da fila ao
+  avançar") não vale mais.
+- **`etapaDoItem` devolve a etapa mais ATRASADA com quantidade** — é onde o trabalho
+  está. Existe para quem precisa de UM valor (quadro do vendedor, badge, auditoria).
+- **Quadro:** campo de quantidade por item, já preenchido com o total daquela etapa
+  (quem concluiu tudo continua com um clique). O botão vira "Concluir parte →" quando
+  alguém digita menos. Auditoria grava `qtd`, `qtdItem` e o `de` da COLUNA (não de
+  `etapaDoItem`, que com o item dividido aponta outra etapa).
+- **Entrega:** a remessa grava `qtd` (o que saiu) e `qtdItem` (o total). Entregar move
+  `expedido → entregue`; **o item NÃO sai de `itens`** — apagá-lo levaria junto a
+  quantidade ainda em produção. O pedido só é apagado quando `pedidoTodoEntregue`.
+- **Cancelar entrega** move `entregue → expedido|expedicao` de volta. Se o pedido já
+  tinha sido apagado, é recriado com as quantidades originais e o que veio de OUTRAS
+  remessas continua como `entregue` — senão reapareceria na produção.
+- **Contadores continuam contando ITENS** com quantidade pendente: kg e unidade não
+  somam, então um número único misturando os dois não significaria nada.
+
 ## Produção POR ITEM (o item é a unidade de produção) — em obras
 > Reescreve as Fases A–D: o pedido não anda mais como bloco. Cada item percorre
 > **[linha do item] → Montagem → Expedição → expedido**, e itens do mesmo pedido que

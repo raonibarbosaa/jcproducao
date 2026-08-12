@@ -675,7 +675,10 @@ export function fatiaProntos(p) {
     })),
     _todos: p.itens || [],
     _idxs: idxs,
-    _pendentes: (p.itens || []).length - idxs.length,
+    // com produção parcial o item pode SAIR e CONTINUAR pendente ao mesmo tempo
+    // (40 expedidos vão, 60 seguem na linha) — por isso não é "itens que ficaram"
+    _pendentes: (p.itens || []).filter((_, i) =>
+      arredondaQtd(qtdPendente(p, i) - qtdNaEtapa(p, i, 'expedido')) > 0).length,
   }
 }
 

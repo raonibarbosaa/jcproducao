@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens, linhaDoItem } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens, linhaDoItem,
+  mapaEtapasComQtd, arredondaQtd } from '../utils.js'
 import SeloLinha from '../components/SeloLinha.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -32,24 +33,44 @@ export default function Entregues() {
   // voltam para dentro dele; se não existe mais, o pedido é recriado só com eles.
   // `destino` é a etapa em que os itens voltam: 'expedido' (pronto, cai na Rota)
   // ou 'expedicao' (volta pro quadro de produção).
+  // Desfaz a remessa devolvendo a QUANTIDADE entregue para `destino`.
+  // Com produção parcial o item nunca saiu de `itens` — o que mudou foi a
+  // distribuição —, então devolver é mover `entregue → destino` de volta.
   async function devolverAoPedido(p, destino) {
     const { id, entregueEm, motorista, pago, pagoPor, pagoEm,
             remessa, parcial, itensPendentes, ...pedido } = p
-    const voltando = pedido.itens || []
-    const marca = { et: destino, por: nome || '', em: new Date().toISOString() }
+    const voltando = pedido.itens || []            // itens DESTA remessa (qtd = o que saiu)
+    const agora = new Date().toISOString()
     const ref = doc(db, 'pedidos', p.idVenda)
     const atual = await getDoc(ref)
+
     if (atual.exists()) {
       const dados = atual.data()
-      const jaTem = new Set((dados.itens || []).map((it, i) => it.key || keyDoItem(dados, i)))
-      const novos = voltando.filter((it, i) => !jaTem.has(it.key || keyDoItem({ itens: voltando }, i)))
-      const etapas = { ...(dados.etapas || {}) }
-      novos.forEach((it, i) => { etapas[it.key || keyDoItem({ itens: novos }, i)] = marca })
-      await updateDoc(ref, { itens: [...(dados.itens || []), ...novos], etapas })
+      const movs = []
+      voltando.forEach((it, n) => {
+        const k = it.key || keyDoItem({ itens: voltando }, n)
+        const idx = (dados.itens || []).findIndex((x, i) => (x.key || keyDoItem(dados, i)) === k)
+        if (idx >= 0) movs.push({ idx, de: 'entregue', para: destino, qtd: arredondaQtd(it.qtd) })
+      })
+      await updateDoc(ref, { etapas: mapaEtapasComQtd(dados, movs, nome) })
     } else {
+      // O pedido já tinha saído inteiro. Recria com as quantidades ORIGINAIS do
+      // item; o que não veio nesta remessa foi entregue em outra, então continua
+      // como `entregue` — senão essas quantidades reapareceriam na produção.
+      const itens = voltando.map((it) => ({ ...it, qtd: arredondaQtd(it.qtdItem ?? it.qtd) }))
       const etapas = {}
-      voltando.forEach((it, i) => { etapas[it.key || keyDoItem({ itens: voltando }, i)] = marca })
-      await setDoc(ref, { ...pedido, itens: voltando, etapas, remessas: remessa ? remessa - 1 : 0 })
+      itens.forEach((it, i) => {
+        const k = it.key || keyDoItem({ itens }, i)
+        const devolvido = arredondaQtd(voltando[i].qtd)
+        const total = arredondaQtd(it.qtd)
+        etapas[k] = {
+          montagem: 0, expedicao: 0, expedido: 0,
+          entregue: Math.max(0, arredondaQtd(total - devolvido)),
+          por: nome || '', em: agora,
+        }
+        etapas[k][destino] = arredondaQtd((etapas[k][destino] || 0) + devolvido)
+      })
+      await setDoc(ref, { ...pedido, itens, etapas, remessas: remessa ? remessa - 1 : 0 })
     }
     await deleteDoc(doc(db, 'entregues', p.id))
   }

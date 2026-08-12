@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, keyDoItem, saiuParaEntrega, fmtDataHora } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora, qtdNaEtapa, qtdPendente,
+  mapaEtapasComQtd, pedidoTodoEntregue, arredondaQtd, fmtQtd } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
@@ -33,9 +34,8 @@ export default function Rota({ pedidos }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
   const categorizados = base.filter((p) => p.status)
   const vendedores = vendedoresDe(categorizados)
-  // A Rota mostra só o que já foi EXPEDIDO — e por item: o pedido entra com a
-  // fatia pronta, mesmo que o resto ainda esteja em produção (entrega parcial).
-  // Pedido legado (que nunca passou pelo quadro) continua entrando inteiro.
+  // A Rota mostra só o que já foi EXPEDIDO — e por QUANTIDADE: o pedido entra
+  // com a fatia pronta (40 de 100), e o resto segue em produção.
   const lista = filtraPedidos(categorizados, filtros, clientes)
     .map(fatiaProntos)
     .filter((p) => p.itens.length > 0 || p._todos.length === 0)
@@ -52,38 +52,43 @@ export default function Rota({ pedidos }) {
     arvore[vend][rota][nomeCli].push(p)
   }
 
-  // Grava uma REMESSA em `entregues` (entregues/{idVenda}-{n}) com os itens que
-  // saíram agora. Se sobrou item em produção, o pedido continua em `pedidos` só
-  // com o que falta; quando não sobra nada, o pedido é apagado (como era antes).
+  // Grava uma REMESSA em `entregues` (entregues/{idVenda}-{n}) e move a
+  // QUANTIDADE entregue de `expedido` para `entregue`. O pedido só é apagado
+  // quando não sobra nada pendente em item nenhum.
+  // O item NÃO sai mais de `itens`: com produção parcial ele pode ter 40 saindo e
+  // 60 ainda na linha, e apagá-lo levaria os 60 junto, sem erro na tela.
   async function gravarEntrega(p, motorista) {
     const todos = p._todos || p.itens || []
     const idxs = p._idxs || todos.map((_, i) => i)
-    const saindo = idxs.map((i) => todos[i])
-    const restantes = todos.filter((_, i) => !idxs.includes(i))
-    const parcial = restantes.length > 0
+    const base = { ...p, itens: todos }          // pedido cheio: as contas precisam do total
+    const movs = idxs
+      .map((i) => ({ idx: i, de: 'expedido', para: 'entregue', qtd: qtdNaEtapa(base, i, 'expedido') }))
+      .filter((m) => m.qtd > 0)
+    if (!movs.length) return
+    const etapas = mapaEtapasComQtd(base, movs, nome)
+    const depois = { ...base, etapas }
+    const acabou = pedidoTodoEntregue(depois)
     const n = (p.remessas || 0) + 1
     const { _todos, _idxs, _pendentes, ...pedido } = p
     await setDoc(doc(db, 'entregues', `${p.idVenda}-${n}`), {
       ...pedido,
       idVenda: p.idVenda,          // campo (o id do doc agora tem sufixo de remessa)
-      itens: saindo,
+      // qtd = o que saiu nesta remessa; qtdItem = o total do item no pedido
+      itens: movs.map((m) => ({ ...todos[m.idx], qtd: m.qtd, qtdItem: arredondaQtd(todos[m.idx]?.qtd) })),
       remessa: n,
-      parcial,
-      itensPendentes: restantes.length,
+      parcial: !acabou,
+      itensPendentes: todos.filter((_, i) => qtdPendente(depois, i) > 0).length,
       motorista: motorista || '',
       entregueEm: new Date().toISOString(),
     })
-    if (parcial) {
-      // tira do pedido só o que foi entregue; o resto segue no fluxo de produção
-      const etapas = { ...(p.etapas || {}) }
-      for (const i of idxs) delete etapas[keyDoItem({ itens: todos }, i)]
+    if (acabou) {
+      await deleteDoc(doc(db, 'pedidos', p.idVenda))
+    } else {
       // o que sobrou continua na fábrica — não pode herdar a saída da remessa que foi
       await updateDoc(doc(db, 'pedidos', p.idVenda), {
-        itens: restantes, etapas, remessas: n,
+        etapas, remessas: n,
         saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
       })
-    } else {
-      await deleteDoc(doc(db, 'pedidos', p.idVenda))
     }
   }
 
@@ -93,7 +98,7 @@ export default function Rota({ pedidos }) {
       return
     }
     const aviso = p._pendentes > 0
-      ? `\n\nEntrega PARCIAL: saem ${p.itens.length} item(ns) e ficam ${p._pendentes} em produção.`
+      ? `\n\nEntrega PARCIAL: ${p._pendentes} item(ns) continuam com quantidade em produção.`
       : ''
     if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?${aviso}`)) return
     await gravarEntrega(p, motorista)
@@ -259,7 +264,14 @@ export default function Rota({ pedidos }) {
                                 </div>
                                 <ul className="itens">
                                   {p.itens.map((it, i) => (
-                                    <li key={i}><span><SeloLinha linha={it._linha} />{it.produto}</span><span className="q">{it.qtd}</span></li>
+                                    <li key={i}>
+                                      <span><SeloLinha linha={it._linha} />{it.produto}</span>
+                                      <span className="q">
+                                        {fmtQtd(it.qtd)}
+                                        {/* produção parcial: sai só uma parte do item */}
+                                        {it._qtdItem > it.qtd && <small className="q-de"> de {fmtQtd(it._qtdItem)}</small>}
+                                      </span>
+                                    </li>
                                   ))}
                                 </ul>
                                 {(podeEntregar || (podeMarcarSaida && saiuParaEntrega(p))) && (
@@ -364,7 +376,10 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
                     {ps.flatMap((p) => p.itens.map((it, i) => (
                       <tr key={`${p.idVenda}-${i}`}>
                         <td><SeloLinha linha={it._linha} />{it.produto} <span className="ref">#{p.idVenda}</span></td>
-                        <td className="q">{it.qtd}</td>
+                        <td className="q">
+                          {fmtQtd(it.qtd)}
+                          {it._qtdItem > it.qtd && <span className="ref"> de {fmtQtd(it._qtdItem)}</span>}
+                        </td>
                       </tr>
                     )))}
                   </tbody></table>
