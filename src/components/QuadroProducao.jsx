@@ -6,7 +6,7 @@ import {
   mapaEtapasCom, normSetor, MODO_COR,
   nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, acabamentoItemOk, fmtAcabamento, valorDosItens, logEtapaItem,
-  materialDoItem, montagemDoMaterial, itemNoPainel, podeNoMaterial, MONTAGENS,
+  materialDoItem, montagemDoMaterial, itemPertenceAoPainel, podeNoMaterial, MONTAGENS,
   registrosAuditoria, pegarIP,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -45,18 +45,14 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     ;(p.itens || []).forEach((_, i) => {
       const l = linhaDoItem(p, i)
       if (!l) return                            // item sem linha ainda está na Triagem
-      const et = etapaDoItem(p, i)
-      if (et === 'expedido') return             // já saiu do quadro (segue pela Rota)
       const mat = materialDoItem(p.itens[i], itensCad)
       if (!podeNoMaterial(meusMateriais, mat)) return
       for (const pa of paineis) {
-        if (pa.etapa !== et) continue
-        if (pa.tipo === 'linha' && pa.linha !== l) continue
+        if (!itemPertenceAoPainel(pa, p, i, mat)) continue
         // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
         if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) {
           aguardandoAcab++; continue
         }
-        if (!itemNoPainel(pa, mat)) continue
         if (pa.tipo === 'montagem' && !mat) semMaterial.add(`${p.idVenda}|${i}`)
         ;(grupos[pa.id] ??= []).push(i)
       }

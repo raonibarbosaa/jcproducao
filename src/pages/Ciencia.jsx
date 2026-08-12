@@ -1,24 +1,23 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, addDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  indexaCiencias, cienciaDe, pegarIP, nomeCliente, previsaoDe,
-  situacaoPrazo, fmtData, fmtMoeda, ORIGEM_NM, MODO_NM, linhaDoItem,
+  indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora, pegarIP,
+  nomeCliente, previsaoDe, situacaoPrazo, fmtData, fmtMoeda, ORIGEM_NM, MODO_NM, linhaDoItem,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
-const fmtDataHora = (iso) =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''
-
-// Tela do DESIGNER/DONO: vê a ciência dos vendedores por rota (e-mail, IP, data/hora)
-// e dá a própria ciência (conferido), com os mesmos critérios.
+// Tela do DESIGNER/DONO: acompanha a ciência dos vendedores e dá a própria
+// (conferido). A unidade é o PEDIDO — a faixa da rota mostra quantos de quantos,
+// então dá para ver na hora se entrou pedido novo que ninguém conferiu ainda.
 export default function Ciencia({ pedidos }) {
   const { user, nome } = useAuth()
   const { clientes, vendedores } = useCadastros()
   const [ciencias, setCiencias] = useState([])
   const [salvando, setSalvando] = useState('')
-  const [abertos, setAbertos] = useState({}) // { "vendedor|rota": true }
+  const [abertos, setAbertos] = useState({})   // { "vendedor|rota": true }
+  const [soPendentes, setSoPendentes] = useState(false)
 
   const alternar = (k) => setAbertos((s) => ({ ...s, [k]: !s[k] }))
 
@@ -29,11 +28,15 @@ export default function Ciencia({ pedidos }) {
     return unsub
   }, [])
 
-  const mapaC = indexaCiencias(ciencias)
+  const mapaC = indexaCienciasPorPedido(ciencias)
   const cat = (pedidos || []).filter((p) => p.status)
+  // pendente = falta a ciência do vendedor OU a conferência — é o que dá trabalho
+  const pendente = (p) =>
+    !cienciaDoPedido(mapaC, 'vendedor', p.idVenda) || !cienciaDoPedido(mapaC, 'designer', p.idVenda)
 
   const arvore = {}
   for (const p of cat) {
+    if (soPendentes && !pendente(p)) continue
     const v = p.vendedor || '—'
     const r = p.rota || 'SEM ROTA'
     arvore[v] ??= {}
@@ -41,23 +44,29 @@ export default function Ciencia({ pedidos }) {
     arvore[v][r].push(p)
   }
   const vends = Object.keys(arvore).sort()
+  const totalPendentes = cat.filter(pendente).length
 
-  async function conferir(vendedor, rota, ps) {
-    if (!confirm(`Confirmar conferência (ciência) da ${rota} de ${vendedor}?`)) return
-    setSalvando(vendedor + '|' + rota)
+  // conferência de um pedido só ou de todos os que faltam na rota (mesmo caminho)
+  async function conferir(vendedor, ps, marca) {
+    const faltam = semCiencia(mapaC, 'designer', ps)
+    if (!faltam.length || salvando) return
+    const msg = faltam.length === 1
+      ? `Confirmar a conferência do pedido #${faltam[0].idVenda}?`
+      : `Confirmar a conferência de ${faltam.length} pedido(s) de ${vendedor}?`
+    if (!confirm(msg)) return
+    setSalvando(marca)
     try {
       const ip = await pegarIP()
-      await addDoc(collection(db, 'ciencias'), {
-        tipo: 'designer',
-        vendedor, rota,
-        pedidoIds: ps.map((p) => p.idVenda),
-        qtdPedidos: ps.length,
-        porUid: user.uid,
-        porEmail: user.email,
-        porNome: nome || user.email,
-        ip,
-        quando: new Date().toISOString(),
-      })
+      const quem = { porUid: user.uid, porEmail: user.email, porNome: nome || user.email, ip }
+      for (let i = 0; i < faltam.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const p of faltam.slice(i, i + 450)) {
+          batch.set(doc(collection(db, 'ciencias')), docCiencia({
+            tipo: 'designer', vendedor, rota: p.rota || '', idVenda: p.idVenda, quem,
+          }))
+        }
+        await batch.commit()
+      }
     } catch (e) {
       alert('Não foi possível registrar: ' + (e.code || e.message))
     } finally {
@@ -69,20 +78,29 @@ export default function Ciencia({ pedidos }) {
     <>
       <div className="toolbar">
         <h1 className="page-title">Ciência
-          <small>conferência dos pedidos por rota</small>
+          <small>
+            conferência pedido a pedido ·{' '}
+            {totalPendentes ? `${totalPendentes} pendente(s)` : 'tudo conferido'}
+          </small>
         </h1>
+        <div className="spacer" />
+        <button className={`btn${soPendentes ? ' primary' : ''}`} onClick={() => setSoPendentes((v) => !v)}>
+          {soPendentes ? '☑' : '☐'} Só pendentes
+        </button>
       </div>
 
-      {cat.length === 0 ? (
-        <div className="empty"><div className="big">✍️</div>Nenhum pedido categorizado para conferir.</div>
+      {vends.length === 0 ? (
+        <div className="empty"><div className="big">✍️</div>
+          {soPendentes && cat.length ? 'Nenhuma pendência — tudo com ciência e conferido.' : 'Nenhum pedido categorizado para conferir.'}
+        </div>
       ) : (
         vends.map((v) => (
           <div key={v} className="group-block">
             <div className="group-head"><h3>{v}</h3></div>
             {Object.entries(arvore[v]).sort().map(([rota, ps]) => {
               const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
-              const cv = cienciaDe(mapaC, 'vendedor', v, rota)
-              const cd = cienciaDe(mapaC, 'designer', v, rota)
+              const faltamV = semCiencia(mapaC, 'vendedor', ps)
+              const faltamD = semCiencia(mapaC, 'designer', ps)
               const chave = v + '|' + rota
               const aberto = !!abertos[chave]
               return (
@@ -94,16 +112,25 @@ export default function Ciencia({ pedidos }) {
                     <span className="rb-count">{ps.length} pedido(s)</span>
                   </div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '2px 2px 4px', alignItems: 'center' }}>
-                    <CienciaTag titulo="Vendedor" c={cv} />
-                    {cd
-                      ? <CienciaTag titulo="Conferido" c={cd} />
-                      : <button className="btn ok" disabled={salvando === chave} onClick={() => conferir(v, rota, ps)}>
-                          {salvando === chave ? 'Registrando…' : '✓ Dar ciência (conferido)'}
-                        </button>}
+                    <Progresso titulo="Vendedor" total={ps.length} faltam={faltamV.length} />
+                    <Progresso titulo="Conferido" total={ps.length} faltam={faltamD.length} />
+                    {faltamD.length > 0 && (
+                      <button className="btn ok" disabled={!!salvando} onClick={() => conferir(v, ps, chave)}>
+                        {salvando === chave
+                          ? 'Registrando…'
+                          : `✓ Conferir ${faltamD.length === ps.length ? 'esta rota' : `os ${faltamD.length} que faltam`}`}
+                      </button>
+                    )}
                   </div>
                   {aberto && (
                     <div className="cards" style={{ marginTop: 6 }}>
-                      {ps.map((p) => <CardCiencia key={p.idVenda} p={p} clientes={clientes} vendedores={vendedores} />)}
+                      {ps.map((p) => (
+                        <CardCiencia key={p.idVenda} p={p} clientes={clientes} vendedores={vendedores}
+                          cv={cienciaDoPedido(mapaC, 'vendedor', p.idVenda)}
+                          cd={cienciaDoPedido(mapaC, 'designer', p.idVenda)}
+                          salvando={salvando}
+                          onConferir={() => conferir(v, [p], `p:${p.idVenda}`)} />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -116,7 +143,16 @@ export default function Ciencia({ pedidos }) {
   )
 }
 
-function CardCiencia({ p, clientes, vendedores }) {
+function Progresso({ titulo, total, faltam }) {
+  const ok = total - faltam
+  return (
+    <span className="chip" style={faltam ? null : { color: 'var(--ok)' }}>
+      {faltam ? '' : '✓ '}{titulo}: {ok} de {total}
+    </span>
+  )
+}
+
+function CardCiencia({ p, clientes, vendedores, cv, cd, salvando, onConferir }) {
   const previsao = previsaoDe(p, vendedores)
   const atrasado = situacaoPrazo(previsao) === 'atrasado'
   return (
@@ -141,6 +177,14 @@ function CardCiencia({ p, clientes, vendedores }) {
         ))}
       </ul>
       <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+        <CienciaTag titulo="Vendedor" c={cv} />
+        {cd
+          ? <CienciaTag titulo="Conferido" c={cd} />
+          : <button className="btn ok no-print" disabled={!!salvando} onClick={onConferir}>
+              {salvando === `p:${p.idVenda}` ? 'Registrando…' : '✓ Conferir este pedido'}
+            </button>}
+      </div>
     </div>
   )
 }

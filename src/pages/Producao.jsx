@@ -6,7 +6,7 @@ import {
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
-  paineisVisiveis, itemNoPainel, podeNoMaterial,
+  paineisVisiveis, itemPertenceAoPainel, podeNoMaterial,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -54,15 +54,11 @@ export default function Producao({ pedidos }) {
     (p.itens || []).forEach((_, i) => {
       const l = linhaDoItem(p, i)
       if (!l) return
-      const et = etapaDoItem(p, i)
-      if (et === 'expedido') return
       const mat = materialDoItem(p.itens[i], itensCad)
       if (!podeNoMaterial(meusMateriais, mat)) return
       for (const pa of meusPaineis) {
-        if (pa.etapa !== et) continue
-        if (pa.tipo === 'linha' && pa.linha !== l) continue
+        if (!itemPertenceAoPainel(pa, p, i, mat)) continue
         if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) continue
-        if (!itemNoPainel(pa, mat)) continue
         conta[pa.id]++
       }
     })

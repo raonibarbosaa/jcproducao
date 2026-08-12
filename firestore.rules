@@ -51,9 +51,17 @@ service cloud.firestore {
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm']));
     }
 
-    // Entregues: somente staff.
+    // Entregues: staff escreve e lê tudo. O VENDEDOR lê só as entregas dos
+    // próprios pedidos — o doc guarda o pedido inteiro, inclusive `vendedor`
+    // (Rota.jsx grava com spread), então a regra vale também para os registros
+    // antigos. A consulta da tela precisa vir com where('vendedor','==',...),
+    // senão o Firestore recusa. Atenção: regra libera o DOCUMENTO inteiro, não
+    // campo a campo — o vendedor enxerga também a baixa financeira (pago/pagoEm)
+    // dos pedidos dele. Foi decisão deliberada.
     match /entregues/{id} {
-      allow read, write: if ehStaff();
+      allow read: if ehStaff()
+        || (ehVendedor() && resource.data.vendedor == meuVendedor());
+      allow write: if ehStaff();
     }
 
     // Cadastros (config/cadastros): qualquer autenticado lê (o app precisa para

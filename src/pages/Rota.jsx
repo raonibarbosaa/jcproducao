@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, keyDoItem } from '../utils.js'
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, keyDoItem, saiuParaEntrega, fmtDataHora } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
@@ -10,7 +10,7 @@ import SeloLinha from '../components/SeloLinha.jsx'
 
 export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
-  const { perfil } = useAuth()
+  const { perfil, nome } = useAuth()
   const podeEntregar = ['dono', 'designer', 'financeiro'].includes(perfil) // só estes dão "entregue"
   const [filtros, setFiltros] = useState({})
   const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
@@ -74,7 +74,11 @@ export default function Rota({ pedidos }) {
       // tira do pedido só o que foi entregue; o resto segue no fluxo de produção
       const etapas = { ...(p.etapas || {}) }
       for (const i of idxs) delete etapas[keyDoItem({ itens: todos }, i)]
-      await updateDoc(doc(db, 'pedidos', p.idVenda), { itens: restantes, etapas, remessas: n })
+      // o que sobrou continua na fábrica — não pode herdar a saída da remessa que foi
+      await updateDoc(doc(db, 'pedidos', p.idVenda), {
+        itens: restantes, etapas, remessas: n,
+        saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
+      })
     } else {
       await deleteDoc(doc(db, 'pedidos', p.idVenda))
     }
@@ -90,6 +94,45 @@ export default function Rota({ pedidos }) {
       : ''
     if (!confirm(`Confirmar entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?${aviso}`)) return
     await gravarEntrega(p, motorista)
+  }
+
+  // 🚚 SAÍDA: o caminhão saiu com a rota. Fica no pedido (saidaEm/saidaMotorista/
+  // saidaPor) porque o caminhão leva o pedido inteiro do que está pronto — é o
+  // estado que faltava entre "expedido" e "entregue", e é o que o vendedor vê.
+  async function marcarSaida(vend, rota, ps) {
+    const motorista = motoristaSel[`${vend}|${rota}`] || ''
+    if (motoristasAtivos.length > 0 && !motorista) {
+      alert('Escolha o motorista antes de marcar a saída.')
+      return
+    }
+    const faltam = ps.filter((p) => !saiuParaEntrega(p))
+    if (!faltam.length) return
+    if (!confirm(`Marcar ${faltam.length} pedido(s) da ${rota} como SAÍDOS para entrega${motorista ? ` com ${motorista}` : ''}?`)) return
+    const agora = new Date().toISOString()
+    try {
+      for (let i = 0; i < faltam.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const p of faltam.slice(i, i + 450)) {
+          batch.update(doc(db, 'pedidos', p.idVenda), {
+            saidaEm: agora, saidaMotorista: motorista, saidaPor: nome || '',
+          })
+        }
+        await batch.commit()
+      }
+    } catch (e) {
+      alert('Não foi possível marcar a saída: ' + (e.code || e.message))
+    }
+  }
+
+  async function cancelarSaida(p) {
+    if (!confirm(`Cancelar a saída do pedido #${p.idVenda}? Ele volta para "pronto, aguardando a rota".`)) return
+    try {
+      await updateDoc(doc(db, 'pedidos', p.idVenda), {
+        saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
+      })
+    } catch (e) {
+      alert('Não foi possível cancelar a saída: ' + (e.code || e.message))
+    }
   }
 
   // marca todos os pedidos de uma rota como entregues, com o mesmo motorista
@@ -151,6 +194,12 @@ export default function Rota({ pedidos }) {
                             <option value="">🚚 Motorista…</option>
                             {motoristasAtivos.map((m, i) => <option key={i} value={m.nome}>{m.nome}</option>)}
                           </select>
+                          {Object.values(clientes).flat().some((p) => !saiuParaEntrega(p)) && (
+                            <button className="btn" title="O caminhão saiu com esta rota"
+                              onClick={() => marcarSaida(vend, rota, Object.values(clientes).flat())}>
+                              🚚 Saiu para entrega
+                            </button>
+                          )}
                           <button className="btn ok" onClick={() => entregarRota(vend, rota, Object.values(clientes).flat())}>
                             ✓ Entregar rota toda
                           </button>
@@ -185,6 +234,12 @@ export default function Rota({ pedidos }) {
                                       ⏳ faltam {p._pendentes} item(ns) em produção
                                     </span>
                                   )}
+                                  {saiuParaEntrega(p) && (
+                                    <span className="chip" style={{ color: 'var(--ok)' }}
+                                      title={p.saidaPor ? `marcado por ${p.saidaPor}` : ''}>
+                                      🚚 saiu {fmtDataHora(p.saidaEm)}{p.saidaMotorista ? ` · ${p.saidaMotorista}` : ''}
+                                    </span>
+                                  )}
                                   <span className="valor" style={{ marginLeft:'auto' }}>{fmtMoeda(p.valorTotal)}</span>
                                 </div>
                                 <ul className="itens">
@@ -193,10 +248,16 @@ export default function Rota({ pedidos }) {
                                   ))}
                                 </ul>
                                 {podeEntregar && (
-                                  <button className="btn ok no-print" style={{ width:'100%', justifyContent:'center', marginTop: 8 }}
-                                    onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
-                                    ✓ Entregue
-                                  </button>
+                                  <div className="no-print" style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                                    <button className="btn ok" style={{ flex: 1, justifyContent:'center' }}
+                                      onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
+                                      ✓ Entregue
+                                    </button>
+                                    {saiuParaEntrega(p) && (
+                                      <button className="btn" title="Cancelar a saída (o caminhão não levou)"
+                                        onClick={() => cancelarSaida(p)}>↩</button>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             )

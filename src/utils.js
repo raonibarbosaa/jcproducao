@@ -306,6 +306,20 @@ export function itemNoPainel(painel, mat) {
   return !m || m === painel.montagem
 }
 
+// O item pertence a este painel? Fonte única para os DOIS quadros (fábrica e
+// vendedor), para os dois nunca discordarem sobre onde um item está.
+// Etapa de linha (PRODUCAO/GLICHE/GRAFICA) significa só "ainda não saiu da
+// linha" — quem diz QUAL linha é o `linhasItens` ATUAL. Sem isso, trocar a linha
+// do item na Triagem depois que ele já andou e voltou fazia o item sumir do
+// quadro: o painel da linha velha cobrava a linha nova e o da nova cobrava a
+// etapa nova, e nenhum dos dois aceitava.
+export function itemPertenceAoPainel(painel, p, idx, mat) {
+  const et = etapaDoItem(p, idx)
+  if (et === 'expedido') return false          // saiu do quadro, segue pela Rota
+  if (painel?.tipo === 'linha') return MODO_ORDER.includes(et) && painel.linha === linhaDoItem(p, idx)
+  return painel?.etapa === et && itemNoPainel(painel, mat)
+}
+
 // Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
 // materiais vazio = todos os materiais (padrão de quem não foi restringido).
 export function podeNoMaterial(materiais, mat) {
@@ -646,6 +660,16 @@ export function fmtData(d) {
   return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+export const fmtDataHora = (iso) =>
+  (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '')
+
+// ---------- SAÍDA PARA ENTREGA ----------
+// O estado que faltava entre "expedido" (pronto, parado na expedição) e o doc de
+// `entregues`: o caminhão saiu com a rota. Fica no PEDIDO e não no item, porque o
+// caminhão leva tudo que estava pronto. Entrega parcial LIMPA esses campos do que
+// sobrou — o resto continua na fábrica, não saiu com ninguém.
+export const saiuParaEntrega = (p) => !!p?.saidaEm
+
 export function fmtMoeda(v) {
   const n = Number(v) || 0
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -697,18 +721,44 @@ export async function pegarIP() {
   }
 }
 
-// indexa a ciência MAIS RECENTE por (tipo|vendedor|rota)
-export function indexaCiencias(lista) {
+// A ciência por (tipo|vendedor|rota) foi REMOVIDA: era um retrato do momento e
+// cobria pedido que entrasse na rota depois. Quem indexa agora é
+// indexaCienciasPorPedido, que continua lendo os registros de rota antigos.
+
+// ---------- CIÊNCIA POR PEDIDO ----------
+// O PEDIDO é a unidade. A ciência de rota guardava `pedidoIds` num retrato do
+// momento em que foi dada — pedido que entrasse na rota depois ficava coberto
+// por um "✓ ciente" que nunca o viu. Agora cada pedido tem a sua.
+// O retrato antigo continua valendo COMO LEITURA: um pedido está ciente se tem
+// ciência própria OU se o id dele está numa ciência de rota antiga. Sem isso,
+// tudo que já foi conferido voltaria a aparecer como pendente no dia da virada.
+export function indexaCienciasPorPedido(lista) {
   const map = {}
-  for (const c of lista || []) {
-    const k = `${c.tipo}|${normaliza(c.vendedor)}|${normaliza(c.rota)}`
+  const guarda = (tipo, id, c) => {
+    const k = `${tipo}|${id}`
     if (!map[k] || new Date(c.quando) > new Date(map[k].quando)) map[k] = c
+  }
+  for (const c of lista || []) {
+    if (!c?.tipo) continue
+    if (c.idVenda) guarda(c.tipo, c.idVenda, c)
+    else for (const id of c.pedidoIds || []) guarda(c.tipo, id, c) // legado por rota
   }
   return map
 }
-
-export function cienciaDe(map, tipo, vendedor, rota) {
-  return (map || {})[`${tipo}|${normaliza(vendedor)}|${normaliza(rota)}`] || null
+export const cienciaDoPedido = (map, tipo, idVenda) => (map || {})[`${tipo}|${idVenda}`] || null
+// pedidos da lista que ainda NÃO têm ciência desse tipo
+export const semCiencia = (map, tipo, ps) =>
+  (ps || []).filter((p) => !cienciaDoPedido(map, tipo, p.idVenda))
+// documento de ciência de UM pedido. quem = { porUid, porEmail, porNome, ip }
+export function docCiencia({ tipo, vendedor, rota, idVenda, quem }) {
+  return {
+    tipo,
+    vendedor: vendedor || '',
+    rota: rota || '',
+    idVenda,
+    ...quem,
+    quando: new Date().toISOString(),
+  }
 }
 
 // ---------- MÊS (para as perguntas por produto/por mês) ----------

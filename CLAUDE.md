@@ -259,15 +259,52 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   perfil é vendedor. `AuthContext` expõe `vendedorNome`.
 - **Segurança real:** `firestore.rules` reescrito — staff (dono/designer/financeiro) total;
   vendedor lê só os próprios pedidos; coleção `ciencias` preparada. ✅ Publicadas (11/08/2026).
+  ⚠️ **PENDENTE de publicar:** `entregues` agora tem `allow read` para o vendedor
+  (`resource.data.vendedor == meuVendedor()`). Sem publicar, a coluna "Entregue" do quadro
+  do vendedor fica vazia com permission-denied no console (degrada, não quebra a tela).
+  Lembrete: regra libera o DOCUMENTO inteiro, não campo a campo — o vendedor enxerga
+  também a baixa financeira (`pago`/`pagoEm`) dos pedidos dele. Foi decisão deliberada.
 - **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
   vendedor→rota.
-- **Fase C (em produção):** ciência por rota. Coleção `ciencias` (append/log) com
-  `{tipo:'vendedor'|'designer', vendedor, rota, pedidoIds, qtdPedidos, porUid, porEmail,
-  porNome, ip, quando}`. IP via `pegarIP()` (ipify). Vendedor dá ciência em "Meus Pedidos"
-  (botão por rota); designer/dono na aba **Ciência** (`Ciencia.jsx`, vendedor→rota, rota
-  expansível p/ ver pedidos, mostra ciência do vendedor + dá a sua). Helpers
-  `indexaCiencias`/`cienciaDe` pegam a mais recente por (tipo|vendedor|rota). Regra de
-  `ciencias`: vendedor lê/cria só as do próprio `vendedorNome`.
+- **Ciência POR PEDIDO (FEITO — era por rota):** a ciência de rota gravava `pedidoIds`
+  num **retrato do momento**; pedido que entrasse na rota depois ficava coberto por um
+  "✓ ciente" que nunca o viu. Agora o **pedido é a unidade**: `ciencias` guarda
+  `{tipo:'vendedor'|'designer', vendedor, rota, idVenda, porUid, porEmail, porNome, ip,
+  quando}` e o botão da rota é só um atalho em lote (writeBatch, chunk 450) que dá
+  ciência **nos que faltam**. Helpers: `indexaCienciasPorPedido` (que **também lê os
+  registros de rota antigos**, expandindo `pedidoIds` — zero migração),
+  `cienciaDoPedido`, `semCiencia`, `docCiencia`. `indexaCiencias`/`cienciaDe` foram
+  REMOVIDOS de propósito: reusá-los reintroduz o bug do retrato.
+  Vendedor em "Meus Pedidos" (faixa "44 de 51 com ciência" + botão por pedido);
+  designer/dono na aba **Ciência**, com duas barras por rota (Vendedor × Conferido),
+  botão por pedido ou em lote e filtro **"só pendentes"**. Regra de `ciencias`: vendedor
+  lê/cria só as do próprio `vendedorNome`.
+- **Saída para entrega (FEITO):** era o estado que faltava entre `expedido` (pronto,
+  parado na expedição) e o doc de `entregues`. Campos no PEDIDO — `saidaEm`,
+  `saidaMotorista`, `saidaPor` — porque o caminhão leva tudo que estava pronto; helper
+  `saiuParaEntrega(p)`. Na **Rota**: botão "🚚 Saiu para entrega" por rota (exige o
+  motorista, como a entrega), chip por pedido e "↩" para desfazer. **Entrega parcial
+  LIMPA esses campos** do que sobrou (`deleteField`) — o resto continua na fábrica e não
+  pode herdar a saída da remessa que foi. Hoje só dono/designer/financeiro marcam a
+  saída (mesma permissão da Rota); se a expedição tiver que marcar, é liberar os 3
+  campos no `allow update` dela.
+- **Quadro do VENDEDOR (FEITO):** `src/components/QuadroVendedor.jsx`, aba "▦ Acompanhar"
+  dentro de Meus Pedidos (a lista com a ciência continua em "☰ Meus pedidos"). **11
+  colunas**: Em triagem → os 7 painéis → Pronto p/ sair → Saiu para entrega → Entregue.
+  **Só leitura** — e a segurança não depende disso: o App consulta com
+  `where('vendedor','==')` e a regra impõe o mesmo no servidor. Duas diferenças
+  deliberadas em relação ao quadro da fábrica: **nada some** (item de gráfica sem
+  laminação continua na coluna da gráfica; pedido sem triagem tem coluna própria — sumir
+  da tela = vendedor achando que o pedido se perdeu) e item sem material cai em UMA
+  montagem só, não nas três. A coluna Entregue lê `entregues` filtrado por vendedor,
+  com chip de remessa e de baixa financeira (`pago`).
+- **`itemPertenceAoPainel` (utils) é a fonte ÚNICA de "onde este item está"** — usada
+  pelo quadro da fábrica, pelo badge das abas e pelo quadro do vendedor, para os três
+  nunca discordarem. Ela conserta um bug ANTIGO: etapa de linha (`PRODUCAO`/`GLICHE`/
+  `GRAFICA`) significa só "ainda não saiu da linha", e quem diz QUAL linha é o
+  `linhasItens` atual. Antes, trocar a linha do item na Triagem depois que ele já tinha
+  andado e voltado fazia o item **sumir do quadro** (o painel da linha velha cobrava a
+  linha nova; o da nova cobrava a etapa nova).
 
 ## Design / identidade
 - **Dashboards (Produção e Rota):** linha de produção = faixa colorida forte
