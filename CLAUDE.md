@@ -111,10 +111,17 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   derrubam o movimento no quadro inteiro.
 - **Voz:** "quantos pedidos na montagem/gráfica/silk/gliche" agora conta **itens** por
   etapa e diz em quantos pedidos ("Tem 3 itens na montagem, de 2 pedidos").
-- **Rota por item + ENTREGA PARCIAL (FEITO):** helpers `pedidoSemEtapa`, `idxProntos`,
-  `fatiaProntos` (devolve o pedido só com os itens `expedido`, guardando `_todos`,
-  `_idxs` e `_pendentes`). A Rota mostra só o que foi expedido; pedido legado (sem
-  `etapa` nem `etapas`) entra inteiro — senão a Rota esvaziava no dia da virada.
+- **Rota por item + ENTREGA PARCIAL (FEITO):** helpers `idxProntos` e `fatiaProntos`
+  (devolve o pedido só com os itens `expedido`, guardando `_todos`, `_idxs` e
+  `_pendentes`). A Rota mostra **só o que foi expedido**, ponto.
+  ⚠️ **`pedidoSemEtapa` foi REMOVIDO (12/08/2026) — não recolocar.** Ele dizia "pedido
+  que nunca passou pelo quadro conta como pronto", para a Rota não esvaziar no dia da
+  virada para produção por item. Com o sistema em uso virou o contrário do que protegia:
+  declarava pronto tudo que ninguém tinha movido, e a Rota listava ~458 pedidos ainda na
+  linha (o dono percebeu pelo pedido 5001, parado no silk e aparecendo na Rota). O campo
+  antigo `p.etapa = 'expedido'` continua valendo, via fallback do `etapaDoItem`.
+  A tela vazia agora explica o motivo ("Nenhum pedido expedido ainda — N continua(m) na
+  produção") em vez de dizer que o filtro não achou nada.
   Chip "⏳ faltam N item(ns) em produção" na parada e faixa "⚠ ENTREGA PARCIAL" no
   romaneio impresso; os totais por rota só somam o que está saindo.
 - **Remessas (FEITO):** entregar grava `entregues/{idVenda}-{n}` com

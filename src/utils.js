@@ -536,17 +536,17 @@ export function registrosAuditoria(p, idxs, destino, quem, materialDe) {
   })
 }
 
-// pedido que nunca passou pelo quadro (nem `etapa` antigo, nem mapa `etapas`).
-// É o legado que já estava em campo — tudo dele conta como pronto para entregar,
-// senão a Rota esvaziava no dia que a produção por item entrou no ar.
-export function pedidoSemEtapa(p) {
-  return !p?.etapa && !(p?.etapas && Object.keys(p.etapas).length)
-}
-// índices dos itens liberados para a Rota/entrega
+// Índices dos itens liberados para a Rota/entrega: SÓ o que foi expedido.
+//
+// Havia aqui um atalho para o legado — "pedido que nunca passou pelo quadro
+// conta como pronto" —, escrito na virada para produção por item, quando nenhum
+// pedido tinha etapa gravada e a Rota apareceria vazia. Com o sistema em uso ele
+// passou a fazer o contrário do que protegia: declarava pronto tudo que ninguém
+// tinha movido, e a Rota mostrava ~458 pedidos que ainda estavam na linha
+// (relatado em 12/08/2026 pelo pedido 5001, parado no silk e listado na Rota).
+// Não recolocar: pedido só chega à Rota sendo expedido no quadro.
 export function idxProntos(p) {
-  const todos = (p?.itens || []).map((_, i) => i)
-  if (pedidoSemEtapa(p)) return todos
-  return todos.filter((i) => itemExpedido(p, i))
+  return (p?.itens || []).map((_, i) => i).filter((i) => itemExpedido(p, i))
 }
 // devolve o pedido "fatiado" só com o que já pode ser entregue, guardando o
 // original em _todos/_idxs (a entrega precisa saber o que sobra no pedido).

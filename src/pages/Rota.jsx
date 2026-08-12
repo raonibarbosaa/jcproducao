@@ -172,7 +172,17 @@ export default function Rota({ pedidos }) {
       <div className="screen-only">
         {lista.length === 0 ? (
           <div className="empty"><div className="big">🗺️</div>
-            {categorizados.length === 0 ? 'Nada para carregar no momento.' : 'Nenhum pedido com esses filtros.'}
+            {categorizados.length === 0
+              ? 'Nada para carregar no momento.'
+              : emProducao > 0
+                // o caso comum: tem pedido, mas nenhum foi expedido ainda. Sem
+                // dizer isso, a tela vazia parece defeito (e por um tempo ela
+                // mentia, listando pedido que ainda estava na linha)
+                ? <>Nenhum pedido expedido ainda — {emProducao} continua(m) na produção.<br />
+                    <span style={{ fontSize: 13 }}>
+                      O pedido aparece aqui depois do <b>✓ Expedir</b>, na coluna Expedição do quadro.
+                    </span></>
+                : 'Nenhum pedido com esses filtros.'}
           </div>
         ) : (
           vendedoresOrd.map((vend) => (
