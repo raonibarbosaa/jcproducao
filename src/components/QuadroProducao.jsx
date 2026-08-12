@@ -1,23 +1,26 @@
-import { useState } from 'react'
-import { doc, updateDoc } from 'firebase/firestore'
+import { useEffect, useState } from 'react'
+import { collection, doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  COLUNAS_QUADRO, etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
+  etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
   mapaEtapasCom, normSetor, MODO_COR,
   nomeCliente, fmtData, fmtMoeda, situacaoPrazo,
   linhaDoItem, acabamentoDoItem, acabamentoItemOk, fmtAcabamento, valorDosItens, logEtapaItem,
+  materialDoItem, montagemDoMaterial, itemNoPainel, podeNoMaterial, MONTAGENS,
+  registrosAuditoria, pegarIP,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
 import SeloLinha from './SeloLinha.jsx'
 
-// Quadro de produção POR ITEM, um PAINEL POR LINHA (aba SILK/GLICHE/GRÁFICA):
-// cada painel mostra [linha] → Montagem → Expedição só com os itens daquela linha.
-// O item é a unidade — itens do mesmo pedido que estão na mesma etapa aparecem
-// juntos num card; quando um adianta, o card se divide sozinho.
+// Quadro de produção POR ITEM, uma FILA POR SETOR: cada painel recebido mostra
+// só o que está NAQUELE posto agora — o item some da fila assim que avança.
+// A montagem se divide pelo MATERIAL (papel / plástico / etiq.+alça), porque
+// quem monta papel não é quem monta plástico; a etapa gravada segue 'montagem'.
+// Recebe uma LISTA de painéis: um só = fila do operador; todos = visão geral.
 // NÃO mostra valor para operador/designer/expedição (só dono e financeiro).
-export default function QuadroProducao({ pedidos, clientes, linha }) {
-  const { perfil, nome, setores } = useAuth()
+export default function QuadroProducao({ pedidos, clientes, itensCad, paineis }) {
+  const { user, perfil, nome, setores, materiais } = useAuth()
   const ehStaff = perfil === 'dono' || perfil === 'designer'
   const veValor = perfil === 'dono' || perfil === 'financeiro'
   // setores que este usuário pode MOVER: expedicao = só 'expedicao'; operador = liberados dele
@@ -25,35 +28,43 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
     ? ['expedicao']
     : (perfil === 'operador' ? (setores || []).map(normSetor) : [])
   const podeMoverEtapa = (etapa) => ehStaff || setoresOp.includes(etapa)
-  // o painel é de UMA linha: a coluna dela + Montagem + Expedição.
-  // Staff, expedição e financeiro veem as três (expedição só age na Expedição;
-  // financeiro é só leitura); operador vê só os setores que opera.
-  let colunas = COLUNAS_QUADRO.filter((c) => !c.linha || c.id === linha)
-  if (!(ehStaff || perfil === 'expedicao' || perfil === 'financeiro')) {
-    colunas = colunas.filter((c) => setoresOp.includes(c.id))
-  }
+  // 2º eixo da permissão: com que material eu trabalho ([] = todos)
+  const meusMateriais = perfil === 'operador' ? (materiais || []) : []
   const [salvando, setSalvando] = useState('')
+  // IP pego uma vez por sessão da tela — não atrasa cada movimento
+  const [ip, setIp] = useState('')
+  useEffect(() => { pegarIP().then(setIp) }, [])
 
-  // monta os cards: um por (pedido × etapa), com os índices dos itens que estão ali
-  const porEtapa = {}
-  for (const c of COLUNAS_QUADRO) porEtapa[c.id] = []
+  // monta os cards: um por (pedido × painel), com os índices dos itens que estão ali
+  const porPainel = {}
+  for (const pa of paineis) porPainel[pa.id] = []
   let aguardandoAcab = 0
+  const semMaterial = new Set()   // itens na montagem que o cadastro de Itens não conhece
   for (const p of pedidos) {
     const grupos = {}
     ;(p.itens || []).forEach((_, i) => {
-      if (linhaDoItem(p, i) !== linha) return   // painel desta linha só (item sem linha fica na Triagem)
+      const l = linhaDoItem(p, i)
+      if (!l) return                            // item sem linha ainda está na Triagem
       const et = etapaDoItem(p, i)
       if (et === 'expedido') return             // já saiu do quadro (segue pela Rota)
-      // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
-      if (linha === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) { aguardandoAcab++; return }
-      ;(grupos[et] ??= []).push(i)
+      const mat = materialDoItem(p.itens[i], itensCad)
+      if (!podeNoMaterial(meusMateriais, mat)) return
+      for (const pa of paineis) {
+        if (pa.etapa !== et) continue
+        if (pa.tipo === 'linha' && pa.linha !== l) continue
+        // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
+        if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) {
+          aguardandoAcab++; continue
+        }
+        if (!itemNoPainel(pa, mat)) continue
+        if (pa.tipo === 'montagem' && !mat) semMaterial.add(`${p.idVenda}|${i}`)
+        ;(grupos[pa.id] ??= []).push(i)
+      }
     })
-    for (const [et, idxs] of Object.entries(grupos)) {
-      if (porEtapa[et]) porEtapa[et].push({ p, idxs })
-    }
+    for (const [id, idxs] of Object.entries(grupos)) porPainel[id].push({ p, idxs })
   }
-  for (const c of COLUNAS_QUADRO) {
-    porEtapa[c.id].sort((a, b) => (a.p.previsao || '').localeCompare(b.p.previsao || ''))
+  for (const pa of paineis) {
+    porPainel[pa.id].sort((a, b) => (a.p.previsao || '').localeCompare(b.p.previsao || ''))
   }
 
   // move os itens escolhidos (o card inteiro ou um item só) para outra etapa
@@ -61,7 +72,17 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
     if (!destino || salvando) return
     setSalvando(marca)
     try {
-      await updateDoc(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasCom(p, idxs, destino, nome) })
+      // etapa + auditoria no MESMO batch: ou as duas coisas acontecem, ou nenhuma.
+      // Assim nunca existe item movido sem registro de quem moveu.
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasCom(p, idxs, destino, nome) })
+      const quem = {
+        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+        perfil: perfil || '', ip,
+      }
+      const regs = registrosAuditoria(p, idxs, destino, quem, (i) => materialDoItem(p.itens[i], itensCad))
+      for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
+      await batch.commit()
     } catch (e) {
       console.error('Erro ao mover etapa:', e)
       alert('Erro ao mover: ' + e.message)
@@ -70,7 +91,7 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
     }
   }
 
-  if (!colunas.length) {
+  if (!paineis.length) {
     return <div className="empty"><div className="big">🏭</div>Você não tem setores de produção liberados. Fale com o administrador.</div>
   }
 
@@ -81,20 +102,34 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
           ⚠ {aguardandoAcab} item(ns) de gráfica ainda sem <b>laminação</b> — marque na Triagem para eles entrarem no quadro.
         </div>
       )}
+      {semMaterial.size > 0 && (
+        <div className="aviso-acab no-print">
+          ⚠ {semMaterial.size} item(ns) na montagem sem <b>material</b> no cadastro de Itens — aparecem em
+          todas as montagens até alguém dizer se são papel, plástico, etiqueta ou alça.
+        </div>
+      )}
       <div className="quadro">
-        {colunas.map((c) => (
-          <div key={c.id} className="quadro-col">
-            <div className="qc-head" style={c.linha ? { borderLeft: `4px solid ${MODO_COR[c.id]}` } : null}>
-              {c.nome} <span className="qc-count">{porEtapa[c.id].length}</span>
+        {paineis.map((pa) => (
+          <div key={pa.id} className="quadro-col">
+            <div className="qc-head" style={pa.tipo === 'linha' ? { borderLeft: `4px solid ${MODO_COR[pa.linha]}` } : null}>
+              {pa.nome} <span className="qc-count">{porPainel[pa.id].length}</span>
             </div>
             <div className="qc-body">
-              {porEtapa[c.id].length === 0 && <div className="qc-vazio">— nada aqui —</div>}
-              {porEtapa[c.id].map(({ p, idxs }) => {
+              {porPainel[pa.id].length === 0 && <div className="qc-vazio">— nada aqui —</div>}
+              {porPainel[pa.id].map(({ p, idxs }) => {
                 const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
-                const prox = proximaEtapaItem(c.id)
-                const marca = `${p.idVenda}|${c.id}`
+                const prox = proximaEtapaItem(pa.etapa)
+                const marca = `${p.idVenda}|${pa.id}`
                 const parcial = idxs.length < (p.itens || []).length
                 const valor = valorDosItens(p, idxs)
+                // volta: da montagem cada item retorna para a SUA linha (o card
+                // pode ter itens de linhas diferentes), da expedição todos p/ montagem
+                const anteriorDe = (i) => (pa.etapa === 'montagem' ? linhaDoItem(p, i) : etapaAnteriorItem(pa.etapa))
+                // quando o card inteiro vai para a mesma montagem, o botão diz qual
+                const destinos = new Set(idxs.map((i) => montagemDoMaterial(materialDoItem(p.itens[i], itensCad))))
+                const nmProx = (prox === 'montagem' && destinos.size === 1 && [...destinos][0])
+                  ? MONTAGENS.find((m) => m.id === [...destinos][0]).nome
+                  : nomeEtapaItem(prox)
                 return (
                   <div key={marca} className={`qcard ${atrasado ? 'atrasado' : ''}`}>
                     <div className="qcard-top">
@@ -113,16 +148,18 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
                     <ul className="itens">
                       {idxs.map((i) => {
                         const it = p.itens[i]
-                        const antItem = etapaAnteriorItem(c.id, linha)
+                        const lItem = linhaDoItem(p, i)
+                        const antItem = anteriorDe(i)
+                        const semMat = pa.tipo === 'montagem' && !materialDoItem(it, itensCad)
                         return (
                           <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                             <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                               {/* o selo da linha anda junto com o produto em toda etapa */}
-                              <span><SeloLinha linha={linha} />{it.produto}</span>
+                              <span><SeloLinha linha={lItem} />{it.produto}</span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 <span className="q">{it.qtd}</span>
                                 {/* avança/volta SÓ este item — é o que separa o card em dois */}
-                                {podeMoverEtapa(c.id) && idxs.length > 1 && (
+                                {podeMoverEtapa(pa.etapa) && idxs.length > 1 && (
                                   <span style={{ display: 'inline-flex', gap: 2 }}>
                                     {antItem && (
                                       <button className="mini-btn" title={`Voltar só este item para ${nomeEtapaItem(antItem)}`}
@@ -136,8 +173,13 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
                                 )}
                               </span>
                             </span>
-                            {linha === 'GRAFICA' && (
+                            {lItem === 'GRAFICA' && (
                               <span className="acab-tag">🏷 {fmtAcabamento(acabamentoDoItem(p, i))}</span>
+                            )}
+                            {semMat && (
+                              <span className="acab-tag" title="Cadastre o material deste produto em Cadastros › Itens">
+                                ⚠ sem material no cadastro
+                              </span>
                             )}
                           </li>
                         )
@@ -154,19 +196,19 @@ export default function QuadroProducao({ pedidos, clientes, linha }) {
                       const l = idxs.map((i) => logEtapaItem(p, i)).find(Boolean)
                       return l ? <div className="qcard-log">último avanço: {l.por}{l.em ? ` · ${fmtData(l.em)}` : ''}</div> : null
                     })()}
-                    {podeMoverEtapa(c.id) && (
+                    {podeMoverEtapa(pa.etapa) && (
                       <div className="qcard-acoes no-print">
                         {/* coluna de linha é o começo do fluxo — só Montagem/Expedição voltam */}
-                        {!c.linha && (
+                        {pa.tipo !== 'linha' && (
                           <button className="mini-btn" title={`Voltar ${idxs.length > 1 ? 'os itens' : 'o item'} para a etapa anterior`}
                             disabled={!!salvando}
-                            onClick={() => mover(p, idxs, etapaAnteriorItem(c.id, linha), marca)}
+                            onClick={() => mover(p, idxs, anteriorDe, marca)}
                           >←</button>
                         )}
                         {prox && prox !== 'expedido' && (
                           <button className="btn ok qc-avancar" disabled={!!salvando}
                             onClick={() => mover(p, idxs, prox, marca)}>
-                            {salvando === marca ? 'Salvando…' : `Concluir → ${nomeEtapaItem(prox)}`}
+                            {salvando === marca ? 'Salvando…' : `Concluir → ${nmProx}`}
                           </button>
                         )}
                         {prox === 'expedido' && (

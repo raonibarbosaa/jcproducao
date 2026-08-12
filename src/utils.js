@@ -268,6 +268,67 @@ export const SETORES_PROD = [
 // usuário cadastrado antes das colunas por linha guardou 'grafica' minúsculo
 export const normSetor = (s) => (s === 'grafica' ? 'GRAFICA' : s === 'silk' ? 'PRODUCAO' : s)
 
+// ---------- MONTAGEM POR MATERIAL ----------
+// Quem monta sacola de papel não é quem monta a de plástico: a montagem é um
+// setor só na ETAPA (o campo gravado continua 'montagem'), mas se divide em
+// painéis pelo MATERIAL do item. A divisão é DERIVADA no render a partir do
+// cadastro de Itens — corrigir o tipo de um produto realoca o item sozinho,
+// inclusive os que já estão na montagem. Nada de etapa nova no banco.
+export const MONTAGENS = [
+  { id: 'papel', nome: 'Montagem Papel', materiais: ['papel'] },
+  { id: 'plastico', nome: 'Montagem Plástico', materiais: ['plastico'] },
+  { id: 'outros', nome: 'Montagem Etiq./Alça', materiais: ['etiquetas', 'alca_torcida'] },
+]
+// '' = material que o cadastro de Itens ainda não conhece
+export const montagemDoMaterial = (mat) =>
+  MONTAGENS.find((m) => m.materiais.includes(mat))?.id || ''
+
+// ---------- PAINÉIS DO QUADRO (fila por setor) ----------
+// Cada painel é a FILA de um posto de trabalho: o que está na minha mão agora.
+// O item some do painel assim que avança — quem trabalha na linha não vê o que
+// já foi para a montagem. A visão do fluxo inteiro é a aba "Visão geral"
+// (só dono/designer), que desenha todos os painéis lado a lado.
+export const PAINEIS_QUADRO = [
+  ...MODO_ORDER.map((m) => ({ id: m, nome: MODO_NM[m], tipo: 'linha', etapa: m, linha: m })),
+  ...MONTAGENS.map((m) => ({
+    id: `montagem:${m.id}`, nome: m.nome, tipo: 'montagem', etapa: 'montagem', montagem: m.id,
+  })),
+  { id: 'expedicao', nome: 'Expedição', tipo: 'expedicao', etapa: 'expedicao' },
+]
+export const painelPorId = (id) => PAINEIS_QUADRO.find((x) => x.id === id) || null
+
+// o item (já sabido o material) entra neste painel?
+// Material desconhecido aparece em TODAS as montagens, com aviso: entre duplicar
+// e sumir, sumir é pior — trabalho que ninguém vê é trabalho que atrasa.
+export function itemNoPainel(painel, mat) {
+  if (painel?.tipo !== 'montagem') return true
+  const m = montagemDoMaterial(mat)
+  return !m || m === painel.montagem
+}
+
+// Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
+// materiais vazio = todos os materiais (padrão de quem não foi restringido).
+export function podeNoMaterial(materiais, mat) {
+  if (!materiais || !materiais.length) return true
+  if (!mat) return true // item sem material não pode sumir do chão de fábrica
+  return materiais.includes(mat)
+}
+
+// painéis que este usuário enxerga. Staff/expedição/financeiro veem todos
+// (expedição e financeiro só olham; quem age é o podeMoverEtapa do quadro).
+export function paineisVisiveis({ perfil, setores, materiais }) {
+  if (['dono', 'designer', 'expedicao', 'financeiro'].includes(perfil)) return PAINEIS_QUADRO
+  const libs = (setores || []).map(normSetor)
+  return PAINEIS_QUADRO.filter((pa) => {
+    if (!libs.includes(pa.etapa)) return false
+    if (pa.tipo === 'montagem' && materiais?.length) {
+      const mm = MONTAGENS.find((m) => m.id === pa.montagem)?.materiais || []
+      return mm.some((x) => materiais.includes(x))
+    }
+    return true
+  })
+}
+
 export function etapaDoItem(p, idx) {
   const raw = doMapaDoItem(p?.etapas, p, idx)
   const et = typeof raw === 'string' ? raw : raw?.et
@@ -318,6 +379,33 @@ export function mapaEtapasCom(p, idxs, destino, quem) {
       : { et: etapaDoItem(p, i), por: base.por || '', em: base.em || '' }
   })
   return mapa
+}
+
+// ---------- AUDITORIA (append-only) ----------
+// Um registro POR ITEM movido: quem, quando, de onde para onde. Vai no MESMO
+// writeBatch da mudança de etapa — ou o item anda E fica registrado, ou nada
+// acontece. Movimento sem rastro seria justamente o buraco que a auditoria
+// existe para não ter. `quem` = { porUid, porNome, porEmail, perfil, ip }.
+export function registrosAuditoria(p, idxs, destino, quem, materialDe) {
+  const paraOnde = typeof destino === 'function' ? destino : () => destino
+  const mat = materialDe || (() => '')
+  const agora = new Date().toISOString()
+  return (idxs || []).map((i) => {
+    const it = p.itens?.[i] || {}
+    return {
+      idVenda: p.idVenda || '',
+      cliente: p.cliente || '',
+      itemKey: keyDoItem(p, i),
+      produto: it.produto || '',
+      qtd: Number(it.qtd) || 0,
+      linha: linhaDoItem(p, i) || '',
+      material: mat(i) || '',
+      de: etapaDoItem(p, i),
+      para: paraOnde(i),
+      quando: agora,
+      ...quem,
+    }
+  })
 }
 
 // pedido que nunca passou pelo quadro (nem `etapa` antigo, nem mapa `etapas`).

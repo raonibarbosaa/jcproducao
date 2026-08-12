@@ -16,6 +16,7 @@ export function AuthProvider({ children }) {
   const [nome, setNome] = useState('')
   const [vendedorNome, setVendedorNome] = useState(null) // vínculo p/ perfil 'vendedor'
   const [setores, setSetores] = useState([])   // setores liberados p/ perfil 'operador'
+  const [materiais, setMateriais] = useState([]) // materiais liberados ([] = todos)
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -38,22 +39,23 @@ export function AuthProvider({ children }) {
             setNome(d.nome || u.email)
             setVendedorNome(d.vendedorNome || null)
             setSetores(Array.isArray(d.setores) ? d.setores : [])
+            setMateriais(Array.isArray(d.materiais) ? d.materiais : [])
           } else {
             // sem documento de perfil -> trata como dono (fallback seguro p/ admin)
             setPerfil('dono')
             setNome(u.email)
             setVendedorNome(null)
-            setSetores([])
+            setSetores([]); setMateriais([])
           }
         } catch (e) {
           console.error('Erro ao ler perfil:', e)
           setPerfil('dono')
           setNome(u.email)
           setVendedorNome(null)
-          setSetores([])
+          setSetores([]); setMateriais([])
         }
       } else {
-        setUser(null); setPerfil(null); setNome(''); setVendedorNome(null); setSetores([])
+        setUser(null); setPerfil(null); setNome(''); setVendedorNome(null); setSetores([]); setMateriais([])
       }
       setCarregando(false)
     })
@@ -68,7 +70,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, perfil, nome, vendedorNome, setores, carregando, login, logout }}>
+    <AuthCtx.Provider value={{ user, perfil, nome, vendedorNome, setores, materiais, carregando, login, logout }}>
       {children}
     </AuthCtx.Provider>
   )

@@ -7,7 +7,7 @@ import { collection, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firesto
 import { auth, db, firebaseConfig } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
-import { SETORES_PROD, normSetor } from '../utils.js'
+import { SETORES_PROD, normSetor, MATERIAIS, nomeDoMaterial } from '../utils.js'
 
 const PERFIS = [
   { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção, Cadastros e Usuários' },
@@ -50,7 +50,7 @@ export default function Usuarios() {
   // ---- criar usuário sem derrubar a sessão do admin ----
   // usa uma instância secundária do Firebase: o novo usuário "loga" nela,
   // a gente grava o perfil e desconecta — a sessão principal não é tocada.
-  async function criarUsuario({ nome, email, senha, perfil, vendedorNome, setores }) {
+  async function criarUsuario({ nome, email, senha, perfil, vendedorNome, setores, materiais }) {
     const appSec = initializeApp(firebaseConfig, 'criacao-usuario')
     const authSec = getAuth(appSec)
     try {
@@ -61,6 +61,8 @@ export default function Usuarios() {
         perfil,
         vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
         setores: perfil === 'operador' ? (setores || []) : [],
+        // 2º eixo da permissão: com que material ele trabalha ([] = todos)
+        materiais: perfil === 'operador' ? (materiais || []) : [],
         ativo: true,
         criadoEm: new Date().toISOString(),
       })
@@ -72,11 +74,12 @@ export default function Usuarios() {
     }
   }
 
-  async function salvarEdicao(uid, { nome, perfil, vendedorNome, setores }) {
+  async function salvarEdicao(uid, { nome, perfil, vendedorNome, setores, materiais }) {
     await updateDoc(doc(db, 'usuarios', uid), {
       nome: nome.trim(), perfil,
       vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
       setores: perfil === 'operador' ? (setores || []) : [],
+      materiais: perfil === 'operador' ? (materiais || []) : [],
     })
     setEditando(null)
     aviso('Usuário atualizado.')
@@ -162,6 +165,11 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
             ? (u.setores || []).map((s) => <span key={s} className="chip">🏭 {SETOR_NM[normSetor(s)] || s}</span>)
             : <span className="chip rota-warn">sem setor liberado</span>
         )}
+        {u.perfil === 'operador' && (
+          (u.materiais || []).length
+            ? (u.materiais || []).map((m) => <span key={m} className="chip">📦 {nomeDoMaterial(m)}</span>)
+            : <span className="chip">📦 todos os materiais</span>
+        )}
         {u.perfil === 'expedicao' && <span className="chip">🏭 Expedição</span>}
         {inativo
           ? <span className="chip rota-warn">acesso desativado</span>
@@ -200,6 +208,29 @@ function SetoresPicker({ setores, onToggle }) {
   )
 }
 
+// 2º eixo: quem monta papel não monta plástico. Vazio = todos os materiais.
+function MateriaisPicker({ materiais, onToggle }) {
+  return (
+    <div className="field" style={{ marginTop: 10 }}>
+      <label>
+        Materiais liberados — <b>nenhum marcado = todos</b>. Divide a Montagem
+        (papel × plástico × etiq./alça) e filtra o que ele vê nas linhas.
+      </label>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+        {MATERIAIS.map((m) => {
+          const on = (materiais || []).includes(m.id)
+          return (
+            <button key={m.id} type="button" className="modo-btn" onClick={() => onToggle(m.id)}
+              style={on ? { background: 'var(--accent)', color: '#1a1205', borderColor: 'var(--accent)' } : null}>
+              {m.nome}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function FormUsuario({ onSalvar, onCancelar }) {
   const { vendedores } = useCadastros()
   const [nome, setNome] = useState('')
@@ -209,6 +240,7 @@ function FormUsuario({ onSalvar, onCancelar }) {
   const [perfil, setPerfil] = useState('designer')
   const [vendedorNome, setVendedorNome] = useState('')
   const [setores, setSetores] = useState([])
+  const [materiais, setMateriais] = useState([])
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState('')
   // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
@@ -216,6 +248,8 @@ function FormUsuario({ onSalvar, onCancelar }) {
     const atual = s.map(normSetor)
     return atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
   })
+  const toggleMaterial = (id) => setMateriais((m) =>
+    m.includes(id) ? m.filter((x) => x !== id) : [...m, id])
 
   async function salvar() {
     setErro('')
@@ -227,7 +261,7 @@ function FormUsuario({ onSalvar, onCancelar }) {
     if (perfil === 'operador' && !setores.length) { setErro('Libere pelo menos um setor para o operador.'); return }
     setBusy(true)
     try {
-      await onSalvar({ nome, email, senha, perfil, vendedorNome, setores })
+      await onSalvar({ nome, email, senha, perfil, vendedorNome, setores, materiais })
     } catch (e) {
       const map = {
         'auth/email-already-in-use': 'Já existe um usuário com este e-mail.',
@@ -299,6 +333,7 @@ function FormUsuario({ onSalvar, onCancelar }) {
       )}
 
       {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
+      {perfil === 'operador' && <MateriaisPicker materiais={materiais} onToggle={toggleMaterial} />}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar} disabled={busy}>
@@ -316,11 +351,14 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
   const [perfil, setPerfil] = useState(u.perfil || 'designer')
   const [vendedorNome, setVendedorNome] = useState(u.vendedorNome || '')
   const [setores, setSetores] = useState(u.setores || [])
+  const [materiais, setMateriais] = useState(u.materiais || [])
   // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
   const toggleSetor = (id) => setSetores((s) => {
     const atual = s.map(normSetor)
     return atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]
   })
+  const toggleMaterial = (id) => setMateriais((m) =>
+    m.includes(id) ? m.filter((x) => x !== id) : [...m, id])
 
   return (
     <div className="card em_dia" style={{ borderLeftColor: 'var(--accent)' }}>
@@ -351,12 +389,13 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
         </div>
       )}
       {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
+      {perfil === 'operador' && <MateriaisPicker materiais={materiais} onToggle={toggleMaterial} />}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button className="btn primary" onClick={() => {
           if (!nome.trim()) { alert('Informe o nome.'); return }
           if (perfil === 'vendedor' && !vendedorNome) { alert('Escolha qual vendedor este usuário representa.'); return }
           if (perfil === 'operador' && !setores.length) { alert('Libere pelo menos um setor para o operador.'); return }
-          onSalvar({ nome, perfil, vendedorNome, setores })
+          onSalvar({ nome, perfil, vendedorNome, setores, materiais })
         }}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>
       </div>

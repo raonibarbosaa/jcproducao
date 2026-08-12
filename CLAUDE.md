@@ -37,16 +37,41 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   SUA linha), `logEtapaItem`, `itemExpedido`. O campo antigo `p.etapa` (pedido inteiro)
   virou só fallback de leitura: `montagem/expedicao/expedido` valem para todos os itens,
   `grafica` vira a coluna da linha do item.
-- **Quadro = UM PAINEL POR LINHA (FEITO)** (`src/components/QuadroProducao.jsx` recebe
-  `linha`): a página Produção tem `SubTabs` SILK SCREEN · GLICHE · GRÁFICA (badge = itens
-  no fluxo daquela linha) e cada painel mostra 3 colunas — `[linha] → Montagem →
-  Expedição` — só com os itens dela. Aba inicial: a linha do operador (`setores`), senão
-  a primeira com serviço. **Todo** item entra (papel, plástico, alça torcida, etiqueta).
-  Card = `pedido × etapa`, listando só os itens daquela etapa; chip "N de M itens" quando
-  o pedido está dividido. Botão grande move o card inteiro; com 2+ itens, cada item tem
-  `←`/`→` para andar sozinho (é o que divide o card).
-  **Trava da laminação virou por ITEM:** item de gráfica sem laminação não entra (os
-  outros itens do mesmo pedido entram normal) e o quadro conta quantos faltam.
+- **Quadro = UMA FILA POR SETOR (FEITO)** — substituiu o kanban por linha.
+  `PAINEIS_QUADRO` (utils) = 7 painéis: as 3 linhas + **3 montagens** + Expedição.
+  `QuadroProducao.jsx` recebe uma **lista** de painéis e desenha uma coluna por painel:
+  1 painel = a fila daquele posto ("o que está na minha mão agora"), todos = a aba
+  **▦ Visão geral** (só dono/designer, o fluxo inteiro lado a lado). O item **some** da
+  fila assim que avança — quem trabalha na linha não vê o que já foi pra montagem.
+  Aba inicial: staff abre na Visão geral, operador na fila dele que tem serviço.
+  **Todo** item entra (papel, plástico, alça torcida, etiqueta). Card = `pedido × painel`;
+  chip "N de M itens" quando o pedido está dividido. Botão grande move o card inteiro;
+  com 2+ itens, cada item tem `←`/`→` para andar sozinho (é o que divide o card). O
+  "Concluir →" diz a montagem de destino quando o card inteiro vai pra mesma.
+  **Trava da laminação por ITEM:** item de gráfica sem laminação não entra (os outros
+  itens do mesmo pedido entram normal) e o quadro conta quantos faltam.
+- **Montagem POR MATERIAL (FEITO):** quem monta sacola de papel não é quem monta a de
+  plástico. `MONTAGENS` (utils) = papel · plástico · etiq./alça. **A etapa gravada
+  continua `'montagem'`** — a divisão é DERIVADA no render por `materialDoItem`
+  (cadastro de Itens + inferência pelo nome), então corrigir o `tipo` de um produto
+  realoca o item sozinho, inclusive os que já estão parados na montagem. Nada de etapa
+  nova no banco, nada de migração. Item cujo material o cadastro não conhece aparece nas
+  **três** montagens com tag ⚠ e banner de aviso — entre duplicar e sumir, sumir é pior.
+  Voltar da montagem usa destino-função: cada item retorna para a SUA linha.
+- **Permissão em 2 EIXOS (FEITO):** `setores` (o que faço) × `materiais` (com o que
+  trabalho), ambos em `usuarios/{uid}`. `materiais` **vazio = todos** (não quebra quem
+  já estava cadastrado). `paineisVisiveis({perfil,setores,materiais})` decide as abas;
+  `podeNoMaterial` filtra os itens dentro de cada fila (vale também nas linhas). Item sem
+  material passa por todo filtro — trabalho que ninguém vê é trabalho que atrasa.
+  Cadastro em Usuários: bloco "Materiais liberados" no perfil Operador.
+- **Auditoria (FEITO):** coleção `auditoria`, **append-only**, um doc por ITEM movido
+  (`idVenda, cliente, itemKey, produto, qtd, linha, material, de, para, porUid, porNome,
+  porEmail, perfil, ip, quando`). Gravada no **mesmo `writeBatch`** da mudança de etapa:
+  ou o item anda E fica registrado, ou nada acontece — nunca existe movimento sem rastro.
+  `registrosAuditoria()` em utils. Aba **Auditoria** (`Auditoria.jsx`) só do dono, só
+  leitura, últimos 500 movimentos, filtros por pessoa/setor/período/busca; o filtro de
+  setor casa origem E destino. Rules: cria quem pode mover, lê só o dono,
+  `update/delete: if false` — nem o dono edita (log corrigível não prova nada).
 - **Selo da linha (FEITO):** `src/components/SeloLinha.jsx` — quadradinho colorido
   `S`/`G`/`Gr` (`SIGLA_LINHA` + `MODO_COR`), o mesmo símbolo marcado na Triagem, colado
   no nome do produto em TODA tela por onde o item passa: quadro (todas as colunas), lista
@@ -58,11 +83,14 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   item** (a coluna `Valor` repete o total do pedido), então hoje devolve `null` e o card
   mostra o total do pedido rotulado. Ligar valor por item depende de mapear uma coluna
   de valor unitário no import (pendente de confirmação do cliente).
-- **Setores/permissões:** `SETORES_PROD` (em utils) = colunas do quadro + Entrega; o
-  cadastro de Usuários usa essa lista. `normSetor` traduz o `grafica` minúsculo do
-  cadastro antigo para a coluna `GRAFICA`. `firestore.rules`: operador/expedição só
-  mexem em `etapas` (+ campos antigos) — a regra não confere item a item (mapa), o
-  controle fino é o `podeMoverEtapa` da tela. ✅ Rules publicadas (11/08/2026).
+- **Setores/permissões:** `SETORES_PROD` (em utils) = etapas do quadro + Entrega (a
+  montagem é UM setor só; quem divide por material é o eixo `materiais`). `normSetor`
+  traduz o `grafica` minúsculo do cadastro antigo para `GRAFICA`. `firestore.rules`:
+  operador/expedição só mexem em `etapas` (+ campos antigos) — a regra não confere item a
+  item (mapa), o controle fino é o `podeMoverEtapa` da tela. ✅ Rules com a coleção
+  `auditoria` publicadas (11/08/2026). ⚠️ Se um dia mexer nas rules da `auditoria`,
+  publicar ANTES do build: o log vai no mesmo batch da etapa, então rules velhas
+  derrubam o movimento no quadro inteiro.
 - **Voz:** "quantos pedidos na montagem/gráfica/silk/gliche" agora conta **itens** por
   etapa e diz em quantos pedidos ("Tem 3 itens na montagem, de 2 pedidos").
 - **Rota por item + ENTREGA PARCIAL (FEITO):** helpers `pedidoSemEtapa`, `idxProntos`,

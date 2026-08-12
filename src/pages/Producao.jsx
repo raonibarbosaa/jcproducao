@@ -6,6 +6,7 @@ import {
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
+  paineisVisiveis, itemNoPainel, podeNoMaterial,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -17,11 +18,11 @@ import SeloLinha from '../components/SeloLinha.jsx'
 
 export default function Producao({ pedidos }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
-  const { perfil, nome, setores } = useAuth()
+  const { perfil, nome, setores, materiais } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
   const [vista, setVista] = useState(['operador', 'expedicao'].includes(perfil) ? 'quadro' : 'lista')   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
-  const [linhaEscolhida, setLinhaPainel] = useState('')  // aba do quadro ('' = automática)
+  const [painelEscolhido, setPainelAba] = useState('')  // aba do quadro ('' = automática)
   const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
   const [filtros, setFiltros] = useState({})
   const [sel, setSel] = useState([])       // idVenda selecionados p/ alteração em lote
@@ -39,25 +40,43 @@ export default function Producao({ pedidos }) {
   // A trava da laminação é por item, dentro do próprio quadro.
   const pedidosQuadro = filtraPedidos(categorizados, filtros, clientes)
 
-  // ---------- painéis por linha (abas do quadro) ----------
-  // Cada linha tem o SEU painel; o badge conta os itens que estão no fluxo dela
-  // (fora os já expedidos e os de gráfica que ainda esperam a laminação).
-  const contaLinha = {}
+  // ---------- painéis do quadro (uma FILA POR SETOR) ----------
+  // Cada aba é um posto de trabalho: SILK / GLICHE / GRÁFICA, as três montagens
+  // (papel, plástico, etiq.+alça) e Expedição. O badge conta o que está parado
+  // naquele posto — o item some da fila assim que avança. Dono e designer têm a
+  // aba "Visão geral", que desenha todos os painéis lado a lado (o fluxo inteiro).
+  const ehStaff = perfil === 'dono' || perfil === 'designer'
+  const meusPaineis = paineisVisiveis({ perfil, setores, materiais })
+  const meusMateriais = perfil === 'operador' ? (materiais || []) : []
+  const conta = {}
+  for (const pa of meusPaineis) conta[pa.id] = 0
   for (const p of pedidosQuadro) {
     (p.itens || []).forEach((_, i) => {
       const l = linhaDoItem(p, i)
-      if (!l || etapaDoItem(p, i) === 'expedido') return
-      if (l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) return
-      contaLinha[l] = (contaLinha[l] || 0) + 1
+      if (!l) return
+      const et = etapaDoItem(p, i)
+      if (et === 'expedido') return
+      const mat = materialDoItem(p.itens[i], itensCad)
+      if (!podeNoMaterial(meusMateriais, mat)) return
+      for (const pa of meusPaineis) {
+        if (pa.etapa !== et) continue
+        if (pa.tipo === 'linha' && pa.linha !== l) continue
+        if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) continue
+        if (!itemNoPainel(pa, mat)) continue
+        conta[pa.id]++
+      }
     })
   }
-  const abasLinha = MODO_ORDER.map((m) => ({ id: m, label: MODO_NM[m], badge: contaLinha[m] || 0 }))
-  // sem escolha do usuário: abre na linha que o operador opera, senão na que tem serviço
-  const linhaOperador = (setores || []).map(normSetor).find((s) => MODO_ORDER.includes(s))
-  const linhaPainel = linhaEscolhida
-    || linhaOperador
-    || MODO_ORDER.find((m) => contaLinha[m])
-    || MODO_ORDER[0]
+  const totalNoFluxo = meusPaineis.reduce((s, pa) => s + (conta[pa.id] || 0), 0)
+  const abasQuadro = [
+    ...(ehStaff ? [{ id: 'geral', label: '▦ Visão geral', badge: totalNoFluxo }] : []),
+    ...meusPaineis.map((pa) => ({ id: pa.id, label: pa.nome, badge: conta[pa.id] || 0 })),
+  ]
+  // sem escolha do usuário: staff abre na visão geral, operador na fila que tem serviço
+  const painelAba = (abasQuadro.some((a) => a.id === painelEscolhido) && painelEscolhido)
+    || (ehStaff ? 'geral' : (meusPaineis.find((pa) => conta[pa.id])?.id || meusPaineis[0]?.id || ''))
+  const paineisDoQuadro = painelAba === 'geral' ? meusPaineis : meusPaineis.filter((pa) => pa.id === painelAba)
+  const nomeAba = abasQuadro.find((a) => a.id === painelAba)?.label || '—'
 
   let lista = categorizados
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
@@ -149,10 +168,12 @@ export default function Producao({ pedidos }) {
   return (
     <>
       <div className="toolbar no-print">
-        <h1 className="page-title">{vista === 'quadro' ? `Produção · ${MODO_NM[linhaPainel]}` : 'Lista de Produção'}
+        <h1 className="page-title">{vista === 'quadro' ? `Produção · ${nomeAba}` : 'Lista de Produção'}
           <small>
             {vista === 'quadro'
-              ? `${contaLinha[linhaPainel] || 0} item(ns) no fluxo desta linha`
+              ? (painelAba === 'geral'
+                  ? `${totalNoFluxo} item(ns) no fluxo`
+                  : `${conta[painelAba] || 0} item(ns) neste setor`)
               : (filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`)}
           </small>
         </h1>
@@ -185,14 +206,14 @@ export default function Producao({ pedidos }) {
 
       {vista === 'quadro' && (
         <div className="screen-only">
-          {/* um painel por LINHA de produção: cada aba tem o próprio fluxo
-              [linha] → Montagem → Expedição, com os itens só daquela linha */}
-          <SubTabs abas={abasLinha} ativa={linhaPainel} onTrocar={setLinhaPainel} />
+          {/* uma FILA por setor: a aba escolhida mostra só o posto dela;
+              "Visão geral" (dono/designer) mostra todos os painéis lado a lado */}
+          <SubTabs abas={abasQuadro} ativa={painelAba} onTrocar={setPainelAba} />
           {pedidosQuadro.length === 0
             ? <div className="empty"><div className="big">🏭</div>
                 {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
-            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} linha={linhaPainel} />}
+            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad} paineis={paineisDoQuadro} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}

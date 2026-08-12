@@ -71,5 +71,15 @@ service cloud.firestore {
         || (ehVendedor() && request.resource.data.vendedor == meuVendedor());
       allow update, delete: if ehStaff();
     }
+
+    // Auditoria: log APPEND-ONLY de quem moveu cada item no quadro.
+    // Escreve quem pode mover (staff, operador, expedição) — o registro vai no
+    // mesmo writeBatch da mudança de etapa. Lê SÓ o dono. Ninguém edita nem
+    // apaga, nem o dono: um log que pode ser corrigido não prova nada.
+    match /auditoria/{id} {
+      allow read: if temPerfil() && meu().perfil == 'dono';
+      allow create: if ehStaff() || ehOperador() || ehExpedicao();
+      allow update, delete: if false;
+    }
   }
 }

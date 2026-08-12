@@ -12,6 +12,7 @@ const LABEL = {
   usuarios: 'Usuários',
   meus: 'Meus Pedidos',
   ciencia: 'Ciência',
+  auditoria: 'Auditoria',
 }
 
 export default function Layout({ abas, contadores, children }) {
