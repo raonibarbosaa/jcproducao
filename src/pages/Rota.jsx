@@ -12,6 +12,9 @@ export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeEntregar = ['dono', 'designer', 'financeiro'].includes(perfil) // só estes dão "entregue"
+  // quem carrega o caminhão é a expedição — então é ela que sabe a hora que a
+  // rota saiu. Marca a saída (e desfaz), mas continua sem dar a entrega.
+  const podeMarcarSaida = podeEntregar || perfil === 'expedicao'
   const [filtros, setFiltros] = useState({})
   const [motoristaSel, setMotoristaSel] = useState({}) // { "vendedor|rota": nome do motorista }
   const [soImprimir, setSoImprimir] = useState(null)   // "vend|rota" p/ imprimir só uma rota
@@ -187,7 +190,7 @@ export default function Rota({ pedidos }) {
                         {Object.keys(clientes).length} cliente(s)
                       </span>
                       <span className="rb-totais">{fmtTotais(totalRota)}</span>
-                      {podeEntregar && (motoristasAtivos.length > 0 ? (
+                      {podeMarcarSaida && (motoristasAtivos.length > 0 ? (
                         <div className="no-print" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginLeft:'auto' }}>
                           <select className="btn" value={motoristaSel[`${vend}|${rota}`] || ''}
                             onChange={(e) => setMotoristaSel((s) => ({ ...s, [`${vend}|${rota}`]: e.target.value }))}>
@@ -200,9 +203,11 @@ export default function Rota({ pedidos }) {
                               🚚 Saiu para entrega
                             </button>
                           )}
-                          <button className="btn ok" onClick={() => entregarRota(vend, rota, Object.values(clientes).flat())}>
-                            ✓ Entregar rota toda
-                          </button>
+                          {podeEntregar && (
+                            <button className="btn ok" onClick={() => entregarRota(vend, rota, Object.values(clientes).flat())}>
+                              ✓ Entregar rota toda
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="no-print" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
@@ -210,7 +215,7 @@ export default function Rota({ pedidos }) {
                         </span>
                       ))}
                       <button className="btn no-print"
-                        style={{ marginLeft: (podeEntregar && motoristasAtivos.length > 0) ? 0 : 'auto' }}
+                        style={{ marginLeft: (podeMarcarSaida && motoristasAtivos.length > 0) ? 0 : 'auto' }}
                         title="Imprimir o romaneio só desta rota"
                         onClick={() => setSoImprimir(`${vend}|${rota}`)}>🖨 Imprimir rota</button>
                     </div>
@@ -247,15 +252,20 @@ export default function Rota({ pedidos }) {
                                     <li key={i}><span><SeloLinha linha={it._linha} />{it.produto}</span><span className="q">{it.qtd}</span></li>
                                   ))}
                                 </ul>
-                                {podeEntregar && (
+                                {(podeEntregar || (podeMarcarSaida && saiuParaEntrega(p))) && (
                                   <div className="no-print" style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                                    <button className="btn ok" style={{ flex: 1, justifyContent:'center' }}
-                                      onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
-                                      ✓ Entregue
-                                    </button>
-                                    {saiuParaEntrega(p) && (
-                                      <button className="btn" title="Cancelar a saída (o caminhão não levou)"
-                                        onClick={() => cancelarSaida(p)}>↩</button>
+                                    {podeEntregar && (
+                                      <button className="btn ok" style={{ flex: 1, justifyContent:'center' }}
+                                        onClick={() => entregar(p, motoristaSel[`${vend}|${rota}`] || '')}>
+                                        ✓ Entregue
+                                      </button>
+                                    )}
+                                    {podeMarcarSaida && saiuParaEntrega(p) && (
+                                      <button className="btn" style={podeEntregar ? null : { flex: 1, justifyContent: 'center' }}
+                                        title="Cancelar a saída (o caminhão não levou)"
+                                        onClick={() => cancelarSaida(p)}>
+                                        {podeEntregar ? '↩' : '↩ Cancelar saída'}
+                                      </button>
                                     )}
                                   </div>
                                 )}

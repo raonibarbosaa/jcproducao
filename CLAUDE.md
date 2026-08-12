@@ -259,11 +259,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   perfil é vendedor. `AuthContext` expõe `vendedorNome`.
 - **Segurança real:** `firestore.rules` reescrito — staff (dono/designer/financeiro) total;
   vendedor lê só os próprios pedidos; coleção `ciencias` preparada. ✅ Publicadas (11/08/2026).
-  ⚠️ **PENDENTE de publicar:** `entregues` agora tem `allow read` para o vendedor
-  (`resource.data.vendedor == meuVendedor()`). Sem publicar, a coluna "Entregue" do quadro
-  do vendedor fica vazia com permission-denied no console (degrada, não quebra a tela).
-  Lembrete: regra libera o DOCUMENTO inteiro, não campo a campo — o vendedor enxerga
-  também a baixa financeira (`pago`/`pagoEm`) dos pedidos dele. Foi decisão deliberada.
+  ✅ `entregues` com `allow read` para o vendedor (`resource.data.vendedor ==
+  meuVendedor()`) publicado (11/08/2026). Lembrete: regra libera o DOCUMENTO inteiro, não
+  campo a campo — o vendedor enxerga também a baixa financeira (`pago`/`pagoEm`) dos
+  pedidos dele. Foi decisão deliberada.
 - **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
   vendedor→rota.
 - **Ciência POR PEDIDO (FEITO — era por rota):** a ciência de rota gravava `pedidoIds`
@@ -286,8 +285,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   motorista, como a entrega), chip por pedido e "↩" para desfazer. **Entrega parcial
   LIMPA esses campos** do que sobrou (`deleteField`) — o resto continua na fábrica e não
   pode herdar a saída da remessa que foi. Hoje só dono/designer/financeiro marcam a
-  saída (mesma permissão da Rota); se a expedição tiver que marcar, é liberar os 3
-  campos no `allow update` dela.
+  saída **a EXPEDIÇÃO também marca** (`podeMarcarSaida` = dono/designer/financeiro +
+  expedição) — é quem carrega o caminhão e sabe a hora que ele saiu. Na Rota ela vê o
+  seletor de motorista, o botão de saída e o "↩ Cancelar saída", mas **não** o "✓ Entregue"
+  nem o "Entregar rota toda" (a entrega é que move o pedido para `entregues`). Nas rules,
+  o `allow update` da expedição ganhou `saidaEm`/`saidaMotorista`/`saidaPor` no `hasOnly`
+  — o `deleteField` do cancelamento também passa, porque `affectedKeys()` inclui campo
+  removido.
 - **Quadro do VENDEDOR (FEITO):** `src/components/QuadroVendedor.jsx`, aba "▦ Acompanhar"
   dentro de Meus Pedidos (a lista com a ciência continua em "☰ Meus pedidos"). **11
   colunas**: Em triagem → os 7 painéis → Pronto p/ sair → Saiu para entrega → Entregue.

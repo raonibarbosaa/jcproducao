@@ -46,9 +46,13 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm'])
             && meu().get('setores', []).size() > 0)
+        // Expedição: além das etapas, marca a SAÍDA da rota (é quem carrega o
+        // caminhão e sabe a hora que ele saiu). Continua sem poder dar a entrega,
+        // que é o que move o pedido para `entregues`.
         || (ehExpedicao()
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm']));
+                 .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
+                           'saidaEm', 'saidaMotorista', 'saidaPor']));
     }
 
     // Entregues: staff escreve e lê tudo. O VENDEDOR lê só as entregas dos
