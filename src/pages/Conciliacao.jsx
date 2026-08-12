@@ -30,6 +30,11 @@ export default function Conciliacao({ pedidos }) {
   const [progresso, setProgresso] = useState(0)
   const [resultado, setResultado] = useState(null)
   const [marcados, setMarcados] = useState(() => new Set())   // idVenda escolhidos
+  // Cruzar SÓ PELO NÚMERO do pedido: número igual = baixa, sem conferir o nome
+  // do cliente. Decisão do dono (12/08/2026). O nome continua na tela como
+  // informação, e as linhas divergentes seguem destacadas — dá para desmarcar
+  // uma a uma. Desligando isto, volta a marcar só o que casa por nome também.
+  const [soNumero, setSoNumero] = useState(true)
 
   async function lerPlanilha(ev) {
     const file = ev.target.files?.[0]
@@ -52,8 +57,8 @@ export default function Conciliacao({ pedidos }) {
         return
       }
       const cls = classificaConciliacao(entradas, pedidos, clientes)
-      // já vem marcado o que casou pelo nome; o que divergiu fica para você decidir
-      setMarcados(new Set(cls.aplicar.map((x) => x.idVenda)))
+      // só pelo número: tudo que existe nos dois lados já vem marcado
+      setMarcados(new Set((soNumero ? [...cls.aplicar, ...cls.revisar] : cls.aplicar).map((x) => x.idVenda)))
       setAnalise({ ...cls, abas, total: entradas.length })
       setMsg('')
     } catch (e) {
@@ -100,6 +105,15 @@ export default function Conciliacao({ pedidos }) {
       .sort((a, b) => (Number(a.idVenda) || 0) - (Number(b.idVenda) || 0))
     : []
   const escolhidos = candidatos.filter((c) => marcados.has(c.idVenda))
+  const trocaModo = (valor) => {
+    setSoNumero(valor)
+    if (analise) {
+      setMarcados(new Set((valor ? [...analise.aplicar, ...analise.revisar] : analise.aplicar)
+        .map((x) => x.idVenda)))
+      setBackupFeito(false)   // a seleção mudou: o backup anterior não vale mais
+    }
+  }
+
   const alterna = (id) => setMarcados((s) => {
     const n = new Set(s)
     n.has(id) ? n.delete(id) : n.add(id)
@@ -262,7 +276,22 @@ export default function Conciliacao({ pedidos }) {
             </button>
           </div>
 
-          <Candidatos itens={candidatos} marcados={marcados} alterna={alterna}
+          <div className="card em_dia" style={{ marginBottom: 18 }}>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input type="checkbox" className="card-check" checked={soNumero}
+                onChange={(e) => trocaModo(e.target.checked)} />
+              <span>
+                <b>Cruzar só pelo número do pedido</b><br />
+                <span style={{ color: 'var(--text-faint)', fontSize: 13 }}>
+                  Número igual na planilha = baixa, sem conferir o nome do cliente. As linhas em
+                  que o nome diverge continuam destacadas em amarelo e podem ser desmarcadas
+                  uma a uma. Desligando, só vem marcado o que o nome também confirma.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <Candidatos itens={candidatos} marcados={marcados} alterna={alterna} soNumero={soNumero}
             marcarTodos={() => setMarcados(new Set(candidatos.map((c) => c.idVenda)))}
             desmarcarTodos={() => setMarcados(new Set())} />
 
@@ -308,7 +337,7 @@ function Cartao({ n, rotulo, cor }) {
 // desmarcado e destacado — a planilha escreve "JAMSOFT(EXPEDIÇÃO)" onde o
 // sistema tem a razão social, mas também tem número reaproveitado por outro
 // cliente. Só o olho humano separa os dois casos, e são poucas linhas.
-function Candidatos({ itens, marcados, alterna, marcarTodos, desmarcarTodos }) {
+function Candidatos({ itens, marcados, alterna, marcarTodos, desmarcarTodos, soNumero }) {
   if (!itens.length) return null
   const divergentes = itens.filter((c) => !c.casou).length
   return (
@@ -323,9 +352,9 @@ function Candidatos({ itens, marcados, alterna, marcarTodos, desmarcarTodos }) {
       </div>
       {divergentes > 0 && (
         <p style={{ color: 'var(--accent)', fontSize: 13 }}>
-          {divergentes} linha(s) com o nome do cliente diferente vieram <b>desmarcadas</b> —
-          confira uma a uma antes de marcar. Pode ser só o nome escrito de outro jeito,
-          ou pode ser um número reaproveitado por outro cliente.
+          {soNumero
+            ? `${divergentes} linha(s) têm o nome do cliente diferente e estão marcadas assim mesmo (cruzando só pelo número). Destacadas em amarelo — desmarque se alguma não for o mesmo cliente.`
+            : `${divergentes} linha(s) com o nome do cliente diferente vieram desmarcadas — confira uma a uma antes de marcar.`}
         </p>
       )}
       <div style={{ overflowX: 'auto' }}>

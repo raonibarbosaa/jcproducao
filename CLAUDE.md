@@ -379,6 +379,12 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   nome escrito diferente. 458 seguem na produção. Dos 2.070 da planilha, 2.012 não estão
   na produção, e **175 deles estão na faixa de numeração do sistema** — ou seja, já foram
   entregues pelo próprio sistema. O problema era MUITO menor do que parecia.
+- **Cruzar SÓ PELO NÚMERO (padrão, decisão do dono em 12/08/2026):** número igual na
+  planilha = baixa, sem conferir o nome do cliente. A conferência de nome vira só
+  informação: as linhas divergentes seguem destacadas em amarelo e podem ser desmarcadas
+  uma a uma. O interruptor na tela desliga isso e volta a marcar apenas o que o nome
+  confirma. O risco foi apresentado com os casos reais (`#5306 SAF FUNERARIA` × `ATUAL
+  MODAS`, e mais 4) e a escolha foi consciente — o backup cobre o desfazer.
 - **Por isso a tela é de MARCAÇÃO, não automática:** com 58 candidatos, insistir em casar
   nome por algoritmo é pior do que deixar a pessoa marcar. `Candidatos` mostra os dois
   lados numa tabela com checkbox — pré-marcado o que casou, desmarcado e destacado o que
