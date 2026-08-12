@@ -374,8 +374,17 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
 - Cada entrega criada leva `origem: 'conciliacao-planilha'` + `conciliadoDe/Por/Em`: é o que
   permite achar (e desfazer) só o que veio da planilha. Baixa financeira fica **pendente**
   (a planilha tem valor, mas não diz o que foi pago).
-- Números reais do arquivo: 2.762 entradas válidas → **2.070 pedidos distintos** (692 eram
-  repetição). Quantos existem de fato em `pedidos` só se sabe rodando na tela.
+- **Cruzamento real feito em 12/08/2026** (planilha × CSV de 516 pedidos na produção):
+  só **58** dos 516 aparecem na planilha como entregues — 18 casaram pelo nome e 40 têm o
+  nome escrito diferente. 458 seguem na produção. Dos 2.070 da planilha, 2.012 não estão
+  na produção, e **175 deles estão na faixa de numeração do sistema** — ou seja, já foram
+  entregues pelo próprio sistema. O problema era MUITO menor do que parecia.
+- **Por isso a tela é de MARCAÇÃO, não automática:** com 58 candidatos, insistir em casar
+  nome por algoritmo é pior do que deixar a pessoa marcar. `Candidatos` mostra os dois
+  lados numa tabela com checkbox — pré-marcado o que casou, desmarcado e destacado o que
+  divergiu. `casaCliente` tolera "(EXPEDIÇÃO)", pontuação, LTDA/ME e diferença de espaço
+  ("LUX BEACHWEAR" × "LUX BEACH WEAR"), mas **não é fuzzy**: "SAF FUNERARIA" × "ATUAL
+  MODAS" (mesmo número, cliente outro) tem que continuar caindo na revisão.
 
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO

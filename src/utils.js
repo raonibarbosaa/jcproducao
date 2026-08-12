@@ -925,13 +925,28 @@ export function entradasDaPlanilha(linhas, aba) {
   return out
 }
 
-// o nome da planilha bate com o do sistema? tolerante: um contém o outro
-// (planilha usa apelido curto, o sistema guarda a razão social)
+// Limpa o nome para comparar. Medido nos dados reais: a planilha escreve
+// "JAMSOFT(EXPEDIÇÃO)", "SANTANA CAMA, MESA E BANHO", "SUZANE´S", e o sistema
+// guarda a razão social com LTDA/ME no fim. Sem tirar isso, nada casa.
+const limpaNome = (s) => normaliza(String(s ?? '')
+  .replace(/\([^)]*\)/g, ' '))                    // "(EXPEDIÇÃO)", "(RETIROU NA FABRICA)"
+  .replace(/[^A-Z0-9 ]/g, ' ')                     // vírgula, apóstrofo, barra, hífen
+  .replace(/\b(LTDA|ME|EPP|EIRELI|SA|S A)\b/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+// o nome da planilha bate com o do sistema? Tolerante ao que os dados exigiram,
+// mas NÃO fuzzy: nome parecido por acaso continua indo para revisão humana —
+// é o que impede marcar como entregue o pedido de outro cliente.
 export function casaCliente(a, b) {
-  const x = normaliza(a)
-  const y = normaliza(b)
+  const x = limpaNome(a)
+  const y = limpaNome(b)
   if (x.length < 3 || y.length < 3) return false
-  return x.includes(y) || y.includes(x)
+  if (x.includes(y) || y.includes(x)) return true
+  // "LUX BEACHWEAR" × "LUX BEACH WEAR", "SIMONE SEMI JOIAS" × "SIMONE SEMIJOIAS"
+  const sx = x.replace(/ /g, '')
+  const sy = y.replace(/ /g, '')
+  return sx.includes(sy) || sy.includes(sx)
 }
 
 // Separa o que dá para aplicar do que precisa de olho humano.

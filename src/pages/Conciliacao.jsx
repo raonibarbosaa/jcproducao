@@ -29,6 +29,7 @@ export default function Conciliacao({ pedidos }) {
   const [aplicando, setAplicando] = useState(false)
   const [progresso, setProgresso] = useState(0)
   const [resultado, setResultado] = useState(null)
+  const [marcados, setMarcados] = useState(() => new Set())   // idVenda escolhidos
 
   async function lerPlanilha(ev) {
     const file = ev.target.files?.[0]
@@ -50,7 +51,10 @@ export default function Conciliacao({ pedidos }) {
         setMsg('Nenhuma linha "ENTREGUE" com número de pedido da nossa numeração foi encontrada.')
         return
       }
-      setAnalise({ ...classificaConciliacao(entradas, pedidos, clientes), abas, total: entradas.length })
+      const cls = classificaConciliacao(entradas, pedidos, clientes)
+      // já vem marcado o que casou pelo nome; o que divergiu fica para você decidir
+      setMarcados(new Set(cls.aplicar.map((x) => x.idVenda)))
+      setAnalise({ ...cls, abas, total: entradas.length })
       setMsg('')
     } catch (e) {
       console.error(e)
@@ -69,7 +73,7 @@ export default function Conciliacao({ pedidos }) {
 
   // backup = o estado ATUAL e completo dos pedidos que vão sair de `pedidos`
   function baixarBackup() {
-    const dados = analise.aplicar.map(({ p }) => p)
+    const dados = escolhidos.map(({ p }) => p)
     baixar(`backup-pedidos-antes-da-conciliacao-${dados.length}.json`,
       JSON.stringify(dados, null, 2), 'application/json')
     setBackupFeito(true)
@@ -88,6 +92,19 @@ export default function Conciliacao({ pedidos }) {
       ].join(';')).join('\n')
     baixar(`pedidos-na-producao-${(pedidos || []).length}.csv`, '\ufeff' + cab + linhas, 'text/csv;charset=utf-8')
   }
+
+  // os dois lados juntos: tudo que está na planilha E na produção
+  const candidatos = analise
+    ? [...analise.aplicar.map((x) => ({ ...x, casou: true })),
+       ...analise.revisar.map((x) => ({ ...x, casou: false }))]
+      .sort((a, b) => (Number(a.idVenda) || 0) - (Number(b.idVenda) || 0))
+    : []
+  const escolhidos = candidatos.filter((c) => marcados.has(c.idVenda))
+  const alterna = (id) => setMarcados((s) => {
+    const n = new Set(s)
+    n.has(id) ? n.delete(id) : n.add(id)
+    return n
+  })
 
   function baixarCSV(lista, nomeArq, comSistema) {
     const cab = comSistema
@@ -109,7 +126,7 @@ export default function Conciliacao({ pedidos }) {
   }
 
   async function aplicar() {
-    const lista = analise.aplicar
+    const lista = escolhidos
     if (!lista.length || aplicando) return
     if (!confirm(
       `Marcar ${lista.length} pedido(s) como ENTREGUES?\n\n` +
@@ -194,8 +211,9 @@ export default function Conciliacao({ pedidos }) {
       {analise && (
         <>
           <div className="rel-cards">
-            <Cartao n={analise.aplicar.length} rotulo="vão ser marcados" cor="var(--ok)" />
-            <Cartao n={analise.revisar.length} rotulo="para revisar (cliente diferente)" cor="var(--accent)" />
+            <Cartao n={escolhidos.length} rotulo="marcados para aplicar" cor="var(--ok)" />
+            <Cartao n={candidatos.length} rotulo="estão na planilha E na produção" />
+            <Cartao n={analise.revisar.length} rotulo="com nome de cliente diferente" cor="var(--accent)" />
             <Cartao n={analise.naoEncontrados.length} rotulo="não estão na produção" />
             <Cartao n={analise.foraDaPlanilha.length} rotulo="seguem na produção (fora da planilha)" />
             <Cartao n={analise.total} rotulo="linhas ENTREGUE lidas" />
@@ -204,7 +222,7 @@ export default function Conciliacao({ pedidos }) {
           <div className="card em_dia" style={{ marginBottom: 18 }}>
             <h3 style={{ marginTop: 0 }}>1. Backup antes de aplicar</h3>
             <p style={{ marginTop: 0 }}>
-              Baixe o estado atual dos {analise.aplicar.length} pedido(s) que vão sair da produção.
+              Baixe o estado atual dos {escolhidos.length} pedido(s) marcados abaixo.
               É o que permite reverter se algo estiver errado.
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -236,19 +254,20 @@ export default function Conciliacao({ pedidos }) {
                 Baixe o backup primeiro — o botão libera em seguida.
               </p>
             )}
-            <button className="btn ok" disabled={!backupFeito || aplicando || !analise.aplicar.length}
+            <button className="btn ok" disabled={!backupFeito || aplicando || !escolhidos.length}
               onClick={aplicar}>
               {aplicando
-                ? `Aplicando… ${progresso} de ${analise.aplicar.length}`
-                : `✓ Marcar ${analise.aplicar.length} pedido(s) como entregues`}
+                ? `Aplicando… ${progresso} de ${escolhidos.length}`
+                : `✓ Marcar ${escolhidos.length} pedido(s) como entregues`}
             </button>
           </div>
 
-          <Lista titulo="Vão ser marcados como entregues" itens={analise.aplicar} clientes={clientes} verde />
-          <Lista titulo="Para revisar — o cliente da planilha não bate com o do sistema"
-            itens={analise.revisar} clientes={clientes} mostraSistema />
+          <Candidatos itens={candidatos} marcados={marcados} alterna={alterna}
+            marcarTodos={() => setMarcados(new Set(candidatos.map((c) => c.idVenda)))}
+            desmarcarTodos={() => setMarcados(new Set())} />
+
           <Lista titulo="Não estão na produção (já entregues antes, ou nunca existiram aqui)"
-            itens={analise.naoEncontrados} clientes={clientes} semPedido />
+            itens={analise.naoEncontrados} />
 
           <ListaPedidos titulo="Seguem na produção — estão no sistema e a planilha não menciona"
             itens={analise.foraDaPlanilha} clientes={clientes} />
@@ -280,6 +299,70 @@ function Cartao({ n, rotulo, cor }) {
     <div className="rel-total-card" style={cor ? { borderLeft: `4px solid ${cor}` } : null}>
       <div className="rt-label">{rotulo}</div>
       <div className="rt-valor" style={cor ? { color: cor } : null}>{n}</div>
+    </div>
+  )
+}
+
+// Tudo que está na planilha E na produção, para você marcar o que aplicar.
+// Vem pré-marcado o que casou pelo nome do cliente; o que divergiu vem
+// desmarcado e destacado — a planilha escreve "JAMSOFT(EXPEDIÇÃO)" onde o
+// sistema tem a razão social, mas também tem número reaproveitado por outro
+// cliente. Só o olho humano separa os dois casos, e são poucas linhas.
+function Candidatos({ itens, marcados, alterna, marcarTodos, desmarcarTodos }) {
+  if (!itens.length) return null
+  const divergentes = itens.filter((c) => !c.casou).length
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0 }}>
+          Na planilha e na produção <span style={{ fontWeight: 400, color: 'var(--text-faint)' }}>({itens.length})</span>
+        </h3>
+        <div className="spacer" style={{ flex: 1 }} />
+        <button className="btn" onClick={marcarTodos}>Marcar todos</button>
+        <button className="btn" onClick={desmarcarTodos}>Desmarcar todos</button>
+      </div>
+      {divergentes > 0 && (
+        <p style={{ color: 'var(--accent)', fontSize: 13 }}>
+          {divergentes} linha(s) com o nome do cliente diferente vieram <b>desmarcadas</b> —
+          confira uma a uma antes de marcar. Pode ser só o nome escrito de outro jeito,
+          ou pode ser um número reaproveitado por outro cliente.
+        </p>
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="rel-tab">
+          <thead>
+            <tr>
+              <th style={{ width: 32 }}></th>
+              <th>Pedido</th>
+              <th>Cliente na planilha</th>
+              <th>Cliente no sistema</th>
+              <th>Vendedor</th>
+              <th className="q">Itens</th>
+              <th className="q">Valor</th>
+              <th>Aba</th>
+            </tr>
+          </thead>
+          <tbody>
+            {itens.map((c) => (
+              <tr key={c.idVenda} style={c.casou ? null : { background: 'rgba(255,176,32,.07)' }}>
+                <td>
+                  <input type="checkbox" className="card-check" checked={marcados.has(c.idVenda)}
+                    onChange={() => alterna(c.idVenda)} />
+                </td>
+                <td>#{c.idVenda}</td>
+                <td>{c.cliente || '—'}</td>
+                <td style={c.casou ? null : { color: 'var(--accent)' }}>
+                  {c.casou ? c.p.cliente : c.clienteSistema}
+                </td>
+                <td>{c.p.vendedor || '—'}</td>
+                <td className="q">{(c.p.itens || []).length}</td>
+                <td className="q">{fmtMoeda(c.p.valorTotal)}</td>
+                <td>{c.aba}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -317,34 +400,22 @@ function ListaPedidos({ titulo, itens, clientes }) {
   )
 }
 
-function Lista({ titulo, itens, clientes, mostraSistema, semPedido, verde }) {
+function Lista({ titulo, itens }) {
   if (!itens.length) return null
   return (
     <div className="card em_dia" style={{ marginBottom: 18 }}>
-      <h3 style={{ marginTop: 0, color: verde ? 'var(--ok)' : undefined }}>
+      <h3 style={{ marginTop: 0 }}>
         {titulo} <span style={{ fontWeight: 400, color: 'var(--text-faint)' }}>({itens.length})</span>
       </h3>
       <div style={{ overflowX: 'auto' }}>
         <table className="rel-tab">
-          <thead>
-            <tr>
-              <th>Pedido</th>
-              <th>Cliente na planilha</th>
-              {mostraSistema && <th>Cliente no sistema</th>}
-              {!semPedido && !mostraSistema && <th>Cliente no sistema</th>}
-              <th>Aba</th>
-              {!semPedido && <th className="q">Valor</th>}
-            </tr>
-          </thead>
+          <thead><tr><th>Pedido</th><th>Cliente na planilha</th><th>Aba</th></tr></thead>
           <tbody>
             {itens.slice(0, MOSTRAR).map((e) => (
               <tr key={e.idVenda}>
                 <td>#{e.idVenda}</td>
                 <td>{e.cliente || '—'}</td>
-                {mostraSistema && <td style={{ color: 'var(--accent)' }}>{e.clienteSistema || '—'}</td>}
-                {!semPedido && !mostraSistema && <td>{nomeCliente(e.p.cliente, clientes)}</td>}
                 <td>{e.aba}</td>
-                {!semPedido && <td className="q">{fmtMoeda(e.p.valorTotal)}</td>}
               </tr>
             ))}
           </tbody>
