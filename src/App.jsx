@@ -15,6 +15,7 @@ import Usuarios from './pages/Usuarios.jsx'
 import MeusPedidos from './pages/MeusPedidos.jsx'
 import Ciencia from './pages/Ciencia.jsx'
 import Auditoria from './pages/Auditoria.jsx'
+import Conciliacao from './pages/Conciliacao.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo, veAssistenteVoz } from './utils.js'
 
@@ -22,7 +23,7 @@ import { situacaoPrazo, veAssistenteVoz } from './utils.js'
 const ACESSO = {
   designer:   ['triagem', 'producao', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
   financeiro: ['producao', 'rota', 'entregues'],
-  dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'auditoria'],
+  dono:       ['triagem', 'producao', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
   expedicao:  ['producao', 'rota'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
@@ -73,6 +74,7 @@ export default function App() {
         {abas.includes('meus') && <Route path="/meus" element={<MeusPedidos pedidos={pedidos} />} />}
         {abas.includes('ciencia') && <Route path="/ciencia" element={<Ciencia pedidos={pedidos} />} />}
         {abas.includes('auditoria') && <Route path="/auditoria" element={<Auditoria />} />}
+        {abas.includes('conciliacao') && <Route path="/conciliacao" element={<Conciliacao pedidos={pedidos} />} />}
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
     </Layout>

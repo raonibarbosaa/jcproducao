@@ -879,6 +879,81 @@ export function docCiencia({ tipo, vendedor, rota, idVenda, quem }) {
   }
 }
 
+// ---------- CONCILIAÇÃO COM A PLANILHA DE ENTREGAS ----------
+// Ferramenta de MIGRAÇÃO: o sistema entrou no ar com pedidos que já tinham sido
+// entregues na vida real, e eles ficaram parados na produção. A planilha manual
+// de entrega (uma aba por mês) diz quais são.
+// Cuidados que os dados exigiram (medidos no arquivo de 2026):
+//  · a planilha NÃO é só de entregues — tem "SERÁ ENTREGUE" e "NÃO ENTREGOU"
+//    misturados na mesma coluna. Só entra o que está marcado ENTREGUE.
+//  · há DUAS numerações: a curta (a nossa) e uma de 44.000+, de outro sistema.
+//    A longa é descartada — não casa com nada aqui.
+//  · a coluna do número às vezes tem data ou texto (linha de separação).
+//  · o mesmo número aparece com clientes diferentes, então o nome do cliente é
+//    conferido antes de aplicar (senão marcamos o pedido errado como entregue).
+export const LIMITE_SERIE_CURTA = 40000
+
+export const normStatusPlanilha = (v) =>
+  String(v ?? '').trim().toUpperCase().replace(/\.+$/, '').replace(/\s+/g, ' ')
+
+// 'MARÇO 2026' | 'FEVEREIRO2026' | 'abril 2026' → último dia do mês, ISO
+export function fimDoMesDaAba(nome) {
+  const t = normaliza(nome)
+  const mes = MESES_NORM.findIndex((m) => t.includes(m))
+  const ano = Number((t.match(/(20\d{2})/) || [])[1])
+  if (mes < 0 || !ano) return null
+  return new Date(ano, mes + 1, 0, 12, 0, 0).toISOString()   // dia 0 do mês seguinte = último do mês
+}
+
+// linhas cruas (array de arrays) de UMA aba → entradas de entrega válidas
+export function entradasDaPlanilha(linhas, aba) {
+  const entregueEm = fimDoMesDaAba(aba)
+  const out = []
+  for (const l of linhas || []) {
+    if (normStatusPlanilha(l?.[4]) !== 'ENTREGUE') continue
+    const v = l[0]
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) continue  // data/texto/vazio
+    if (v >= LIMITE_SERIE_CURTA) continue                                   // série de outro sistema
+    out.push({
+      idVenda: String(v),
+      cliente: String(l[1] ?? '').trim(),
+      motorista: String(l[5] ?? '').trim(),
+      aba,
+      entregueEm,
+    })
+  }
+  return out
+}
+
+// o nome da planilha bate com o do sistema? tolerante: um contém o outro
+// (planilha usa apelido curto, o sistema guarda a razão social)
+export function casaCliente(a, b) {
+  const x = normaliza(a)
+  const y = normaliza(b)
+  if (x.length < 3 || y.length < 3) return false
+  return x.includes(y) || y.includes(x)
+}
+
+// Separa o que dá para aplicar do que precisa de olho humano.
+// `pedidos` = os que estão HOJE na coleção pedidos (ainda em produção).
+export function classificaConciliacao(entradas, pedidos, clientes) {
+  const porId = new Map((pedidos || []).map((p) => [String(p.idVenda), p]))
+  const vistos = new Set()
+  const aplicar = []
+  const revisar = []
+  const naoEncontrados = []
+  for (const e of entradas || []) {
+    if (vistos.has(e.idVenda)) continue        // mesmo pedido repetido na planilha
+    vistos.add(e.idVenda)
+    const p = porId.get(e.idVenda)
+    if (!p) { naoEncontrados.push(e); continue }
+    const nomeSis = nomeCliente(p.cliente, clientes)
+    if (casaCliente(e.cliente, nomeSis) || casaCliente(e.cliente, p.cliente)) aplicar.push({ ...e, p })
+    else revisar.push({ ...e, p, clienteSistema: nomeSis })
+  }
+  return { aplicar, revisar, naoEncontrados }
+}
+
 // ---------- MÊS (para as perguntas por produto/por mês) ----------
 const MESES_NORM = ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO']
 const MESES_LABEL = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']

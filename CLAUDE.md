@@ -349,6 +349,34 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   andado e voltado fazia o item **sumir do quadro** (o painel da linha velha cobrava a
   linha nova; o da nova cobrava a etapa nova).
 
+## Conciliação com a planilha de entregas (MIGRAÇÃO — pode sair depois de usada)
+Aba **Conciliação** (`Conciliacao.jsx`), só do dono. O sistema entrou no ar com pedidos
+que já tinham sido entregues na vida real e ficaram parados na produção; a planilha
+manual (`CONTROLE DE ENTRGA 2026.xlsx`, uma aba por mês) diz quais são.
+Fluxo obrigatório: **planilha → prévia → BAIXAR BACKUP → aplicar**. O botão de aplicar
+fica travado até o backup (JSON com o estado completo dos pedidos que vão sair) ser
+baixado — a operação apaga de `pedidos`, e desfazer 2.000 entregas na mão não é opção.
+O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils):
+- **A planilha NÃO é só de entregues:** 4.652 ENTREGUE, mas também 744 "SERÁ ENTREGUE",
+  327 "NÃO ENTREGOU" e 130 em branco na MESMA coluna. `normStatusPlanilha` +
+  `entradasDaPlanilha` só deixam passar ENTREGUE — marcar tudo apagaria 1.205 pedidos vivos.
+- **Duas numerações:** a nossa (curta) e uma de 44.000+ de outro sistema (43% do arquivo).
+  `LIMITE_SERIE_CURTA = 40000` descarta a longa. Não há sobreposição de faixa, então a
+  longa simplesmente não casaria com nada.
+- **A coluna do número tem lixo:** 124 células de DATA e 35 de texto (linhas de separação).
+  Por isso a leitura usa `raw: true` e só aceita inteiro positivo.
+- **O mesmo número aparece com clientes diferentes** (297 casos). `casaCliente` confere o
+  nome antes de aplicar (tolerante: um contém o outro, mínimo 3 letras); o que não bate vai
+  para uma lista de revisão em CSV, nunca é aplicado. Sem isso marcaríamos o pedido errado.
+- **Data de entrega:** `fimDoMesDaAba` → último dia do mês da aba (a planilha não tem data
+  por linha). Reconhece 'MARÇO 2026', 'FEVEREIRO2026', 'abril 2026', 'MAIO2026 '.
+- Pedido que **não existe** no sistema é só reportado — nunca criado.
+- Cada entrega criada leva `origem: 'conciliacao-planilha'` + `conciliadoDe/Por/Em`: é o que
+  permite achar (e desfazer) só o que veio da planilha. Baixa financeira fica **pendente**
+  (a planilha tem valor, mas não diz o que foi pago).
+- Números reais do arquivo: 2.762 entradas válidas → **2.070 pedidos distintos** (692 eram
+  repetição). Quantos existem de fato em `pedidos` só se sabe rodando na tela.
+
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
   da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava
