@@ -161,6 +161,27 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **Fluxo completo (gráfica):** Triagem → Gráfica → Montagem → Expedição → (Expedir) → Rota
   (entrega/motorista) → Entregues → (baixa financeira) → quitado. Fases A–D concluídas.
 
+## PENDENTE — próxima sessão
+**Levar o agrupamento e o contador da produção para o quadro do VENDEDOR**
+(`QuadroVendedor.jsx`). Hoje as 11 colunas dele são listas soltas ordenadas por
+`previsao`; a fila da fábrica já quebra em Data → Vendedor → Rota com o contador
+"4 de 7". O que já se sabe antes de desenhar:
+- **O nível "Vendedor" some**: o quadro do vendedor só tem os pedidos dele, então o
+  agrupamento útil é **Data → Rota** (rota na ordem do cadastro, via `ordemRota`).
+- **O contador não encaixa direto.** `progressoNoPainel` só entende os 7 painéis
+  (`PAINEIS_QUADRO`); as colunas Em triagem / Pronto p/ sair / Saiu / Entregue ficam
+  de fora. Decidir: (a) contador só nas 7 colunas de fábrica, (b) generalizar
+  `posNoFluxo` para incluir triagem/saída/entrega, ou (c) um contador diferente para o
+  vendedor — do tipo "5 de 8 itens da rota já entregues", que é a pergunta que ELE faz.
+  A (c) é provavelmente a certa: o vendedor não quer saber de setor, quer saber quanto
+  do pedido do cliente dele já chegou.
+- **Coluna Entregue**: os cards vêm de `entregues` (uma remessa por card), não de
+  `pedidos` — conferir se `previsao`/`rota` estão nos docs para agrupar igual (vêm do
+  spread do pedido em `Rota.jsx`, então devem estar; confirmar em dado real).
+- Junto disso, reavaliar **juntar as 3 montagens numa coluna só** no quadro do
+  vendedor: 11 colunas no celular é muito, e a divisão por material é assunto interno
+  da fábrica (ver a decisão original na seção do quadro do vendedor).
+
 ## Stack e deploy
 - **Repo:** `raonibarbosaa/jcproducao` (público). Branch `main` = fonte (React 18 + Vite),
   `gh-pages` = build publicado.
