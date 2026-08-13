@@ -431,6 +431,28 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   ("LUX BEACHWEAR" × "LUX BEACH WEAR"), mas **não é fuzzy**: "SAF FUNERARIA" × "ATUAL
   MODAS" (mesmo número, cliente outro) tem que continuar caindo na revisão.
 
+## PENDENTE — próxima sessão
+1. **Expedição controlando a aba Entregas** (pedido do dono em 12/08/2026, para depois).
+   Hoje a expedição já vê a aba e faz montar → conferir → marcar saída; o que ela NÃO faz
+   é confirmar a entrega, e isso foi decisão explícita do próprio dono na mesma conversa
+   ("a expedição não dá a baixa de entrega"). Então o pedido novo provavelmente é **voltar
+   atrás nisso**. Confirmar qual das duas leituras antes de mexer:
+   (a) a expedição passa a dar a ENTREGA também (hoje só dono/designer/financeiro, na tela
+       de Rota) — é o que move o pedido para `entregues` e abre a cobrança;
+   (b) a expedição ganha acesso à aba **Entregues** (histórico + baixa financeira), que é
+       outra tela e envolve dinheiro.
+   Se for (a): `podeEntregar` em `Rota.jsx` + o `allow update`/`create` de `entregues` nas
+   rules (hoje `entregues` é write só de staff).
+2. **Fechamento da montagem por quantidade REAL** — desenho já fechado com o dono:
+   o operador informa quanto do lote está fechando e quanto deu de verdade (pesado/contado),
+   e marca se aquilo **encerra o item**. Encerrando, a diferença some do pendente (quebra de
+   processo); sem encerrar, o resto continua na fila — é isso que preserva a entrega parcial.
+   Modelo combinado: **antes da montagem a quantidade é a PEDIDA, depois é a REAL**; a
+   pesagem é a fronteira. Guardar em `etapas` (nunca em `itens`, que o import sobrescreve).
+   O preço já está no cadastro de Itens (`precoDoItem`/`valorDaQtd`), pronto para o valor.
+3. **Importar planilha de preços** — possibilidade levantada pelo dono; decidir depois de
+   ver quantos produtos estão sem preço com o campo já no ar.
+
 ## Controle de entregas — a CARGA é a viagem (12/08/2026)
 Aba **Entregas** (`Carga.jsx`), para **expedição** + staff. A tela de Rota mostra o que
 está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
