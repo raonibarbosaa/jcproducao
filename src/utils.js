@@ -268,6 +268,21 @@ export const SETORES_PROD = [
 // usuário cadastrado antes das colunas por linha guardou 'grafica' minúsculo
 export const normSetor = (s) => (s === 'grafica' ? 'GRAFICA' : s === 'silk' ? 'PRODUCAO' : s)
 
+// Abas que o usuário enxerga. O perfil dá a base, mas para o OPERADOR os
+// SETORES também abrem aba: quem tem Expedição ou Entrega liberada trabalha com
+// carga e precisa da tela de Entregas. Sem isso a permissão de dois eixos fica
+// pela metade — o setor liberava o que ele move no quadro, mas não a tela onde
+// esse trabalho acontece.
+export function abasDoUsuario(perfil, setores, base) {
+  const abas = [...(base || [])]
+  if (perfil !== 'operador') return abas
+  const meus = (setores || []).map(normSetor)
+  if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('carga')) {
+    abas.splice(abas.indexOf('producao') + 1 || abas.length, 0, 'carga')
+  }
+  return abas
+}
+
 // ---------- MONTAGEM POR MATERIAL ----------
 // Quem monta sacola de papel não é quem monta a de plástico: a montagem é um
 // setor só na ETAPA (o campo gravado continua 'montagem'), mas se divide em

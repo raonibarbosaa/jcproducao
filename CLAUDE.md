@@ -463,6 +463,13 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - **Fluxo:** montar (escolhe pedido a pedido, pode misturar rotas e deixar para trás) →
   conferir item a item ao carregar → 🚚 marcar saída (carimba `saidaEm/saidaMotorista/
   saidaPor` nos pedidos, o mesmo campo que o quadro do vendedor lê) → romaneio impresso.
+- **Aba por SETOR, não só por perfil:** `abasDoUsuario(perfil, setores, base)` acrescenta
+  a aba Entregas ao **operador** que tem `expedicao` ou `entrega` liberado. Sem isso a
+  permissão de dois eixos ficava pela metade: o setor liberava o que ele move no quadro,
+  mas não a tela onde o trabalho de carga acontece. ⚠️ As **rules acompanham** —
+  `trabalhaComCarga()` (cargas) e o `allow update` de `pedidos` com os campos de saída
+  para operador com esses setores. Liberar só a aba faria a tela aparecer e nada
+  funcionar.
 - **A expedição NÃO dá a entrega.** Ela monta, confere e marca a saída; a entrega (que
   abre a cobrança) segue com dono/designer/financeiro na tela de Rota. Rules: `cargas`
   create/update para staff + expedição, delete só staff.

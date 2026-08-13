@@ -23,6 +23,13 @@ service cloud.firestore {
       return temPerfil() && meu().perfil == 'expedicao';
     }
     function meuVendedor() { return meu().vendedorNome; }
+    // operador com Expedição/Entrega liberada trabalha com carga: a permissão é
+    // de DOIS eixos (perfil × setores), então o setor também tem que valer aqui,
+    // senão a tela aparece para ele e nada funciona.
+    function trabalhaComCarga() {
+      return ehStaff() || ehExpedicao()
+        || (ehOperador() && meu().get('setores', []).hasAny(['expedicao', 'entrega']));
+    }
 
     // Perfis: cada um lê o próprio doc (para descobrir seu perfil); staff gerencia todos.
     match /usuarios/{uid} {
@@ -46,6 +53,12 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm'])
             && meu().get('setores', []).size() > 0)
+        // operador de Expedição/Entrega marca a saída da carga, como a expedição
+        || (ehOperador()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
+                           'saidaEm', 'saidaMotorista', 'saidaPor'])
+            && meu().get('setores', []).hasAny(['expedicao', 'entrega']))
         // Expedição: além das etapas, marca a SAÍDA da rota (é quem carrega o
         // caminhão e sabe a hora que ele saiu). Continua sem poder dar a entrega,
         // que é o que move o pedido para `entregues`.
@@ -89,7 +102,7 @@ service cloud.firestore {
     // (isso segue em `entregues`, só para staff).
     match /cargas/{id} {
       allow read: if ehStaff() || ehExpedicao() || ehOperador();
-      allow create, update: if ehStaff() || ehExpedicao();
+      allow create, update: if trabalhaComCarga();
       allow delete: if ehStaff();
     }
 

@@ -18,7 +18,7 @@ import Auditoria from './pages/Auditoria.jsx'
 import Conciliacao from './pages/Conciliacao.jsx'
 import Carga from './pages/Carga.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
-import { situacaoPrazo, veAssistenteVoz } from './utils.js'
+import { situacaoPrazo, veAssistenteVoz, abasDoUsuario } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
@@ -31,7 +31,7 @@ const ACESSO = {
 }
 
 export default function App() {
-  const { user, perfil, vendedorNome, carregando } = useAuth()
+  const { user, perfil, vendedorNome, setores, carregando } = useAuth()
   const [pedidos, setPedidos] = useState([])
 
   // assina pedidos em tempo real. Vendedor só enxerga os PRÓPRIOS pedidos
@@ -51,7 +51,8 @@ export default function App() {
   if (carregando) return <div className="loading">Carregando…</div>
   if (!user) return <Login />
 
-  const abas = ACESSO[perfil] || ACESSO.dono
+  // o perfil dá a base; para o operador, os SETORES ainda podem abrir aba
+  const abas = abasDoUsuario(perfil, setores, ACESSO[perfil] || ACESSO.dono)
 
   // contadores
   const semDef = pedidos.filter((p) => !p.status).length
