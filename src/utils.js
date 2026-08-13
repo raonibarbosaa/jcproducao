@@ -742,6 +742,30 @@ export function valorDosItens(p, idxs) {
   return itens.reduce((s, it) => s + Number(it.valor), 0)
 }
 
+// ---------- PREÇO E VALOR PELA QUANTIDADE REAL ----------
+// A planilha do Posseidon repete o valor TOTAL do pedido em cada item, então não
+// existe preço unitário vindo do import. Ele vem do cadastro de Itens, e é o que
+// permite cobrar o que foi de fato produzido (98,3 kg em vez de 100).
+export function precoDoItem(item, itensCad) {
+  const nm = normaliza(item?.produto)
+  if (!nm) return null
+  const cad = (itensCad || []).find((c) => normaliza(c.produto) === nm)
+  const v = Number(cad?.preco)
+  return v > 0 ? v : null
+}
+
+// valor de uma quantidade. null quando o produto não tem preço cadastrado —
+// sem preço não dá para cobrar pelo produzido, e estimar seria pior que não dizer.
+export function valorDaQtd(item, qtd, itensCad) {
+  const preco = precoDoItem(item, itensCad)
+  if (preco == null) return null
+  return Math.round(preco * (Number(qtd) || 0) * 100) / 100
+}
+
+// quantos produtos de uma lista ainda estão sem preço (para avisar no cadastro)
+export const itensSemPreco = (itensCad) =>
+  (itensCad || []).filter((c) => !(Number(c.preco) > 0)).length
+
 // ---------- ACABAMENTOS POR ITEM (fluxo da gráfica: laminação + furo) ----------
 // definidos pelo designer na Triagem; executados na Montagem.
 export const LAMINACOES = [

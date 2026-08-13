@@ -23,7 +23,7 @@ import { situacaoPrazo, veAssistenteVoz } from './utils.js'
 // abas permitidas por perfil
 const ACESSO = {
   designer:   ['triagem', 'producao', 'carga', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia'],
-  financeiro: ['producao', 'rota', 'entregues'],
+  financeiro: ['producao', 'rota', 'entregues', 'cadastros'],   // cadastros: só a aba Itens (preço)
   dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)

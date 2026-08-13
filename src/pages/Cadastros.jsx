@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM } from '../utils.js'
+import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -12,7 +12,9 @@ const REF = () => doc(db, 'config', 'cadastros')
 // abas do hub e quais perfis veem cada uma
 const ABAS_CADASTRO = [
   { id: 'clientes',   label: 'Clientes',   perfis: ['designer', 'dono'] },
-  { id: 'itens',      label: 'Itens',      perfis: ['designer', 'dono'] },
+  // o financeiro entra SÓ aqui: é ele quem confere e corrige o preço que passa a
+  // valer para cobrar a quantidade realmente produzida
+  { id: 'itens',      label: 'Itens',      perfis: ['designer', 'dono', 'financeiro'] },
   { id: 'motoristas', label: 'Motoristas', perfis: ['designer', 'dono'] },
   { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
 ]
@@ -649,6 +651,14 @@ function CardItem({ it, onTipo, onUnidade, onEditar, onExcluir }) {
         <div className="cliente" style={{ fontSize: 14 }}>{it.produto}</div>
         {semUnidade && <div className="idv" style={{ color: 'var(--warn)' }}>sem unidade</div>}
       </div>
+      {/* preço: é o que permite cobrar pela quantidade REAL produzida */}
+      <div className="meta-row" style={{ marginTop: 6 }}>
+        {it.preco > 0
+          ? <span className="chip">{fmtMoeda(it.preco)} por {unidadeNome(it.unidade) || 'un'}</span>
+          : <span className="chip rota-warn" title="Sem preço, o valor da quantidade real não é calculado">
+              sem preço
+            </span>}
+      </div>
 
       {/* tipo de material (inline) */}
       <div style={{ marginTop: 8 }}>
@@ -690,10 +700,12 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
   const [produto, setProduto] = useState(inicial?.produto || '')
   const [tipo, setTipo] = useState(inicial?.tipo || '')
   const [unidade, setUnidade] = useState(inicial?.unidade || '')
+  const [preco, setPreco] = useState(inicial?.preco != null ? String(inicial.preco) : '')
 
   function salvar() {
     if (!produto.trim()) { alert('Informe o nome do produto.'); return }
-    onSalvar({ produto: produto.trim(), tipo, unidade })
+    const n = Number(String(preco).replace(',', '.'))
+    onSalvar({ produto: produto.trim(), tipo, unidade, preco: preco === '' ? null : (n > 0 ? n : null) })
   }
 
   return (
@@ -727,6 +739,17 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+      <div className="field" style={{ marginTop: 14, maxWidth: 260 }}>
+        <label>
+          Preço {unidade ? `por ${unidadeNome(unidade)}` : '(defina a unidade primeiro)'}
+        </label>
+        <input inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)}
+          placeholder="0,00" />
+        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
+          Usado para calcular o valor da quantidade REALMENTE produzida. Em branco = sem preço,
+          e o sistema mostra o valor do pedido como veio da planilha.
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
