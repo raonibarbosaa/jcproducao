@@ -4,9 +4,11 @@ import { db } from '../firebase.js'
 import {
   indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora, pegarIP,
   nomeCliente, previsaoDe, situacaoPrazo, fmtData, fmtMoeda, ORIGEM_NM, MODO_NM, linhaDoItem,
+  filtraPedidos, vendedoresDe,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 
 // Tela do DESIGNER/DONO: acompanha a ciência dos vendedores e dá a própria
 // (conferido). A unidade é o PEDIDO — a faixa da rota mostra quantos de quantos,
@@ -18,6 +20,7 @@ export default function Ciencia({ pedidos }) {
   const [salvando, setSalvando] = useState('')
   const [abertos, setAbertos] = useState({})   // { "vendedor|rota": true }
   const [soPendentes, setSoPendentes] = useState(false)
+  const [filtros, setFiltros] = useState({})
 
   const alternar = (k) => setAbertos((s) => ({ ...s, [k]: !s[k] }))
 
@@ -29,7 +32,9 @@ export default function Ciencia({ pedidos }) {
   }, [])
 
   const mapaC = indexaCienciasPorPedido(ciencias)
-  const cat = (pedidos || []).filter((p) => p.status)
+  const categorizados = (pedidos || []).filter((p) => p.status)
+  const vendedoresFiltro = vendedoresDe(categorizados)
+  const cat = filtraPedidos(categorizados, filtros, clientes)
   // pendente = falta a ciência do vendedor OU a conferência — é o que dá trabalho
   const pendente = (p) =>
     !cienciaDoPedido(mapaC, 'vendedor', p.idVenda) || !cienciaDoPedido(mapaC, 'designer', p.idVenda)
@@ -89,9 +94,15 @@ export default function Ciencia({ pedidos }) {
         </button>
       </div>
 
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros}
+        vendedores={vendedoresFiltro} pedidos={categorizados} />
+
       {vends.length === 0 ? (
         <div className="empty"><div className="big">✍️</div>
-          {soPendentes && cat.length ? 'Nenhuma pendência — tudo com ciência e conferido.' : 'Nenhum pedido categorizado para conferir.'}
+          {soPendentes && cat.length
+            ? 'Nenhuma pendência — tudo com ciência e conferido.'
+            // com filtro na tela, dizer "não há pedido" seria mentira
+            : (categorizados.length ? 'Nenhum pedido com esses filtros.' : 'Nenhum pedido categorizado para conferir.')}
         </div>
       ) : (
         vends.map((v) => (

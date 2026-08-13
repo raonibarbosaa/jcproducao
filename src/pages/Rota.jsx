@@ -171,7 +171,7 @@ export default function Rota({ pedidos }) {
         <button className="btn" onClick={() => { setSoImprimir(null); setTimeout(() => window.print(), 30) }}>🖨 Imprimir tudo</button>
       </div>
 
-      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} pedidos={categorizados} />
 
       {/* ---------- TELA ---------- */}
       <div className="screen-only">

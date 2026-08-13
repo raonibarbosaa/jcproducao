@@ -198,7 +198,7 @@ export default function Producao({ pedidos }) {
         {vista === 'lista' && <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>}
       </div>
 
-      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} />
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} pedidos={categorizados} />
 
       {vista === 'quadro' && (
         <div className="screen-only">

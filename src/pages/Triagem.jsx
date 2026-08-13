@@ -295,7 +295,7 @@ export default function Triagem({ pedidos }) {
         )}
       </div>
 
-      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedoresFiltro} />
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedoresFiltro} pedidos={pedidos} />
 
       {ehDono && painelExcluir && (
         <div className="filter-pill" style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
