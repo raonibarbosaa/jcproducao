@@ -6,10 +6,12 @@ import {
   cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
+  filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
+import FiltrosBar from '../components/FiltrosBar.jsx'
 
 // CONTROLE DE ENTREGAS — a carga é a VIAGEM do caminhão.
 // A tela de Rota mostra o que está pronto agora (uma foto do momento). Aqui o
@@ -27,6 +29,7 @@ export default function Carga({ pedidos }) {
   const [motorista, setMotorista] = useState('')
   const [salvando, setSalvando] = useState('')
   const [aba, setAba] = useState('montar')      // 'montar' | 'historico'
+  const [filtros, setFiltros] = useState({})
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
 
   useEffect(() => {
@@ -50,9 +53,11 @@ export default function Carga({ pedidos }) {
     }
   }
 
-  // pedidos com quantidade expedida ainda LIVRE para entrar numa carga
+  // pedidos com quantidade expedida ainda LIVRE para entrar numa carga.
+  // A lista NÃO é filtrada: é a base da seleção. Assim dá para filtrar a ROTA 01,
+  // marcar, trocar para a ROTA 02 e marcar mais — sem perder o que já foi escolhido.
   const disponiveis = []
-  for (const p of pedidos || []) {
+  for (const p of (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))) {
     const livres = itensParaCarga(p)
       .map((it) => ({
         ...it,
@@ -63,9 +68,15 @@ export default function Carga({ pedidos }) {
     if (livres.length) disponiveis.push({ p, itens: livres })
   }
 
+  const vendedoresFiltro = vendedoresDe(disponiveis.map((d) => d.p))
+  // o filtro vale só para o que APARECE; a seleção sobrevive à troca de filtro
+  const idsFiltrados = new Set(
+    filtraPedidos(disponiveis.map((d) => d.p), filtros, clientes).map((p) => p.idVenda))
+  const visiveis = disponiveis.filter((d) => idsFiltrados.has(d.p.idVenda))
+
   // agrupa por rota (na ordem do cadastro do vendedor) só para facilitar a escolha
   const porRota = {}
-  for (const d of disponiveis) {
+  for (const d of visiveis) {
     const r = d.p.rota || 'SEM ROTA'
     ;(porRota[r] ??= { rota: r, vendedor: d.p.vendedor || '', linhas: [] }).linhas.push(d)
   }
@@ -185,10 +196,20 @@ export default function Carga({ pedidos }) {
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
             salvando={salvando} onConferir={conferir} onConferirTudo={conferirTudo}
             onSaida={marcarSaida} onCancelar={cancelarCarga} />
-        : <Montagem rotas={rotas} sel={sel} alterna={alterna} marcarRota={marcarRota}
-            clientes={clientes} escolhidos={escolhidos} totais={totaisSel}
-            motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
-            salvando={salvando} onCriar={criarCarga} />)}
+        : <>
+            <FiltrosBar filtros={filtros} setFiltros={setFiltros}
+              vendedores={vendedoresFiltro} pedidos={disponiveis.map((d) => d.p)} />
+            {resumoFiltros(filtros) && (
+              <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '0 2px 10px' }}>
+                {visiveis.length} de {disponiveis.length} pedido(s) · {resumoFiltros(filtros)}
+              </div>
+            )}
+            <Montagem rotas={rotas} sel={sel} alterna={alterna} marcarRota={marcarRota}
+              clientes={clientes} escolhidos={escolhidos} totais={totaisSel}
+              motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
+              salvando={salvando} onCriar={criarCarga}
+              temFiltro={!!resumoFiltros(filtros)} />
+          </>)}
 
       {aba === 'historico' && <Historico cargas={historico} clientes={clientes} />}
     </>
@@ -197,10 +218,12 @@ export default function Carga({ pedidos }) {
 
 // ---------- escolher o que vai no caminhão ----------
 function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totais,
-                    motorista, setMotorista, motoristas, salvando, onCriar }) {
+                    motorista, setMotorista, motoristas, salvando, onCriar, temFiltro }) {
   if (!rotas.length) {
     return <div className="empty"><div className="big">📦</div>
-      Nada expedido para carregar. Os pedidos aparecem aqui depois do <b>✓ Expedir</b> no quadro.
+      {temFiltro
+        ? 'Nenhum pedido com esses filtros.'
+        : <>Nada expedido para carregar. Os pedidos aparecem aqui depois do <b>✓ Expedir</b> no quadro.</>}
     </div>
   }
   return (
@@ -259,7 +282,12 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
 
       {escolhidos.length > 0 && (
         <div className="batch-bar no-print">
-          <span><b>{escolhidos.length}</b> pedido(s) · {fmtTotais(totais)}</span>
+          <span>
+            <b>{escolhidos.length}</b> pedido(s) · {fmtTotais(totais)}
+            {/* o filtro esconde, mas não desmarca — senão o operador perderia a
+                seleção ao trocar de rota sem perceber */}
+            {temFiltro && <small style={{ color: 'var(--text-faint)' }}> (inclui os fora do filtro)</small>}
+          </span>
           {motoristas.length > 0 && (
             <select className="btn" value={motorista} onChange={(e) => setMotorista(e.target.value)}>
               <option value="">🚚 Motorista…</option>
