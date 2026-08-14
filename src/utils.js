@@ -591,12 +591,55 @@ export const ETAPAS_QTD = ['montagem', 'expedicao', 'expedido', 'entregue']
 // 0.1 + 0.2 em ponto flutuante não é 0.3, e isso viraria "resta 0.00000001 kg"
 export const arredondaQtd = (n) => Math.round((Number(n) || 0) * 1000) / 1000
 
+// ---------- VOLUMES (o pacote físico) ----------
+// O motorista conta VOLUME, não pesa kg: "são 10 volumes" é conferível no
+// caminhão, "são 100 kg" não é. Depois da montagem o item deixa de andar por
+// quantidade solta e passa a andar por volume — cada um com o seu peso/contagem
+// e o seu estado, porque volumes do mesmo item podem ir em viagens diferentes.
+//
+// A SOMA dos volumes é a quantidade REAL produzida, e ela não precisa bater com
+// a pedida: quem embala é quem pesa. `produzido` guarda quantas unidades PEDIDAS
+// foram baixadas do lote; a diferença entre os dois é a quebra de processo.
+export const ETAPAS_VOLUME = ['expedicao', 'expedido', 'entregue']
+
+export function volumesDoItem(p, idx) {
+  const bruto = doMapaDoItem(p?.etapas, p, idx)
+  const vs = Array.isArray(bruto?.volumes) ? bruto.volumes : []
+  return vs.map((v, i) => ({
+    id: v?.id || `v${i + 1}`,
+    n: i + 1,
+    qtd: arredondaQtd(v?.qtd),
+    et: ETAPAS_VOLUME.includes(v?.et) ? v.et : 'expedicao',
+  }))
+}
+
+// quanto há em volumes, no total ou numa etapa
+export const qtdEmVolumes = (p, idx, et) =>
+  arredondaQtd(volumesDoItem(p, idx)
+    .filter((v) => !et || v.et === et)
+    .reduce((s, v) => s + v.qtd, 0))
+
+export const temVolumes = (p, idx) => volumesDoItem(p, idx).length > 0
+
 // distribuição da quantidade do item entre as etapas, já com o legado resolvido
 export function distribuicaoDoItem(p, idx) {
   const qtd = arredondaQtd(p?.itens?.[idx]?.qtd)
   const linha = linhaDoItem(p, idx) || 'triagem'
   const dist = { [linha]: 0, montagem: 0, expedicao: 0, expedido: 0, entregue: 0 }
   const bruto = doMapaDoItem(p?.etapas, p, idx)
+
+  // Item já embalado: depois da montagem quem manda são os VOLUMES. As
+  // quantidades de expedição/expedido/entregue passam a ser a soma deles, e a
+  // linha desconta o `produzido` — as unidades PEDIDAS que saíram do lote, que
+  // não são a mesma coisa que a soma real dos volumes (é aí que mora a quebra).
+  if (temVolumes(p, idx)) {
+    dist.montagem = Math.max(0, arredondaQtd(bruto?.montagem))
+    for (const e of ETAPAS_VOLUME) dist[e] = qtdEmVolumes(p, idx, e)
+    const produzido = Math.max(0, arredondaQtd(bruto?.produzido))
+    dist[linha] = Math.max(0, arredondaQtd(qtd - dist.montagem - produzido))
+    return dist
+  }
+
   if (bruto && typeof bruto === 'object' && !Array.isArray(bruto)) {
     if (bruto.et) {
       // legado: o item inteiro numa etapa só. Etapa de linha não precisa de
@@ -638,6 +681,53 @@ export function moveQtdItem(p, idx, de, para, qtd) {
   if (ETAPAS_QTD.includes(de)) novo[de] = arredondaQtd(novo[de] - mover)
   if (ETAPAS_QTD.includes(para)) novo[para] = arredondaQtd(novo[para] + mover)
   return novo
+}
+
+// ---------- FECHAR A MONTAGEM EM VOLUMES ----------
+// `volumes` = [{ qtd }] criados pelo operador. `consumido` = quantas unidades
+// PEDIDAS saem do lote da montagem — normalmente tudo que estava lá quando ele
+// diz que encerrou, ou só a parte fechada quando ainda falta produzir.
+// A soma dos volumes NÃO precisa bater com `consumido`: é isso que registra a
+// quebra (98,3 kg produzidos de um lote de 100 pedidas).
+export function fechaMontagemEmVolumes(p, idx, volumes, consumido, quem) {
+  const d = distribuicaoDoItem(p, idx)
+  const naMontagem = arredondaQtd(d.montagem)
+  const baixa = Math.min(arredondaQtd(consumido), naMontagem)
+  const novos = (volumes || [])
+    .map((v) => arredondaQtd(v?.qtd ?? v))
+    .filter((q) => q > 0)
+  if (!novos.length || baixa <= 0) return null
+
+  const bruto = doMapaDoItem(p?.etapas, p, idx)
+  const jaTem = volumesDoItem(p, idx)
+  const base = new Date().toISOString()
+  return {
+    montagem: arredondaQtd(naMontagem - baixa),
+    produzido: arredondaQtd((Number(bruto?.produzido) || 0) + baixa),
+    volumes: [
+      ...jaTem.map((v) => ({ id: v.id, qtd: v.qtd, et: v.et })),
+      ...novos.map((q, i) => ({ id: `${base}-${i}`, qtd: q, et: 'expedicao' })),
+    ],
+    por: quem || '',
+    em: base,
+  }
+}
+
+// move volumes (por id) para outra etapa — é assim que o item anda depois de
+// embalado, inclusive quando só parte dos volumes vai nesta viagem
+export function movePorVolume(p, idx, ids, para, quem) {
+  if (!ETAPAS_VOLUME.includes(para)) return null
+  const alvo = new Set(ids || [])
+  const vs = volumesDoItem(p, idx)
+  if (!vs.some((v) => alvo.has(v.id))) return null
+  const bruto = doMapaDoItem(p?.etapas, p, idx)
+  return {
+    montagem: Math.max(0, arredondaQtd(bruto?.montagem)),
+    produzido: Math.max(0, arredondaQtd(bruto?.produzido)),
+    volumes: vs.map((v) => ({ id: v.id, qtd: v.qtd, et: alvo.has(v.id) ? para : v.et })),
+    por: quem || '',
+    em: new Date().toISOString(),
+  }
 }
 
 // item terminado: tudo entregue (é o que permite tirar o pedido de `pedidos`)
