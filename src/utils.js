@@ -350,19 +350,35 @@ export const itemPertenceAoPainel = (painel, p, idx, mat) => qtdNoPainel(painel,
 // Snapshot de propósito: o que foi expedido depois não entra numa carga já montada.
 export const STATUS_CARGA = { MONTANDO: 'montando', SAIU: 'saiu', CONCLUIDA: 'concluida' }
 
-// itens de um pedido que estão expedidos e portanto podem entrar numa carga
+// O que de um pedido pode entrar numa carga — um registro por VOLUME.
+// É o volume que o motorista conta e que a conferência marca, e volumes do mesmo
+// item podem ir em viagens diferentes. Item legado (que foi expedido antes de
+// existir embalo) entra como um volume único, sem id.
 export function itensParaCarga(p) {
-  return (p?.itens || []).map((it, i) => ({
-    idVenda: p.idVenda,
-    itemKey: keyDoItem(p, i),
-    produto: it.produto || '',
-    qtd: qtdNaEtapa(p, i, 'expedido'),
-    qtdItem: arredondaQtd(it.qtd),
-    linha: linhaDoItem(p, i),
-    material: '',            // preenchido na tela, que tem o cadastro de Itens
-    conferido: false,
-  })).filter((x) => x.qtd > 0)
+  const out = []
+  ;(p?.itens || []).forEach((it, i) => {
+    const comum = {
+      idVenda: p.idVenda,
+      itemKey: keyDoItem(p, i),
+      produto: it.produto || '',
+      qtdItem: arredondaQtd(it.qtd),
+      linha: linhaDoItem(p, i),
+      material: '',          // preenchido na tela, que tem o cadastro de Itens
+      conferido: false,
+    }
+    const vols = volumesDoItem(p, i).filter((v) => v.et === 'expedido')
+    if (vols.length) {
+      for (const v of vols) out.push({ ...comum, volumeId: v.id, volumeN: v.n, qtd: v.qtd })
+    } else {
+      const q = qtdNaEtapa(p, i, 'expedido')
+      if (q > 0) out.push({ ...comum, volumeId: '', volumeN: 0, qtd: q })
+    }
+  })
+  return out
 }
+
+// chave de comprometimento com uma carga: por VOLUME quando ele existe
+export const chaveCarga = (it) => `${it.idVenda}|${it.itemKey}|${it.volumeId || ''}`
 
 // próximo número da carga. Volume é de poucas por dia e um operador só, então
 // max+1 basta; se um dia duas telas criarem no mesmo segundo, o número repete —
@@ -537,6 +553,31 @@ export function mapaEtapasComQtd(p, movimentos, quem) {
   })
   return mapa
 }
+
+// Materializa `etapas` movendo VOLUMES. movs = [{ idx, ids, para }].
+// Item sem volume (legado, que andou antes do embalo) é congelado como está.
+export function mapaEtapasMovendoVolumes(p, movs, quem) {
+  const porIdx = new Map((movs || []).map((m) => [m.idx, m]))
+  const mapa = {}
+  ;(p.itens || []).forEach((_, i) => {
+    const k = keyDoItem(p, i)
+    const m = porIdx.get(i)
+    const novo = m ? movePorVolume(p, i, m.ids, m.para, quem) : null
+    if (novo) { mapa[k] = novo; return }
+    const ant = doMapaDoItem(p?.etapas, p, i)
+    if (Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[k] = ant; return }
+    const d = distribuicaoDoItem(p, i)
+    mapa[k] = {
+      montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
+      por: ant?.por || '', em: ant?.em || '',
+    }
+  })
+  return mapa
+}
+
+// ids dos volumes de um item que estão numa etapa
+export const volumesNaEtapa = (p, idx, et) =>
+  volumesDoItem(p, idx).filter((v) => v.et === et).map((v) => v.id)
 
 // Permissão em DOIS eixos: SETOR (o que eu faço) × MATERIAL (com o que trabalho).
 // materiais vazio = todos os materiais (padrão de quem não foi restringido).

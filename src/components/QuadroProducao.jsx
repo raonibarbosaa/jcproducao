@@ -10,6 +10,7 @@ import {
   registrosAuditoria, pegarIP, progressoNoPainel, ordemRota,
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
+  temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -106,6 +107,14 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
   // movimentos = [{ idx, de, para, qtd }] — com produção parcial o item pode
   // avançar só em parte, e o resto continua onde estava.
   async function mover(p, movimentos, marca) {
+    // Item já embalado não anda por quantidade: move-se o VOLUME inteiro, que é
+    // a unidade física dali em diante.
+    const porVolume = (movimentos || [])
+      .filter((m) => m.para && temVolumes(p, m.idx))
+      .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(p, m.idx, m.de), para: m.para }))
+      .filter((m) => m.ids.length)
+    if (porVolume.length) return moverVolumes(p, porVolume, marca)
+
     const mov = (movimentos || []).filter((m) => m.para && m.qtd > 0)
     if (!mov.length || salvando) return
     setSalvando(marca)
@@ -180,6 +189,39 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     } catch (e) {
       console.error('Erro ao fechar montagem:', e)
       alert('Erro ao fechar: ' + e.message)
+    } finally {
+      setSalvando('')
+    }
+  }
+
+  // move volumes de etapa (expedir, voltar) — mesma auditoria do mover por quantidade
+  async function moverVolumes(p, movs, marca) {
+    if (salvando) return
+    setSalvando(marca)
+    try {
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'pedidos', p.idVenda), {
+        etapas: mapaEtapasMovendoVolumes(p, movs, nome),
+      })
+      const quem = {
+        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+        perfil: perfil || '', ip,
+      }
+      const idxs = movs.map((m) => m.idx)
+      const regs = registrosAuditoria(p, idxs, (i) => movs.find((m) => m.idx === i)?.para, quem,
+        (i) => materialDoItem(p.itens[i], itensCad))
+      regs.forEach((r, n) => {
+        const m = movs[n]
+        const vols = volumesDoItem(p, m.idx).filter((v) => m.ids.includes(v.id))
+        r.qtd = arredondaQtd(vols.reduce((sm, v) => sm + v.qtd, 0))
+        r.qtdItem = arredondaQtd(p.itens[m.idx]?.qtd)
+        r.volumes = vols.length
+      })
+      for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
+      await batch.commit()
+    } catch (e) {
+      console.error('Erro ao mover volumes:', e)
+      alert('Erro ao mover: ' + e.message)
     } finally {
       setSalvando('')
     }

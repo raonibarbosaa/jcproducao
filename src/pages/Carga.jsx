@@ -3,7 +3,7 @@ import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch }
 import { db } from '../firebase.js'
 import {
   STATUS_CARGA, itensParaCarga, proximoNumeroCarga, cargaAberta, progressoConferencia,
-  cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd,
+  cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
@@ -44,11 +44,15 @@ export default function Carga({ pedidos }) {
   // Quanto de cada item já está comprometido com alguma carga viva (montando ou
   // que já saiu). Sem isso o mesmo pedido entraria em duas cargas — e o caso não
   // é raro: expediram 40, foram numa carga, depois expediram os outros 60.
+  // Volume já numa carga viva não pode entrar noutra. Para o legado sem volume,
+  // a conta continua sendo por quantidade (expediram 40, depois mais 60).
+  const volsUsados = new Set()
   const comprometido = new Map()
   for (const c of cargas) {
     if (c.status === STATUS_CARGA.CONCLUIDA) continue
     for (const it of c.itens || []) {
-      const k = `${it.idVenda}|${it.itemKey}`
+      if (it.volumeId) { volsUsados.add(chaveCarga(it)); continue }
+      const k = chaveCarga(it)
       comprometido.set(k, arredondaQtd((comprometido.get(k) || 0) + (Number(it.qtd) || 0)))
     }
   }
@@ -59,10 +63,13 @@ export default function Carga({ pedidos }) {
   const disponiveis = []
   for (const p of (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))) {
     const livres = itensParaCarga(p)
+      .filter((it) => !it.volumeId || !volsUsados.has(chaveCarga(it)))
       .map((it) => ({
         ...it,
         material: materialDoItem({ produto: it.produto }, itensCad),
-        qtd: arredondaQtd(it.qtd - (comprometido.get(`${it.idVenda}|${it.itemKey}`) || 0)),
+        qtd: it.volumeId
+          ? it.qtd
+          : arredondaQtd(it.qtd - (comprometido.get(chaveCarga(it)) || 0)),
       }))
       .filter((it) => it.qtd > 0)
     if (livres.length) disponiveis.push({ p, itens: livres })
@@ -263,12 +270,12 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
                     </label>
                     <ul className="itens">
                       {itens.map((it) => (
-                        <li key={it.itemKey}>
-                          <span><SeloLinha linha={it.linha} />{it.produto}</span>
-                          <span className="q">
-                            {fmtQtd(it.qtd)}
-                            {it.qtdItem > it.qtd && <small className="q-de"> de {fmtQtd(it.qtdItem)}</small>}
+                        <li key={chaveCarga(it)}>
+                          <span>
+                            <SeloLinha linha={it.linha} />{it.produto}
+                            {it.volumeN > 0 && <small className="q-de"> · vol. {it.volumeN}</small>}
                           </span>
+                          <span className="q">{fmtQtd(it.qtd)}</span>
                         </li>
                       ))}
                     </ul>
@@ -308,7 +315,7 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
   const { total, conferidos } = progressoConferencia(carga)
   const grupos = agrupaCargaPorPedido(carga, pedidos)
   const pronto = cargaConferida(carga)
-  const idxDe = (it) => (carga.itens || []).findIndex((x) => x.idVenda === it.idVenda && x.itemKey === it.itemKey)
+  const idxDe = (it) => (carga.itens || []).findIndex((x) => chaveCarga(x) === chaveCarga(it))
   return (
     <>
       <div className={`card ${pronto ? 'em_dia' : ''} no-print`} style={{ marginBottom: 16 }}>
@@ -317,7 +324,7 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
           {carga.motorista && <span className="chip">🚚 {carga.motorista}</span>}
           <span className="chip">{(carga.rotas || []).join(' · ') || '—'}</span>
           <span className={`chip${pronto ? '' : ' rota-warn'}`} style={pronto ? { color: 'var(--ok)' } : null}>
-            {conferidos} de {total} conferidos
+            {conferidos} de {total} volumes conferidos
           </span>
           <div className="spacer" style={{ flex: 1 }} />
           <button className="btn" onClick={() => onConferirTudo(carga, !pronto)}>
@@ -347,12 +354,13 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
             )}
             <ul className="itens">
               {g.itens.map((it) => (
-                <li key={it.itemKey}>
+                <li key={chaveCarga(it)}>
                   <label style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, cursor: 'pointer' }}>
                     <input type="checkbox" className="card-check" checked={!!it.conferido}
                       onChange={(e) => onConferir(carga, idxDe(it), e.target.checked)} />
                     <span style={it.conferido ? { textDecoration: 'line-through', opacity: .6 } : null}>
                       <SeloLinha linha={it.linha} />{it.produto}
+                      {it.volumeN > 0 && <small className="q-de"> · volume {it.volumeN}</small>}
                     </span>
                   </label>
                   <span className="q">{fmtQtd(it.qtd)}</span>
@@ -377,11 +385,11 @@ function RomaneioCarga({ carga, grupos, clientes }) {
         <div className="meta">
           {fmtData(carga.criadaEm)}<br />
           {carga.motorista ? `🚚 ${carga.motorista} · ` : ''}
-          {pedidosDaCarga(carga).length} entrega(s)
+          {pedidosDaCarga(carga).length} entrega(s) · {(carga.itens || []).length} volume(s)
         </div>
       </div>
       <div className="pr-rota forte">
-        {(carga.rotas || []).join(' · ') || 'SEM ROTA'} · {(carga.itens || []).length} item(ns)
+        {(carga.rotas || []).join(' · ') || 'SEM ROTA'} · {(carga.itens || []).length} volume(s)
       </div>
       {grupos.map((g) => (
         <div key={g.idVenda} className="pr-ped parada">
@@ -393,12 +401,13 @@ function RomaneioCarga({ carga, grupos, clientes }) {
           </div>
           <table className="pr-itens"><tbody>
             {g.itens.map((it) => (
-              <tr key={it.itemKey}>
-                <td><SeloLinha linha={it.linha} />{it.produto} <span className="ref">#{g.idVenda}</span></td>
-                <td className="q">
-                  {fmtQtd(it.qtd)}
-                  {it.qtdItem > it.qtd && <span className="ref"> de {fmtQtd(it.qtdItem)}</span>}
+              <tr key={chaveCarga(it)}>
+                <td>
+                  <SeloLinha linha={it.linha} />{it.produto}
+                  {it.volumeN > 0 && <span className="ref"> · vol. {it.volumeN}</span>}
+                  <span className="ref"> #{g.idVenda}</span>
                 </td>
+                <td className="q">{fmtQtd(it.qtd)}</td>
               </tr>
             ))}
           </tbody></table>

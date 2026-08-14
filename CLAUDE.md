@@ -17,6 +17,32 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
+## VOLUMES — o pacote físico (13/08/2026)
+> O motorista conta volume, não pesa kg. Depois da montagem o item deixa de andar
+> por quantidade solta e passa a andar por VOLUME.
+
+- **Onde mora:** `etapas[key] = { montagem, produzido, volumes: [{id, qtd, et}], por, em }`.
+  `et` do volume ∈ `expedicao|expedido|entregue` (`ETAPAS_VOLUME`).
+- **A SOMA dos volumes é a quantidade REAL produzida** — não existe campo "quanto deu",
+  criar os volumes já declara. Pode ficar acima ou abaixo do pedido.
+- **`produzido` é outra coisa:** as unidades PEDIDAS baixadas do lote. A diferença entre
+  `produzido` e a soma dos volumes é a **quebra de processo**, e é o que o financeiro cobra.
+  `linha = qtd − montagem − produzido`.
+- **Fechamento (`FecharMontagem.jsx`)**: "+ Criar volume" com o restante descontando, atalho
+  "tudo num volume só", e a pergunta da sobra **só quando sobra** — encerrar o item (baixa o
+  lote inteiro) × deixar pendente (baixa só o embalado). É essa escolha que mantém a entrega
+  parcial viva. Fechar é **por ITEM**: cada produto é embalado separado.
+- **Depois de embalado o item anda por volume:** `mapaEtapasMovendoVolumes`,
+  `volumesNaEtapa`, `movePorVolume`. O quadro, a carga e a entrega detectam com `temVolumes`
+  e caem no caminho de quantidade quando o item é legado.
+- ⚠️ **`mapaEtapasComQtd` PRESERVA a entrada de item embalado.** Sem isso um avanço por
+  quantidade apagaria o array de volumes — perda silenciosa do que a balança registrou.
+- **Carga por volume:** `itensParaCarga` devolve **um registro por volume** (com `volumeId`
+  e `volumeN`); `chaveCarga` inclui o volume, então volume já carregado não entra noutra
+  carga. Item legado entra como volume único com `volumeId: ''` e a conta antiga por
+  quantidade. A conferência conta volumes; o romaneio imprime "N volume(s)" e o volume de
+  cada linha.
+
 ## Produção PARCIAL por QUANTIDADE (12/08/2026)
 > O item deixou de andar inteiro. De 100 sacolas, 50 podem estar na montagem e 50 na
 > linha, e essa metade segue sozinha até a entrega e a baixa financeira.

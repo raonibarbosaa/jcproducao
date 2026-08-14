@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora, qtdNaEtapa, qtdPendente,
-  mapaEtapasComQtd, pedidoTodoEntregue, arredondaQtd, fmtQtd } from '../utils.js'
+  mapaEtapasComQtd, pedidoTodoEntregue, arredondaQtd, fmtQtd,
+  temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
@@ -65,7 +66,14 @@ export default function Rota({ pedidos }) {
       .map((i) => ({ idx: i, de: 'expedido', para: 'entregue', qtd: qtdNaEtapa(base, i, 'expedido') }))
       .filter((m) => m.qtd > 0)
     if (!movs.length) return
-    const etapas = mapaEtapasComQtd(base, movs, nome)
+    // item embalado baixa VOLUME por volume; o legado continua por quantidade
+    const porVolume = movs
+      .filter((m) => temVolumes(base, m.idx))
+      .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(base, m.idx, 'expedido'), para: 'entregue' }))
+      .filter((m) => m.ids.length)
+    const etapas = porVolume.length
+      ? mapaEtapasMovendoVolumes(base, porVolume, nome)
+      : mapaEtapasComQtd(base, movs, nome)
     const depois = { ...base, etapas }
     const acabou = pedidoTodoEntregue(depois)
     const n = (p.remessas || 0) + 1
