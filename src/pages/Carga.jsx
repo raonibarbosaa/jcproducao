@@ -203,6 +203,30 @@ export default function Carga({ pedidos }) {
     } finally { setSalvando('') }
   }
 
+  // Tira UM pedido da carga em montagem: ele volta para a lista de disponíveis.
+  // Faltava isso — só existia "cancelar carga", que é tudo ou nada, e na prática
+  // o que acontece é um pedido não caber ou o cliente pedir para adiar.
+  async function tirarDaCarga(carga, idVenda) {
+    if (salvando) return
+    const itens = (carga.itens || []).filter((it) => String(it.idVenda) !== String(idVenda))
+    if (!confirm(`Tirar o pedido #${idVenda} desta carga? Ele volta a ficar disponível para carregar.`)) return
+    setSalvando('tirar')
+    try {
+      if (!itens.length) {
+        // sem item nenhum a carga não tem razão de existir
+        await deleteDoc(doc(db, 'cargas', carga.id))
+      } else {
+        await updateDoc(doc(db, 'cargas', carga.id), {
+          itens,
+          pedidos: [...new Set(itens.map((it) => it.idVenda))],
+          rotas: carga.rotas || [],
+        })
+      }
+    } catch (e) {
+      alert('Não foi possível tirar da carga: ' + (e.code || e.message))
+    } finally { setSalvando('') }
+  }
+
   async function cancelarCarga(carga) {
     if (!confirm(`Cancelar a carga #${carga.numero}? Os pedidos voltam a ficar disponíveis para outra carga.`)) return
     await deleteDoc(doc(db, 'cargas', carga.id))
@@ -348,7 +372,7 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
 }
 
 // ---------- conferir e marcar a saída ----------
-function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir, onConferirTudo, onSaida, onCancelar }) {
+function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir, onConferirTudo, onSaida, onCancelar, onTirar }) {
   const { total, conferidos } = progressoConferencia(carga)
   const grupos = agrupaCargaPorPedido(carga, pedidos)
   const pronto = cargaConferida(carga)
@@ -382,6 +406,10 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
             <div className="card-top">
               <div className="cliente">{g.p ? nomeCliente(g.p.cliente, clientes) : `#${g.idVenda}`}</div>
               <div className="idv">#{g.idVenda}</div>
+              <button className="btn no-print" disabled={!!salvando}
+                style={{ marginLeft: 8, padding: '4px 10px', fontSize: 12 }}
+                title="Tirar este pedido da carga — ele volta para a expedição"
+                onClick={() => onTirar(carga, g.idVenda)}>↩ tirar da carga</button>
             </div>
             {g.p && (
               <div className="meta-row">

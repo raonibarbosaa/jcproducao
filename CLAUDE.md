@@ -508,6 +508,10 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `trabalhaComCarga()` (cargas) e o `allow update` de `pedidos` com os campos de saída
   para operador com esses setores. Liberar só a aba faria a tela aparecer e nada
   funcionar.
+- **Tirar UM pedido da carga em montagem** (`↩ tirar da carga`, no card da conferência):
+  ele volta para a lista de disponíveis com os volumes dele. Antes só existia "cancelar
+  carga", que é tudo ou nada — e o caso real é um pedido não caber ou o cliente pedir para
+  adiar. Tirando o último pedido, a carga é apagada: carga sem item não tem razão de ser.
 - **Retornar carga que já saiu (só DONO):** botão no histórico. Os pedidos perdem
   `saidaEm/saidaMotorista/saidaPor` e os volumes voltam a ficar livres para outra viagem.
   A carga vira `cancelada` e **continua no histórico** — apagar esconderia que a viagem
