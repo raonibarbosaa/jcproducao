@@ -651,7 +651,19 @@ apuração de custo por pedido/linha/produto e margem. Depende do cadastro de It
 - **Datas no SheetJS:** arquivos de teste precisam de `Date` nativo + `cellDates: true` no
   `json_to_sheet` e no `writeFile`.
 - **CNAME** tem que ir pro `dist/` antes de sobrescrever o `gh-pages`, senão cai o domínio.
-- **Recalcular no render** (data, nome) em vez de congelar no import.
+- **Recalcular no render** (data, nome, **ROTA**) em vez de congelar no import.
+  A rota já foi vítima disso: `detectaRota` rodava uma vez no import e gravava
+  `p.rota`, então mover uma cidade de rota no cadastro não corrigia nenhum pedido
+  já importado (CEDRO DE SÃO JOÃO passou para a ROTA 03 e os pedidos antigos
+  continuaram aparecendo no planejamento da ROTA 01 — relatado pelo dono em
+  14/08/2026). Agora `rotaDe(p, vendedores)` recalcula, aplicada num ponto só no
+  `App.jsx` (`useMemo` sobre os pedidos), como `aplicaCorrecoes`.
+  ⚠️ **`rotaDe` só substitui quando o cadastro sabe responder**: cidade fora de
+  qualquer rota devolve 'FORA DE ROTA', e trocar uma rota real por isso apagaria
+  informação por causa de um buraco no cadastro.
+  ⚠️ Com a rota viva, quem já está num plano de entrega é listado a partir de
+  `todos`, não dos candidatos da rota — senão o pedido que mudou de cidade sumiria
+  da previsão continuando dentro de `plano.pedidos`, invisível.
 
 ## Método de trabalho
 Fechar o desenho antes de codar. Implementar **uma feature por vez** e testar/ajustar

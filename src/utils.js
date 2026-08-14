@@ -1288,6 +1288,23 @@ export function diasEntrega(raw, cadastros) {
 
 // ---------- detecção de rota pela cidade ----------
 // retorna { rota: 'ROTA 01' } ou { rota: 'FORA DE ROTA' } ou { rota: 'SEM ROTA' }
+// A rota VIVA do pedido, recalculada pelo cadastro de cidades ATUAL.
+//
+// `p.rota` é congelada no import (`detectaRota` roda uma vez e grava), então
+// corrigir a cidade no cadastro depois não arrumava pedido nenhum: CEDRO DE SÃO
+// JOÃO passou para a ROTA 03 e os pedidos já importados continuaram na rota
+// velha — aparecendo no planejamento da viagem errada. É a mesma armadilha da
+// data de entrega, resolvida com `previsaoDe()` calculando no render.
+//
+// ⚠️ Só SUBSTITUI quando o cadastro sabe responder. Cidade que não está em rota
+// nenhuma devolve 'FORA DE ROTA', e trocar uma rota real por isso apagaria a
+// informação que existe por causa de um buraco no cadastro.
+export function rotaDe(p, cadastros) {
+  const { rota } = detectaRota(p?.vendedorRaw || p?.vendedor, p?.cidade, cadastros)
+  if (rota && rota !== 'FORA DE ROTA' && rota !== 'SEM ROTA') return rota
+  return p?.rota || rota || 'SEM ROTA'
+}
+
 export function detectaRota(vendedorRaw, cidadeRaw, cadastros) {
   const v = achaVendedor(vendedorRaw, cadastros)
   if (!v || !v.rotas || !v.rotas.length) return { rota: 'SEM ROTA' }

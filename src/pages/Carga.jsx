@@ -138,7 +138,12 @@ export default function Carga({ pedidos }) {
   const noPlano = new Set((plano?.pedidos || []).map(String))
   const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
 
-  const dentro = candidatos.filter((p) => noPlano.has(String(p.idVenda)))
+  // O que está NA previsão sai de `todos`, não dos candidatos: a rota é viva
+  // (recalculada pelo cadastro de cidades), então um pedido cuja cidade mudou de
+  // rota deixaria de casar com a do plano e sumiria da tela — continuando dentro
+  // de `plano.pedidos`, invisível. Quem entrou na viagem fica visível até alguém
+  // tirar.
+  const dentro = plano ? todos.filter((p) => noPlano.has(String(p.idVenda))) : []
   const fora = candidatos
     .filter((p) => !noPlano.has(String(p.idVenda)) && idsFiltrados.has(p.idVenda))
     .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))

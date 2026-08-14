@@ -1,8 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { useAuth } from './contexts/AuthContext.jsx'
+import { useCadastros } from './contexts/CadastrosContext.jsx'
 import Layout from './components/Layout.jsx'
 import Login from './pages/Login.jsx'
 import Triagem from './pages/Triagem.jsx'
@@ -19,7 +20,7 @@ import Conciliacao from './pages/Conciliacao.jsx'
 import Erros from './pages/Erros.jsx'
 import Carga from './pages/Carga.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
-import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes } from './utils.js'
+import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
@@ -33,7 +34,8 @@ const ACESSO = {
 
 export default function App() {
   const { user, perfil, vendedorNome, setores, carregando } = useAuth()
-  const [pedidos, setPedidos] = useState([])
+  const { vendedores: cadastros } = useCadastros()
+  const [pedidosCrus, setPedidos] = useState([])
   const [problemas, setProblemas] = useState([])
 
   // assina pedidos em tempo real. Vendedor só enxerga os PRÓPRIOS pedidos
@@ -65,6 +67,13 @@ export default function App() {
       (e) => console.error('Erro ao ler problemas:', e))
     return unsub
   }, [user, perfil, vendedorNome])
+
+  // A ROTA é recalculada aqui, num ponto só — como as correções de quantidade.
+  // Congelada no import, ela não acompanhava o cadastro de cidades: corrigir a
+  // rota de uma cidade não mexia em nenhum pedido já importado.
+  const pedidos = useMemo(
+    () => pedidosCrus.map((p) => ({ ...p, rota: rotaDe(p, cadastros) })),
+    [pedidosCrus, cadastros])
 
   if (carregando) return <div className="loading">Carregando…</div>
   if (!user) return <Login />
