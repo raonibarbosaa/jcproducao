@@ -599,6 +599,11 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `⚠ ROTA · VENDEDOR` na linha, `+N de fora` no cabeçalho da viagem e
   `⚠ N de outras rotas` no card da lista — a viagem muda de itinerário, e
   ninguém pode descobrir isso só na hora de carregar.
+- **Filtro por SITUAÇÃO** (`SITUACOES`: Todos · ✅ Prontos · 📦 Na montagem ·
+  🏭 Na linha) nas duas listas do plano. "O que já dá para levar" e "o que sai da
+  montagem a tempo" são perguntas diferentes, e a lista misturada não responde
+  nenhuma. ⚠️ O "pôr todos" usa a lista VISÍVEL — com um filtro ligado, acrescentar
+  também os escondidos seria uma ação maior do que a tela mostra.
 - ⚠️ **Os seletores da tela saem de TODOS os pedidos, não dos prontos.** Vendedor
   sem nada pronto no momento sumia do filtro, e com ele as rotas dele. E as
   ROTAS do formulário de nova previsão vêm do **cadastro do vendedor**

@@ -11,7 +11,7 @@ import {
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
-  rotasDoVendedor,
+  rotasDoVendedor, pendenciasDoPedido, MODO_ORDER,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -255,10 +255,12 @@ export default function Carga({ pedidos }) {
     })
   }
 
-  async function alternaTodos(ligar) {
+  async function alternaTodos(ligar, lista) {
     if (!plano || salvando) return
     const ids = new Set((plano.pedidos || []).map(String))
-    for (const p of (ligar ? fora : dentro)) {
+    // usa a lista VISÍVEL: com um filtro de situação ligado, "pôr todos" que
+    // acrescentasse os escondidos seria uma ação maior do que a tela mostra
+    for (const p of (lista || (ligar ? fora : dentro))) {
       if (ligar && noutroPlano.has(String(p.idVenda))) continue
       ligar ? ids.add(String(p.idVenda)) : ids.delete(String(p.idVenda))
     }
@@ -762,6 +764,14 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
 // quantos pedidos de outras rotas a busca desenha de uma vez
 const LIMITE_BUSCA = 40
 
+// filtro por SITUAÇÃO do pedido na fábrica
+const SITUACOES = [
+  { id: 'todos', nm: 'Todos', dica: 'Tudo que pode entrar na viagem' },
+  { id: 'pronto', nm: '✅ Prontos', dica: 'Já tem volume expedido, dá para carregar agora' },
+  { id: 'montagem', nm: '📦 Na montagem', dica: 'Está sendo embalado — sai em breve' },
+  { id: 'linha', nm: '🏭 Na linha', dica: 'Ainda em silk, clichê ou gráfica' },
+]
+
 // ---------- PLANEJAMENTO: montar UMA viagem ----------
 // Duas listas: o que está NESTA viagem e o que ainda dá para pôr. Todo pedido
 // diz onde está — pronto (com volumes e peso) ou em que setor da fábrica. Esse
@@ -773,6 +783,23 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
                        filtros, setFiltros, onVoltar, onAlterna, onAlternaTodos,
                        onLiberar, onEncerrar, onDevolver }) {
   const [outras, setOutras] = useState(false)
+  const [situacao, setSituacao] = useState('todos')
+
+  // Onde o pedido está: pronto para carregar, ou parado em que parte da fábrica.
+  // Planejar é decidir por prazo — "o que já dá para levar" e "o que sai da
+  // montagem a tempo" são perguntas diferentes, e a lista misturada não responde
+  // nenhuma das duas.
+  const casaSituacao = (p) => {
+    if (situacao === 'todos') return true
+    const pronto = (livresPorPedido.get(String(p.idVenda)) || []).length > 0
+    if (situacao === 'pronto') return pronto
+    const pend = pendenciasDoPedido(p)
+    if (situacao === 'montagem') return pend.some((x) => x.etapa === 'montagem')
+    if (situacao === 'linha') return pend.some((x) => MODO_ORDER.includes(x.etapa))
+    return true
+  }
+  const foraV = fora.filter(casaSituacao)
+  const outrasV = deOutrasRotas.filter(casaSituacao)
   const estoura = capacidadeKg > 0 && peso.kg > capacidadeKg
   const forasteiros = dentro.filter((p) => !daRotaDo(p, plano)).length
   return (
@@ -821,10 +848,10 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
         <div className="plano-col">
           <div className="pc-head">
             {outras ? '🔍 Buscar em outras rotas' : '📋 Disponíveis desta rota'}
-            <span className="pc-n">{outras ? deOutrasRotas.length : fora.length}</span>
-            {!outras && fora.length > 0 && (
+            <span className="pc-n">{outras ? outrasV.length : foraV.length}</span>
+            {!outras && foraV.length > 0 && (
               <button className="mini-btn" style={{ marginLeft: 'auto' }}
-                onClick={() => onAlternaTodos(true)}>pôr todos</button>
+                onClick={() => onAlternaTodos(true, foraV)}>pôr todos</button>
             )}
           </div>
           <div className="pc-modos">
@@ -841,11 +868,18 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
           <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor={!outras}
             pedidos={outras ? todos : undefined} />
 
+          <div className="pc-sit">
+            {SITUACOES.map((x) => (
+              <button key={x.id} className={`chip${situacao === x.id ? ' sit-on' : ''}`}
+                onClick={() => setSituacao(x.id)} title={x.dica}>{x.nm}</button>
+            ))}
+          </div>
+
           {outras ? (
-            deOutrasRotas.length === 0
+            outrasV.length === 0
               ? <div className="pc-vazio">Nenhum pedido de fora desta rota bate com essa busca.</div>
               : <>
-                  {deOutrasRotas.slice(0, LIMITE_BUSCA).map((p) => (
+                  {outrasV.slice(0, LIMITE_BUSCA).map((p) => (
                     <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
                       livres={livresPorPedido.get(String(p.idVenda))}
                       noutro={noutroPlano.get(String(p.idVenda))} deFora
@@ -853,17 +887,21 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
                   ))}
                   {/* corte VISÍVEL: lista truncada sem aviso passa a impressão de
                       que aquilo é tudo que existe */}
-                  {deOutrasRotas.length > LIMITE_BUSCA && (
+                  {outrasV.length > LIMITE_BUSCA && (
                     <div className="pc-vazio">
-                      Mostrando {LIMITE_BUSCA} de <b>{deOutrasRotas.length}</b> — use os filtros
+                      Mostrando {LIMITE_BUSCA} de <b>{outrasV.length}</b> — use os filtros
                       acima para achar o pedido que falta.
                     </div>
                   )}
                 </>
           ) : (
-            fora.length === 0
-              ? <div className="pc-vazio">Nenhum pedido sobrando nesta rota.</div>
-              : fora.map((p) => (
+            foraV.length === 0
+              ? <div className="pc-vazio">
+                  {fora.length > 0
+                    ? `Nenhum dos ${fora.length} pedido(s) desta rota está nessa situação.`
+                    : 'Nenhum pedido sobrando nesta rota.'}
+                </div>
+              : foraV.map((p) => (
                   <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
                     livres={livresPorPedido.get(String(p.idVenda))}
                     noutro={noutroPlano.get(String(p.idVenda))}

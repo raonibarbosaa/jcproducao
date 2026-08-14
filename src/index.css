@@ -880,3 +880,9 @@ input, select { font-family: var(--font); }
 /* alternar entre a fila natural da rota e a busca livre em outras rotas */
 .pc-modos { display: flex; gap: 6px; margin-bottom: 8px; }
 .pc-modos .btn { flex: 1; justify-content: center; font-size: 13px; padding: 7px 10px; }
+
+/* filtro por situação do pedido (pronto / montagem / linha) */
+.pc-sit { display: flex; gap: 5px; flex-wrap: wrap; margin: 0 0 10px; }
+.pc-sit .chip { cursor: pointer; border-color: var(--border); }
+.pc-sit .chip:hover { border-color: var(--text-faint); }
+.pc-sit .chip.sit-on { background: var(--accent); color: #1a1205; border-color: var(--accent); font-weight: 700; }
