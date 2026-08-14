@@ -106,6 +106,18 @@ service cloud.firestore {
       allow delete: if ehStaff();
     }
 
+    // Problemas: erro reportado por quem está produzindo (o papel diz uma coisa,
+    // o sistema outra). QUALQUER pessoa com perfil reporta — quem vê o erro é
+    // quem está com a peça na mão. Só staff resolve/fecha.
+    match /problemas/{id} {
+      // o vendedor só enxerga os erros dos PRÓPRIOS pedidos — mesma regra do
+      // resto do sistema; sem isso ele veria cliente e número de pedido alheio
+      allow read: if ehStaff() || ehOperador() || ehExpedicao()
+        || (ehVendedor() && resource.data.vendedor == meuVendedor());
+      allow create: if temPerfil();
+      allow update, delete: if ehStaff();
+    }
+
     // Auditoria: log APPEND-ONLY de quem moveu cada item no quadro.
     // Escreve quem pode mover (staff, operador, expedição) — o registro vai no
     // mesmo writeBatch da mudança de etapa. Lê SÓ o dono. Ninguém edita nem

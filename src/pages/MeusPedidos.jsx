@@ -6,6 +6,7 @@ import {
   nomeCliente, MODO_NM, linhaDoItem, pegarIP,
   indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora,
   unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
+  indexaProblemas, problemasDoPedido, nomeCampoErro,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import QuadroVendedor from '../components/QuadroVendedor.jsx'
@@ -16,7 +17,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 // impostos pelas regras), agrupados por rota. A CIÊNCIA é POR PEDIDO — o botão
 // da rota é só um atalho que dá ciência nos que ainda faltam. Assim um pedido
 // que entra na rota depois nunca fica coberto por uma ciência que não o viu.
-export default function MeusPedidos({ pedidos }) {
+export default function MeusPedidos({ pedidos, problemas }) {
   // sem cadastro de Itens: as três montagens viram uma só na visão do vendedor,
   // então o material do item deixou de importar aqui
   const { vendedores, clientes } = useCadastros()
@@ -46,6 +47,8 @@ export default function MeusPedidos({ pedidos }) {
   }, [vendedorNome])
 
   const mapaC = indexaCienciasPorPedido(ciencias)
+  // erros que a fábrica reportou nos pedidos dele — é ele quem corrige no Posseidon
+  const mapaProb = indexaProblemas(problemas)
 
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
   const cat = base.filter((p) => p.status)
@@ -155,6 +158,7 @@ export default function MeusPedidos({ pedidos }) {
               <div className="cards">
                 {ps.map((p) => (
                   <CardMeu key={p.idVenda} p={p} clientes={clientes}
+                    problemas={problemasDoPedido(mapaProb, p.idVenda)}
                     c={cienciaDoPedido(mapaC, 'vendedor', p.idVenda)}
                     salvando={salvando}
                     onCiencia={() => darCiencia([p], `p:${p.idVenda}`)} />
@@ -168,7 +172,7 @@ export default function MeusPedidos({ pedidos }) {
   )
 }
 
-function CardMeu({ p, clientes, c, salvando, onCiencia }) {
+function CardMeu({ p, clientes, c, salvando, onCiencia, problemas }) {
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   return (
     <div className={`card ${atrasado ? 'atrasado' : 'em_dia'}`}>
@@ -183,6 +187,20 @@ function CardMeu({ p, clientes, c, salvando, onCiencia }) {
           ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
           : <span className="chip">{fmtData(p.previsao)}</span>}
       </div>
+      {problemas?.length > 0 && (
+        <div className="erro-aviso">
+          ⚠ {problemas.length === 1 ? 'A fábrica reportou um erro' : `A fábrica reportou ${problemas.length} erros`} neste pedido:
+          {problemas.map((x, n) => (
+            <div key={n} style={{ marginTop: 4 }}>
+              <b>{nomeCampoErro(x.campo)}</b>{x.produto ? ` · ${x.produto}` : ''}
+              <br />no sistema: {x.noSistema || '—'} · <b>no papel: {x.noPapel || '—'}</b>
+            </div>
+          ))}
+          <div style={{ marginTop: 5, color: 'var(--text-faint)' }}>
+            Corrija no Posseidon para não repetir na próxima importação.
+          </div>
+        </div>
+      )}
       <ul className="itens">
         {(p.itens || []).map((it, i) => (
           <li key={i}>

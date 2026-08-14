@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, writeBatch } from 'firebase/firestore'
+import { collection, doc, writeBatch, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
@@ -11,12 +11,14 @@ import {
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
+  docProblema, problemaDoItem, temCorrecao,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
 import SeloLinha from './SeloLinha.jsx'
 import FecharMontagem from './FecharMontagem.jsx'
+import ReportarErro from './ReportarErro.jsx'
 
 // Quadro de produção POR ITEM, uma FILA POR SETOR: cada painel recebido mostra
 // só o que está NAQUELE posto agora — o item some da fila assim que avança.
@@ -24,7 +26,7 @@ import FecharMontagem from './FecharMontagem.jsx'
 // quem monta papel não é quem monta plástico; a etapa gravada segue 'montagem'.
 // Recebe uma LISTA de painéis: um só = fila do operador; todos = visão geral.
 // NÃO mostra valor para operador/designer/expedição (só dono e financeiro).
-export default function QuadroProducao({ pedidos, clientes, itensCad, paineis }) {
+export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas }) {
   const { user, perfil, nome, setores, materiais } = useAuth()
   const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
   const ehStaff = perfil === 'dono' || perfil === 'designer'
@@ -43,6 +45,8 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
   const poeQtd = (k, v) => setQtds((s) => ({ ...s, [k]: v }))
   // item cujo fechamento de montagem está aberto: { p, idx }
   const [fechando, setFechando] = useState(null)
+  // item cujo report de erro está aberto: { p, idx }
+  const [reportando, setReportando] = useState(null)
   // IP pego uma vez por sessão da tela — não atrasa cada movimento
   const [ip, setIp] = useState('')
   useEffect(() => { pegarIP().then(setIp) }, [])
@@ -240,6 +244,25 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     }
   }
 
+  // Registra um erro visto por quem está produzindo. Não move nada e não trava
+  // o item — só acende o ⚠ até alguém resolver.
+  async function reportarErro(p, idx, dados) {
+    if (salvando) return
+    setSalvando('reportar')
+    try {
+      const quem = {
+        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+        perfil: perfil || '', ip,
+      }
+      await setDoc(doc(collection(db, 'problemas')), docProblema({ p, idx, ...dados, quem }))
+      setReportando(null)
+    } catch (e) {
+      alert('Não foi possível reportar: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   if (!paineis.length) {
     return <div className="empty"><div className="big">🏭</div>Você não tem setores de produção liberados. Fale com o administrador.</div>
   }
@@ -256,6 +279,14 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
           ⚠ {semMaterial.size} item(ns) na montagem sem <b>material</b> no cadastro de Itens — aparecem em
           todas as montagens até alguém dizer se são papel, plástico, etiqueta ou alça.
         </div>
+      )}
+      {reportando && (
+        <ReportarErro
+          p={reportando.p} idx={reportando.idx} clientes={clientes} itensCad={itensCad}
+          salvando={salvando === 'reportar'}
+          onCancelar={() => setReportando(null)}
+          onEnviar={(dados) => reportarErro(reportando.p, reportando.idx, dados)}
+        />
       )}
       {fechando && (
         <FecharMontagem
@@ -356,7 +387,20 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                                 <span className="q" title={aqui < total ? `${fmtQtd(total)} ${un} no pedido` : ''}>
                                   {fmtQtd(aqui)}
                                   {aqui < total && <small className="q-de"> de {fmtQtd(total)}</small>}
+                                  {/* quantidade corrigida: mostra o que veio da planilha
+                                      ao lado, para ninguém achar que mudou sozinha */}
+                                  {temCorrecao(p, i) && (
+                                    <small className="q-de" title="Corrigido a partir de um erro reportado">
+                                      {' '}(era {fmtQtd(it._qtdOriginal)})
+                                    </small>
+                                  )}
                                 </span>
+                                <button className={`mini-btn${problemaDoItem(problemas, p.idVenda, keyDoItem(p, i)).length ? ' alerta' : ''}`}
+                                  title={problemaDoItem(problemas, p.idVenda, keyDoItem(p, i)).length
+                                    ? 'Já existe erro reportado neste item — clique para reportar outro'
+                                    : 'Reportar erro: o papel não bate com o sistema'}
+                                  disabled={!!salvando}
+                                  onClick={() => setReportando({ p, idx: i })}>⚠</button>
                                 {/* avança/volta SÓ este item, e só a quantidade digitada */}
                                 {podeMoverEtapa(pa.etapa) && (
                                   <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>

@@ -6,7 +6,7 @@ import {
   filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente,
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
-  paineisVisiveis, itemPertenceAoPainel, podeNoMaterial,
+  paineisVisiveis, itemPertenceAoPainel, podeNoMaterial, indexaProblemas,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -16,7 +16,7 @@ import QuadroProducao from '../components/QuadroProducao.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 
-export default function Producao({ pedidos }) {
+export default function Producao({ pedidos, problemas }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome, setores, materiais } = useAuth()
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
@@ -209,7 +209,8 @@ export default function Producao({ pedidos }) {
             ? <div className="empty"><div className="big">🏭</div>
                 {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
-            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad} paineis={paineisDoQuadro} />}
+            : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad}
+                paineis={paineisDoQuadro} problemas={indexaProblemas(problemas)} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}

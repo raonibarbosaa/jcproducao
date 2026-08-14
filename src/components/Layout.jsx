@@ -15,6 +15,7 @@ const LABEL = {
   usuarios: 'Usuários',
   meus: 'Meus Pedidos',
   ciencia: 'Ciência',
+  erros: 'Erros',
   auditoria: 'Auditoria',
   conciliacao: 'Conciliação',
 }

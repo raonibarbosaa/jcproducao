@@ -1229,6 +1229,73 @@ export async function pegarIP() {
 // cobria pedido que entrasse na rota depois. Quem indexa agora é
 // indexaCienciasPorPedido, que continua lendo os registros de rota antigos.
 
+// ---------- ERROS REPORTADOS E CORREÇÃO À PROVA DE IMPORT ----------
+// O vendedor lança errado no Posseidon e o papel que chega na fábrica tem a
+// informação certa, escrita à mão. Quem produz precisa reportar a diferença.
+//
+// A correção NÃO pode morar em `itens`: todo import sobrescreve aquele array e o
+// erro voltaria calado. Fica em `pedidos/{id}.correcoes`, que o import não conhece
+// (ele grava com merge e sem esse campo), e é aplicada na LEITURA.
+export const CAMPOS_ERRO = [
+  { id: 'quantidade', nm: 'Quantidade', corrige: true },
+  { id: 'produto', nm: 'Produto/medida', corrige: false },
+  { id: 'cliente', nm: 'Cliente ou entrega', corrige: false },
+  { id: 'outro', nm: 'Outro', corrige: false },
+]
+export const nomeCampoErro = (id) => CAMPOS_ERRO.find((c) => c.id === id)?.nm || id
+
+// aplica as correções sobre os itens do pedido. Chamado UMA vez, quando o App
+// carrega os pedidos — daí para baixo toda tela já vê o valor certo.
+export function aplicaCorrecoes(p) {
+  const cor = p?.correcoes
+  if (!cor || !Object.keys(cor).length || !Array.isArray(p.itens)) return p
+  let mudou = false
+  const itens = p.itens.map((it, i) => {
+    const c = cor[it.key || keyDoItem(p, i)]
+    const q = Number(c?.qtd)
+    if (!(q > 0) || q === Number(it.qtd)) return it
+    mudou = true
+    // guarda o original: as telas mostram "20 (era 12)" para ninguém achar que
+    // a planilha mudou sozinha
+    return { ...it, qtd: q, _qtdOriginal: arredondaQtd(it.qtd), _corrigidoPor: c.por || '' }
+  })
+  return mudou ? { ...p, itens } : p
+}
+
+export const temCorrecao = (p, idx) => !!p?.itens?.[idx]?._qtdOriginal
+
+// documento de um erro reportado
+export function docProblema({ p, idx, campo, noSistema, noPapel, obs, quem }) {
+  return {
+    idVenda: p?.idVenda || '',
+    cliente: p?.cliente || '',
+    vendedor: p?.vendedor || '',
+    rota: p?.rota || '',
+    itemKey: idx == null ? '' : keyDoItem(p, idx),
+    produto: idx == null ? '' : (p?.itens?.[idx]?.produto || ''),
+    campo: campo || 'outro',
+    noSistema: String(noSistema || '').trim(),
+    noPapel: String(noPapel || '').trim(),
+    obs: String(obs || '').trim(),
+    status: 'aberto',
+    ...quem,
+    quando: new Date().toISOString(),
+  }
+}
+
+// problemas ABERTOS indexados por pedido — é o que acende o ⚠ nos cards
+export function indexaProblemas(lista) {
+  const map = {}
+  for (const x of lista || []) {
+    if (x?.status !== 'aberto') continue
+    ;(map[x.idVenda] ??= []).push(x)
+  }
+  return map
+}
+export const problemasDoPedido = (map, idVenda) => (map || {})[idVenda] || []
+export const problemaDoItem = (map, idVenda, itemKey) =>
+  problemasDoPedido(map, idVenda).filter((x) => !x.itemKey || x.itemKey === itemKey)
+
 // ---------- CIÊNCIA POR PEDIDO ----------
 // O PEDIDO é a unidade. A ciência de rota guardava `pedidoIds` num retrato do
 // momento em que foi dada — pedido que entrasse na rota depois ficava coberto
