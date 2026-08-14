@@ -8,6 +8,7 @@ import {
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
+  temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -106,6 +107,39 @@ export default function Carga({ pedidos }) {
     for (const d of r.linhas) ligar ? n.add(d.p.idVenda) : n.delete(d.p.idVenda)
     return n
   })
+
+  // Devolve o pedido de "expedido" para a EXPEDIÇÃO: ele volta a aparecer na
+  // coluna do quadro, de onde o ← desembala para a montagem.
+  // Faltava esse caminho: assim que o item é expedido ele some do quadro, e não
+  // havia mais nenhum botão capaz de trazê-lo de volta.
+  async function devolverParaExpedicao(d) {
+    const p = d.p
+    if (salvando) return
+    if (!confirm(
+      `Devolver o pedido #${p.idVenda} para a Expedição?\n\n` +
+      `Ele volta a aparecer no quadro, na coluna Expedição. De lá o ← devolve para a montagem.`)) return
+    setSalvando(`devolver|${p.idVenda}`)
+    try {
+      const porVolume = []
+      const porQtd = []
+      ;(p.itens || []).forEach((_, i) => {
+        if (temVolumes(p, i)) {
+          const ids = volumesNaEtapa(p, i, 'expedido')
+          if (ids.length) porVolume.push({ idx: i, ids, para: 'expedicao' })
+        } else {
+          const q = qtdNaEtapa(p, i, 'expedido')
+          if (q > 0) porQtd.push({ idx: i, de: 'expedido', para: 'expedicao', qtd: q })
+        }
+      })
+      if (!porVolume.length && !porQtd.length) return
+      const etapas = porVolume.length
+        ? mapaEtapasMovendoVolumes(p, porVolume, nome)
+        : mapaEtapasComQtd(p, porQtd, nome)
+      await updateDoc(doc(db, 'pedidos', p.idVenda), { etapas })
+    } catch (e) {
+      alert('Não foi possível devolver: ' + (e.code || e.message))
+    } finally { setSalvando('') }
+  }
 
   async function criarCarga() {
     if (!escolhidos.length || salvando) return
@@ -272,7 +306,7 @@ export default function Carga({ pedidos }) {
             <Montagem rotas={rotas} sel={sel} alterna={alterna} marcarRota={marcarRota}
               clientes={clientes} escolhidos={escolhidos} totais={totaisSel}
               motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
-              salvando={salvando} onCriar={criarCarga}
+              salvando={salvando} onCriar={criarCarga} onDevolver={devolverParaExpedicao}
               temFiltro={!!resumoFiltros(filtros)} />
           </>)}
 
@@ -286,7 +320,7 @@ export default function Carga({ pedidos }) {
 
 // ---------- escolher o que vai no caminhão ----------
 function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totais,
-                    motorista, setMotorista, motoristas, salvando, onCriar, temFiltro }) {
+                    motorista, setMotorista, motoristas, salvando, onCriar, onDevolver, temFiltro }) {
   if (!rotas.length) {
     return <div className="empty"><div className="big">📦</div>
       {temFiltro
@@ -329,6 +363,12 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
                         </span>
                       </span>
                     </label>
+                    <div className="no-print" style={{ marginTop: 6 }}>
+                      <button className="btn" disabled={!!salvando}
+                        style={{ padding: '4px 10px', fontSize: 12 }}
+                        title="Volta para a coluna Expedição do quadro (de lá o ← devolve para a montagem)"
+                        onClick={() => onDevolver({ p })}>↩ devolver p/ expedição</button>
+                    </div>
                     <ul className="itens">
                       {itens.map((it) => (
                         <li key={chaveCarga(it)}>

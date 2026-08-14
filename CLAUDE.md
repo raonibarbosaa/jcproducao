@@ -508,6 +508,11 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `trabalhaComCarga()` (cargas) e o `allow update` de `pedidos` com os campos de saída
   para operador com esses setores. Liberar só a aba faria a tela aparecer e nada
   funcionar.
+- ⚠️ **Item expedido SOME do quadro** — a coluna Expedição só mostra o que está *em*
+  expedição, e o ✓ Expedir joga os volumes para `expedido`. Não havia caminho de volta.
+  Por isso a lista de Entregas tem **"↩ devolver p/ expedição"** por pedido: devolve os
+  volumes (ou a quantidade, no legado) para `expedicao`, o item reaparece no quadro, e de
+  lá o ← desembala para a montagem. O caminho completo é em dois passos, em duas telas.
 - **Tirar UM pedido da carga em montagem** (`↩ tirar da carga`, no card da conferência):
   ele volta para a lista de disponíveis com os volumes dele. Antes só existia "cancelar
   carga", que é tudo ou nada — e o caso real é um pedido não caber ou o cliente pedir para
