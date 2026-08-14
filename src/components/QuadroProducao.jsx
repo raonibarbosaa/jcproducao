@@ -360,7 +360,9 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                                 {/* avança/volta SÓ este item, e só a quantidade digitada */}
                                 {podeMoverEtapa(pa.etapa) && (
                                   <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
-                                    {pa.tipo !== 'montagem' && (
+                                    {/* com volumes, quem anda é o volume: o campo de
+                                        quantidade só confundiria */}
+                                    {pa.tipo !== 'montagem' && !temVolumes(p, i) && (
                                       <input className="qtd-input" type="number" min="0" max={aqui}
                                         step={un === 'kg' ? '0.001' : '1'}
                                         placeholder={String(aqui)}
@@ -392,6 +394,23 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                               <span className="acab-tag" title="Cadastre o material deste produto em Cadastros › Itens">
                                 ⚠ sem material no cadastro
                               </span>
+                            )}
+                            {/* Na Expedição quem manda é o VOLUME: é ele que a pessoa
+                                pega e põe no caminhão. Cada um sai sozinho. */}
+                            {pa.etapa === 'expedicao' && temVolumes(p, i) && (
+                              <ul className="vol-fila">
+                                {volumesDoItem(p, i).filter((v) => v.et === 'expedicao').map((v) => (
+                                  <li key={v.id}>
+                                    <span>📦 vol. {v.n}</span>
+                                    <span className="q">{fmtQtd(v.qtd)} {un}</span>
+                                    {podeMoverEtapa(pa.etapa) && (
+                                      <button className="mini-btn" title={`Expedir só o volume ${v.n}`}
+                                        disabled={!!salvando}
+                                        onClick={() => moverVolumes(p, [{ idx: i, ids: [v.id], para: 'expedido' }], marca)}>→</button>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
                             )}
                           </li>
                         )

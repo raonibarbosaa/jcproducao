@@ -508,6 +508,10 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `trabalhaComCarga()` (cargas) e o `allow update` de `pedidos` com os campos de saída
   para operador com esses setores. Liberar só a aba faria a tela aparecer e nada
   funcionar.
+- **A coluna Expedição lista os VOLUMES** (`.vol-fila`): cada um com número, peso e um →
+  próprio, porque é o volume que a pessoa pega e põe no caminhão. O → do item continua
+  expedindo todos de uma vez. Com volumes, o campo de quantidade do item some — quem anda
+  é o volume, e o campo só confundiria.
 - ⚠️ **Item expedido SOME do quadro** — a coluna Expedição só mostra o que está *em*
   expedição, e o ✓ Expedir joga os volumes para `expedido`. Não havia caminho de volta.
   Por isso a lista de Entregas tem **"↩ devolver p/ expedição"** por pedido: devolve os
