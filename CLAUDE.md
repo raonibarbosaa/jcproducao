@@ -585,6 +585,12 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   "+ Criar previsão com estes" (ou "+ Pôr na previsão #N" quando já existe uma
   para aquela rota). É também o ponto de partida natural: a previsão nasce do que
   já está no galpão.
+- ⚠️ **Os seletores da tela saem de TODOS os pedidos, não dos prontos.** Vendedor
+  sem nada pronto no momento sumia do filtro, e com ele as rotas dele. E as
+  ROTAS do formulário de nova previsão vêm do **cadastro do vendedor**
+  (`rotasDoVendedor`), não dos pedidos: dá para programar a viagem de uma rota
+  cujos pedidos estão todos na produção — que é justamente quando planejar vale
+  a pena. Tirar a lista dos pedidos escondia essas rotas.
 - ⚠️ **Um pedido só pode estar num plano aberto por vez** (`pedidosEmPlanos`) —
   senão duas viagens se planejam contando com a mesma mercadoria. A linha do
   outro plano aparece com o `+` travado e a tag "no plano #N".

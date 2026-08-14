@@ -11,6 +11,7 @@ import {
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
+  rotasDoVendedor,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -126,6 +127,19 @@ export default function Carga({ pedidos }) {
   const prontosSemPlano = gruposProntos.reduce((n, g) => n + g.pedidos.length, 0)
   // já existe previsão aberta para esta rota? então é melhor engordar aquela
   const planoDaRota = (v, r) => abertos.find((pl) => (pl.vendedor || '—') === v && (pl.rota || 'SEM ROTA') === r)
+
+  // Rotas do seletor: com um vendedor escolhido, TODAS as cadastradas dele (mais
+  // as que aparecem em pedido). Sem isso a rota só existia no filtro depois de
+  // alguém expedir algo dela. Sem vendedor escolhido, a barra calcula sozinha.
+  const rotasFiltro = filtrosLista.vendedor
+    ? [...new Set([
+        ...rotasDoVendedor(filtrosLista.vendedor, cadastros),
+        ...todos.filter((p) => (p.vendedor || '—') === filtrosLista.vendedor)
+          .map((p) => p.rota || 'SEM ROTA'),
+      ])].filter(Boolean)
+        .sort((a, b) => (ordemRota(filtrosLista.vendedor, a, cadastros)
+          - ordemRota(filtrosLista.vendedor, b, cadastros)) || a.localeCompare(b))
+    : undefined
 
   // Candidatos do plano: TODO pedido do vendedor+rota que ainda tem serviço na
   // fábrica OU já tem volume livre. É o ponto do planejamento — enxergar o que
@@ -458,7 +472,8 @@ export default function Carga({ pedidos }) {
             gruposProntos={gruposProntos} prontosSemPlano={prontosSemPlano}
             planoDaRota={planoDaRota} onJuntar={juntarNoPlano} clientes={clientes}
             filtros={filtrosLista} setFiltros={setFiltrosLista}
-            baseFiltro={prontosLivres.map((d) => d.p)} totalPlanos={abertos.length} />)}
+            baseFiltro={prontosLivres.map((d) => d.p)} totalPlanos={abertos.length}
+            baseSeletores={todos} rotasFiltro={rotasFiltro} />)}
 
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
@@ -525,15 +540,24 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
 // nem para olhar a rota inteira antes do dia.
 function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar,
                        gruposProntos, prontosSemPlano, planoDaRota, onJuntar, clientes,
-                       filtros, setFiltros, baseFiltro, totalPlanos }) {
+                       filtros, setFiltros, baseFiltro, totalPlanos, baseSeletores, rotasFiltro }) {
   const [novo, setNovo] = useState(false)
   const [vendedor, setVendedor] = useState('')
   const [rota, setRota] = useState('')
   const [data, setData] = useState('')
 
-  const vendedores = [...new Set(todos.map((p) => p.vendedor).filter(Boolean))].sort()
-  const rotas = [...new Set(todos.filter((p) => !vendedor || p.vendedor === vendedor)
-    .map((p) => p.rota || 'SEM ROTA'))]
+  // vendedores: os do CADASTRO mais os que aparecem em pedido (nome que ainda
+  // não foi cadastrado não pode ficar sem previsão possível)
+  const vendedores = [...new Set([
+    ...(cadastros || []).map((v) => v.nome).filter(Boolean),
+    ...todos.map((p) => p.vendedor).filter(Boolean),
+  ])].sort()
+  // rotas: as CADASTRADAS do vendedor (é possível programar rota cujos pedidos
+  // estão todos na produção), mais qualquer rota que apareça em pedido dele
+  const rotas = [...new Set([
+    ...rotasDoVendedor(vendedor, cadastros),
+    ...todos.filter((p) => p.vendedor === vendedor).map((p) => p.rota || 'SEM ROTA'),
+  ])].filter(Boolean)
     .sort((a, b) => (ordemRota(vendedor, a, cadastros) - ordemRota(vendedor, b, cadastros))
       || a.localeCompare(b))
 
@@ -582,8 +606,10 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
+      {/* os seletores saem de TODOS os pedidos, não só dos prontos: vendedor que
+          hoje não tem nada pronto sumia da lista, e com ele as rotas dele */}
       <FiltrosBar filtros={filtros} setFiltros={setFiltros}
-        vendedores={vendedoresDe(baseFiltro)} pedidos={baseFiltro} />
+        vendedores={vendedoresDe(baseSeletores)} pedidos={baseSeletores} rotas={rotasFiltro} />
       {resumoFiltros(filtros) && (
         <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '0 2px 12px' }}>
           {resumoFiltros(filtros)}

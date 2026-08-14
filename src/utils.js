@@ -583,6 +583,14 @@ export function ordemRota(vendedorNome, rota, cadastros) {
   return i >= 0 ? i : 999
 }
 
+// As rotas CADASTRADAS de um vendedor, na ordem em que ele as roda.
+// Vem do cadastro e não dos pedidos da tela: dá para programar a viagem de uma
+// rota cujos pedidos estão todos na produção — que é justamente o caso em que
+// planejar vale a pena. Tirar a lista dos pedidos esconderia essas rotas.
+export const rotasDoVendedor = (vendedorNome, cadastros) =>
+  ((cadastros || []).find((x) => normaliza(x.nome) === normaliza(vendedorNome))?.rotas || [])
+    .map((r) => r.nome).filter(Boolean)
+
 // ---------- VISÃO DO VENDEDOR: o pedido INTEIRO, item a item ----------
 // Etapas na linguagem de quem VENDE, não de quem produz: as três montagens viram
 // uma só (a divisão por material é assunto interno da fábrica) e o fim da linha
