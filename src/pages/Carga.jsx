@@ -171,9 +171,13 @@ export default function Carga({ pedidos }) {
   // BUSCA EM OUTRAS ROTAS — a exceção que o caminhão faz: passa perto, então
   // pega. Fica FORA da lista normal de propósito: entrar aqui é decisão, não
   // rotina, e a fila natural da rota não pode ficar poluída com o sistema todo.
-  // Exige uma busca: sem filtro seriam centenas de pedidos, sem serventia nenhuma.
-  const buscando = !!resumoFiltros(filtros)
-  const deOutrasRotas = (plano && buscando)
+  //
+  // A lista aparece SEMPRE, mesmo sem filtro. Antes ela exigia um filtro ativo, e
+  // escolher "Todos vendedores" — que é a ausência de filtro — devolvia tela
+  // vazia: o operador seleciona "todos" justamente para ver todos. O tamanho é
+  // resolvido com CORTE VISÍVEL (o rodapé diz quantos ficaram de fora), não
+  // escondendo tudo.
+  const deOutrasRotas = plano
     ? todos
         .filter((p) => !noPlano.has(String(p.idVenda))
           && !daRotaDo(p, plano)
@@ -492,7 +496,7 @@ export default function Carga({ pedidos }) {
         ? <>
             <PlanoAberto
               plano={plano} dentro={dentro} fora={fora} todos={todos}
-              deOutrasRotas={deOutrasRotas} buscando={buscando} daRotaDo={daRotaDo}
+              deOutrasRotas={deOutrasRotas} daRotaDo={daRotaDo}
               livresPorPedido={livresPorPedido} noutroPlano={noutroPlano}
               itensCad={itensCad} clientes={clientes} cadastros={cadastros}
               totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
@@ -755,11 +759,14 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
   )
 }
 
+// quantos pedidos de outras rotas a busca desenha de uma vez
+const LIMITE_BUSCA = 40
+
 // ---------- PLANEJAMENTO: montar UMA viagem ----------
 // Duas listas: o que está NESTA viagem e o que ainda dá para pôr. Todo pedido
 // diz onde está — pronto (com volumes e peso) ou em que setor da fábrica. Esse
 // segundo dado é o motivo da tela existir: sem ele o planejamento é um chute.
-function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, buscando, daRotaDo,
+function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
                        livresPorPedido, noutroPlano, itensCad, clientes,
                        cadastros, totais, peso, capacidadeKg, prontos, volumes,
                        motorista, setMotorista, motoristas, salvando, temCargaAberta,
@@ -835,19 +842,24 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, buscando, daRo
             pedidos={outras ? todos : undefined} />
 
           {outras ? (
-            !buscando
-              ? <div className="pc-vazio">
-                  Busque por cliente, nº do pedido, vendedor ou rota. A lista só aparece com
-                  algum filtro — sem isso seriam centenas de pedidos de uma vez.
-                </div>
-              : deOutrasRotas.length === 0
-                ? <div className="pc-vazio">Nenhum pedido de fora desta rota bate com essa busca.</div>
-                : deOutrasRotas.map((p) => (
+            deOutrasRotas.length === 0
+              ? <div className="pc-vazio">Nenhum pedido de fora desta rota bate com essa busca.</div>
+              : <>
+                  {deOutrasRotas.slice(0, LIMITE_BUSCA).map((p) => (
                     <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
                       livres={livresPorPedido.get(String(p.idVenda))}
                       noutro={noutroPlano.get(String(p.idVenda))} deFora
                       salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
-                  ))
+                  ))}
+                  {/* corte VISÍVEL: lista truncada sem aviso passa a impressão de
+                      que aquilo é tudo que existe */}
+                  {deOutrasRotas.length > LIMITE_BUSCA && (
+                    <div className="pc-vazio">
+                      Mostrando {LIMITE_BUSCA} de <b>{deOutrasRotas.length}</b> — use os filtros
+                      acima para achar o pedido que falta.
+                    </div>
+                  )}
+                </>
           ) : (
             fora.length === 0
               ? <div className="pc-vazio">Nenhum pedido sobrando nesta rota.</div>

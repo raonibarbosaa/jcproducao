@@ -589,8 +589,12 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   modos — "Desta rota" (a fila natural) e "🔍 Outras rotas" (busca livre em todo
   o sistema, incluindo outros vendedores). Fica separado de propósito: puxar de
   fora é DECISÃO, não rotina, e a fila da rota não pode ficar poluída com o
-  sistema inteiro. A busca **exige um filtro** — sem isso seriam centenas de
-  pedidos de uma vez. Pôr um pedido de fora pede confirmação, mais forte quando
+  sistema inteiro. ⚠️ A lista aparece **sempre**, mesmo sem filtro: a primeira
+  versão exigia um filtro ativo e escolher "Todos vendedores" — que é a AUSÊNCIA
+  de filtro — devolvia tela vazia (relatado pelo dono em 14/08/2026). O tamanho
+  é resolvido com **corte visível** (`LIMITE_BUSCA = 40` + rodapé "Mostrando 40
+  de N"), nunca escondendo tudo: lista truncada sem aviso passa a impressão de
+  que aquilo é tudo que existe. Pôr um pedido de fora pede confirmação, mais forte quando
   é de outro vendedor. Depois disso ele é marcado em TODA parte: chip
   `⚠ ROTA · VENDEDOR` na linha, `+N de fora` no cabeçalho da viagem e
   `⚠ N de outras rotas` no card da lista — a viagem muda de itinerário, e
