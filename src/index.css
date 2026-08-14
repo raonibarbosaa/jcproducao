@@ -253,11 +253,15 @@ input, select { font-family: var(--font); }
 .chip.linha { color: #fff; border: none; }
 
 /* botão minúsculo dentro de chip (editar data de entrega etc.) */
+/* As setas de avançar/voltar item eram cinza e quase invisíveis — quem trabalha
+   na linha não achava o botão. Branco neve, maiores e com moldura. */
 .mini-btn {
-  background: none; border: none; cursor: pointer; color: inherit;
-  font-size: 11px; padding: 0 2px; line-height: 1; opacity: 0.65;
+  background: var(--surface-2); border: 1px solid var(--border); cursor: pointer;
+  color: #FFFAFA; font-size: 15px; font-weight: 700; line-height: 1;
+  padding: 3px 9px; border-radius: 6px; opacity: 1;
 }
-.mini-btn:hover { opacity: 1; }
+.mini-btn:hover { background: var(--surface); border-color: #FFFAFA; }
+.mini-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mini-btn.ok { color: var(--ok); }
 .mini-btn:disabled { opacity: 0.35; cursor: default; }
 
