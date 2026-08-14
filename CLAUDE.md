@@ -577,6 +577,14 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   com o resto. Uma rota rende várias viagens; encerrar a cada carga obrigaria a
   refazer o planejamento e o que ficou para trás sumiria de vista. `plano.cargas`
   acumula as viagens que saíram.
+- ⚠️ **"Prontos sem previsão" é obrigatório na tela.** Ao trocar a montagem direta
+  pelo plano, TODO o estoque já expedido sumiu da tela de uma vez — não havia
+  plano nenhum, então não havia onde vê-lo (bug relatado pelo dono em 14/08/2026:
+  "todos os itens que já estavam em entregas saíram do painel"). O bloco lista o
+  que está expedido e fora de qualquer plano, agrupado por vendedor+rota, com
+  "+ Criar previsão com estes" (ou "+ Pôr na previsão #N" quando já existe uma
+  para aquela rota). É também o ponto de partida natural: a previsão nasce do que
+  já está no galpão.
 - ⚠️ **Um pedido só pode estar num plano aberto por vez** (`pedidosEmPlanos`) —
   senão duas viagens se planejam contando com a mesma mercadoria. A linha do
   outro plano aparece com o `+` travado e a tag "no plano #N".

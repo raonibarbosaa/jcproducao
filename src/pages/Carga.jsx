@@ -97,6 +97,30 @@ export default function Carga({ pedidos }) {
   // um pedido só pode estar num plano aberto por vez: duas viagens contando com
   // a mesma mercadoria é o erro que some sozinho na hora de carregar
   const noutroPlano = pedidosEmPlanos(planos, planoId)
+  const emAlgumPlano = pedidosEmPlanos(planos)
+
+  // PRONTOS SEM PREVISÃO — o que está expedido e não entrou em plano nenhum.
+  // Sem esta lista o estoque pronto fica INVISÍVEL: ao trocar a montagem direta
+  // pelo plano, tudo que já estava pronto sumiu da tela de uma vez. É também o
+  // ponto de partida natural — a previsão nasce do que já existe no galpão.
+  const gruposProntos = Object.values(
+    disponiveis
+      .filter((d) => !emAlgumPlano.has(String(d.p.idVenda)))
+      .reduce((acc, d) => {
+        const vend = d.p.vendedor || '—'
+        const rota = d.p.rota || 'SEM ROTA'
+        const k = `${vend}|${rota}`
+        ;(acc[k] ??= { chave: k, vendedor: vend, rota, pedidos: [], volumes: [] })
+        acc[k].pedidos.push(d.p)
+        acc[k].volumes.push(...d.itens)
+        return acc
+      }, {})
+  ).map((g) => ({ ...g, peso: pesoDaLista(g.volumes, itensCad) }))
+    .sort((a, b) => (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+      || a.rota.localeCompare(b.rota))
+  const prontosSemPlano = gruposProntos.reduce((n, g) => n + g.pedidos.length, 0)
+  // já existe previsão aberta para esta rota? então é melhor engordar aquela
+  const planoDaRota = (v, r) => abertos.find((pl) => (pl.vendedor || '—') === v && (pl.rota || 'SEM ROTA') === r)
 
   // Candidatos do plano: TODO pedido do vendedor+rota que ainda tem serviço na
   // fábrica OU já tem volume livre. É o ponto do planejamento — enxergar o que
@@ -133,7 +157,7 @@ export default function Carga({ pedidos }) {
     }
   }
 
-  async function criarPlano({ vendedor, rota, saidaPrevista }) {
+  async function criarPlano({ vendedor, rota, saidaPrevista, pedidos: ids }) {
     setSalvando('plano')
     try {
       const ref = doc(collection(db, 'planos'))
@@ -141,7 +165,7 @@ export default function Carga({ pedidos }) {
         numero: proximoNumeroPlano(planos),
         status: STATUS_PLANO.ABERTO,
         vendedor, rota, saidaPrevista: saidaPrevista || '',
-        pedidos: [], cargas: [],
+        pedidos: (ids || []).map(String), cargas: [],
         criadoEm: new Date().toISOString(), criadoPor: nome || '',
       })
       setPlanoId(ref.id)
@@ -173,6 +197,14 @@ export default function Carga({ pedidos }) {
       ligar ? ids.add(String(p.idVenda)) : ids.delete(String(p.idVenda))
     }
     await updateDoc(doc(db, 'planos', plano.id), { pedidos: [...ids] })
+  }
+
+  // joga um grupo de prontos dentro de uma previsão que já existe
+  async function juntarNoPlano(pl, g) {
+    const ids = new Set((pl.pedidos || []).map(String))
+    for (const p of g.pedidos) ids.add(String(p.idVenda))
+    await updateDoc(doc(db, 'planos', pl.id), { pedidos: [...ids] })
+    setPlanoId(pl.id)
   }
 
   async function encerrarPlano() {
@@ -410,7 +442,9 @@ export default function Carga({ pedidos }) {
               onEncerrar={encerrarPlano} onDevolver={devolverParaExpedicao} />
           </>
         : <ListaPlanos planos={abertos} resumo={resumoPlano} todos={todos} cadastros={cadastros}
-            salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano} />)}
+            salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano}
+            gruposProntos={gruposProntos} prontosSemPlano={prontosSemPlano}
+            planoDaRota={planoDaRota} onJuntar={juntarNoPlano} clientes={clientes} />)}
 
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
@@ -475,7 +509,8 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
 // lista solta — servia para "carregar o que está pronto agora", mas não para
 // programar: não dava para reservar lugar para o pedido que ainda está no silk,
 // nem para olhar a rota inteira antes do dia.
-function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar }) {
+function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar,
+                       gruposProntos, prontosSemPlano, planoDaRota, onJuntar, clientes }) {
   const [novo, setNovo] = useState(false)
   const [vendedor, setVendedor] = useState('')
   const [rota, setRota] = useState('')
@@ -532,10 +567,56 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
+      {prontosSemPlano > 0 && (
+        <div className="prontos-bloco">
+          <div className="sug-titulo" style={{ margin: '0 2px 8px' }}>
+            📦 Prontos sem previsão
+            <small>{prontosSemPlano} pedido(s) expedidos e ainda fora de qualquer viagem</small>
+          </div>
+          <div className="cards">
+            {gruposProntos.map((g) => {
+              const jaTem = planoDaRota(g.vendedor, g.rota)
+              return (
+                <div key={g.chave} className="card em_dia">
+                  <div className="card-top">
+                    <div className="cliente">📍 {g.rota}</div>
+                    <div className="idv">{g.pedidos.length}</div>
+                  </div>
+                  <div className="meta-row"><span className="chip">👤 {g.vendedor}</span></div>
+                  <div className="pl-est ok" style={{ marginTop: 6 }}>
+                    📦 {g.volumes.length} volume(s) · {fmtPeso(g.peso)}
+                  </div>
+                  <ul className="itens" style={{ marginTop: 6 }}>
+                    {g.pedidos.slice(0, 4).map((p) => (
+                      <li key={p.idVenda}>
+                        <span>{nomeCliente(p.cliente, clientes)}</span>
+                        <span className="q">#{p.idVenda}</span>
+                      </li>
+                    ))}
+                    {g.pedidos.length > 4 && (
+                      <li><span style={{ color: 'var(--text-faint)', textTransform: 'none' }}>
+                        e mais {g.pedidos.length - 4}…
+                      </span></li>
+                    )}
+                  </ul>
+                  <button className="btn ok sug-btn" disabled={!!salvando}
+                    onClick={() => jaTem
+                      ? onJuntar(jaTem, g)
+                      : onCriar({ vendedor: g.vendedor, rota: g.rota, saidaPrevista: '',
+                                  pedidos: g.pedidos.map((p) => p.idVenda) })}>
+                    {jaTem ? `+ Pôr na previsão #${jaTem.numero}` : '+ Criar previsão com estes'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {planos.length === 0 ? (
         <div className="empty"><div className="big">📋</div>
-          Nenhuma previsão aberta. Crie uma para começar a montar a viagem de uma rota —
-          dá para pôr pedidos que ainda estão na produção.
+          Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
+          pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.
         </div>
       ) : (
         <div className="cards">
