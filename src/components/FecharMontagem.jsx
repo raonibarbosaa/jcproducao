@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   fmtQtd, arredondaQtd, qtdNaEtapa, unidadeDoMaterial, materialDoItem, nomeCliente,
+  nomeDoMaterial,
 } from '../utils.js'
 
 // FECHAMENTO DA MONTAGEM EM VOLUMES.
@@ -15,12 +16,15 @@ import {
 export default function FecharMontagem({ p, idx, clientes, itensCad, onFechar, onCancelar, salvando }) {
   const it = p.itens[idx]
   const naMontagem = qtdNaEtapa(p, idx, 'montagem')
-  const un = unidadeDoMaterial(materialDoItem(it, itensCad)) || 'un'
-  const decimal = un === 'kg'
+  const mat = materialDoItem(it, itensCad)
+  const un = unidadeDoMaterial(mat) || 'un'
+  const decimal = un === 'kg'          // kg se pesa; unidade se conta
 
   const [volumes, setVolumes] = useState([])
   const [peso, setPeso] = useState('')
   const [encerrar, setEncerrar] = useState(true)
+  // plástico se pesa, papel/etiqueta/alça se conta
+  const rotulo = decimal ? 'Peso do volume' : 'Quantidade do volume'
 
   const soma = arredondaQtd(volumes.reduce((s, v) => s + v, 0))
   const resta = arredondaQtd(naMontagem - soma)
@@ -32,10 +36,6 @@ export default function FecharMontagem({ p, idx, clientes, itensCad, onFechar, o
     if (!(q > 0)) return
     setVolumes((v) => [...v, q])
     setPeso('')
-  }
-  function volumeUnico() {
-    if (!(naMontagem > 0)) return
-    setVolumes([naMontagem])
   }
   const remover = (n) => setVolumes((v) => v.filter((_, i) => i !== n))
 
@@ -57,7 +57,10 @@ export default function FecharMontagem({ p, idx, clientes, itensCad, onFechar, o
         <div style={{ fontWeight: 700, marginBottom: 14 }}>{it.produto}</div>
 
         <div className="filter-pill" style={{ marginBottom: 14 }}>
-          Na montagem: <b style={{ marginLeft: 4 }}>{fmtQtd(naMontagem)} {un}</b>
+          Pedido: <b style={{ marginLeft: 4 }}>{fmtQtd(naMontagem)} {un}</b>
+          <span style={{ color: 'var(--text-faint)', marginLeft: 8 }}>
+            ({nomeDoMaterial(mat) || 'material não cadastrado'} — {decimal ? 'pesar' : 'contar'})
+          </span>
         </div>
 
         {volumes.length > 0 && (
@@ -73,20 +76,27 @@ export default function FecharMontagem({ p, idx, clientes, itensCad, onFechar, o
           </ul>
         )}
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '12px 0' }}>
-          <input className="filtro-input" style={{ width: 120 }} inputMode="decimal"
-            placeholder={`Peso em ${un}`} value={peso}
-            step={decimal ? '0.001' : '1'}
-            onChange={(e) => setPeso(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && criarVolume()} />
-          <button className="btn primary" onClick={criarVolume} disabled={!peso}>
-            + Criar volume
-          </button>
-          {!volumes.length && (
-            <button className="btn" onClick={volumeUnico} title="Um volume com tudo que está na montagem">
-              tudo num volume só
+        <div style={{ margin: '12px 0' }}>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', fontWeight: 600, marginBottom: 5 }}>
+            {rotulo} ({un}) — {decimal ? 'pese' : 'conte'} antes de criar
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input className="filtro-input" style={{ width: 130 }} inputMode="decimal"
+              placeholder={decimal ? 'ex.: 10,5' : 'ex.: 100'} value={peso}
+              step={decimal ? '0.001' : '1'}
+              onChange={(e) => setPeso(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && criarVolume()} />
+            <button className="btn primary" onClick={criarVolume} disabled={!peso}>
+              + Criar volume
             </button>
-          )}
+          </div>
+          {/* Não existe atalho que preencha com a quantidade pedida: é justamente
+              ela que pode estar errada. O número tem que vir da balança ou da
+              contagem, mesmo quando é um volume só. */}
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>
+            Mesmo com um volume único, o valor precisa ser {decimal ? 'pesado' : 'contado'} —
+            pode dar mais ou menos que o pedido.
+          </div>
         </div>
 
         <div className="vol-resumo">

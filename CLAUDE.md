@@ -28,8 +28,12 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 - **`produzido` é outra coisa:** as unidades PEDIDAS baixadas do lote. A diferença entre
   `produzido` e a soma dos volumes é a **quebra de processo**, e é o que o financeiro cobra.
   `linha = qtd − montagem − produzido`.
-- **Fechamento (`FecharMontagem.jsx`)**: "+ Criar volume" com o restante descontando, atalho
-  "tudo num volume só", e a pergunta da sobra **só quando sobra** — encerrar o item (baixa o
+- **Fechamento (`FecharMontagem.jsx`)**: "+ Criar volume" com o restante descontando e a
+  pergunta da sobra **só quando sobra**. ⚠️ **NÃO existe atalho que preencha o volume com a
+  quantidade pedida** — havia um ("tudo num volume só") e foi removido: é justamente a
+  quantidade pedida que pode estar errada, e o atalho deixaria o operador registrar 100 kg
+  sem ninguém ter pesado. O rótulo segue o material: **plástico → "Peso do volume (kg)",
+  papel/etiqueta/alça → "Quantidade do volume (un)"** — encerrar o item (baixa o
   lote inteiro) × deixar pendente (baixa só o embalado). É essa escolha que mantém a entrega
   parcial viva. Fechar é **por ITEM**: cada produto é embalado separado.
 - **Depois de embalado o item anda por volume:** `mapaEtapasMovendoVolumes`,
