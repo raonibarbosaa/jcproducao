@@ -508,6 +508,13 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `trabalhaComCarga()` (cargas) e o `allow update` de `pedidos` com os campos de saída
   para operador com esses setores. Liberar só a aba faria a tela aparecer e nada
   funcionar.
+- **Retornar carga que já saiu (só DONO):** botão no histórico. Os pedidos perdem
+  `saidaEm/saidaMotorista/saidaPor` e os volumes voltam a ficar livres para outra viagem.
+  A carga vira `cancelada` e **continua no histórico** — apagar esconderia que a viagem
+  chegou a ser registrada. `CARGA_SEGURA_ITENS(status)` é quem decide o que ainda prende
+  item: `montando` e `saiu` prendem; `cancelada` e `concluida` liberam.
+  Pedido já entregue (que saiu de `pedidos`) é ignorado no retorno — o batch só toca no
+  que ainda existe, senão a atualização inteira falharia por causa de um doc apagado.
 - **A expedição NÃO dá a entrega.** Ela monta, confere e marca a saída; a entrega (que
   abre a cobrança) segue com dono/designer/financeiro na tela de Rota. Rules: `cargas`
   create/update para staff + expedição, delete só staff.

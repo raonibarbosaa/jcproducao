@@ -348,7 +348,16 @@ export const itemPertenceAoPainel = (painel, p, idx, mat) => qtdNoPainel(painel,
 // entra neste caminhão (podendo misturar rotas e deixar pedido para trás), confere
 // item a item ao carregar, e o romaneio passa a ser o papel dessa carga.
 // Snapshot de propósito: o que foi expedido depois não entra numa carga já montada.
-export const STATUS_CARGA = { MONTANDO: 'montando', SAIU: 'saiu', CONCLUIDA: 'concluida' }
+export const STATUS_CARGA = {
+  MONTANDO: 'montando', SAIU: 'saiu', CONCLUIDA: 'concluida',
+  // carga desfeita pelo dono: fica no histórico como registro, mas LIBERA os
+  // itens para entrar noutra carga (senão ficariam presos a uma viagem que
+  // não aconteceu)
+  CANCELADA: 'cancelada',
+}
+// status que ainda seguram os itens: os outros liberam para uma carga nova
+export const CARGA_SEGURA_ITENS = (st) =>
+  st === STATUS_CARGA.MONTANDO || st === STATUS_CARGA.SAIU
 
 // O que de um pedido pode entrar numa carga — um registro por VOLUME.
 // É o volume que o motorista conta e que a conferência marca, e volumes do mesmo

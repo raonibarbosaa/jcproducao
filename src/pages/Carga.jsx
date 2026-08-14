@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore'
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   STATUS_CARGA, itensParaCarga, proximoNumeroCarga, cargaAberta, progressoConferencia,
   cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
+  CARGA_SEGURA_ITENS,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
@@ -23,7 +24,8 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 // abre a cobrança, e segue com dono/designer/financeiro na tela de Rota.
 export default function Carga({ pedidos }) {
   const { clientes, motoristas, itens: itensCad, vendedores: cadastros } = useCadastros()
-  const { nome } = useAuth()
+  const { nome, perfil } = useAuth()
+  const podeDesfazer = perfil === 'dono'   // desfazer uma viagem que já saiu
   const [cargas, setCargas] = useState([])
   const [sel, setSel] = useState(() => new Set())
   const [motorista, setMotorista] = useState('')
@@ -49,7 +51,7 @@ export default function Carga({ pedidos }) {
   const volsUsados = new Set()
   const comprometido = new Map()
   for (const c of cargas) {
-    if (c.status === STATUS_CARGA.CONCLUIDA) continue
+    if (!CARGA_SEGURA_ITENS(c.status)) continue
     for (const it of c.itens || []) {
       if (it.volumeId) { volsUsados.add(chaveCarga(it)); continue }
       const k = chaveCarga(it)
@@ -169,6 +171,38 @@ export default function Carga({ pedidos }) {
     } finally { setSalvando('') }
   }
 
+  // Desfaz uma carga que JÁ SAIU: os pedidos voltam para a expedição (perdem a
+  // marca de saída) e os itens ficam livres para outra viagem. A carga continua
+  // no histórico como cancelada — apagar esconderia que a viagem foi registrada.
+  async function retornarParaExpedicao(carga) {
+    if (!podeDesfazer || salvando) return
+    const ids = [...new Set(carga.pedidos || [])]
+      .filter((id) => (pedidos || []).some((p) => String(p.idVenda) === String(id)))
+    if (!confirm(
+      `Retornar a carga #${carga.numero} para a expedição?\n\n` +
+      `${ids.length} pedido(s) perdem a marca de saída e voltam a ficar disponíveis ` +
+      `para carregar. Os que já foram entregues não são afetados.`)) return
+    setSalvando('retornar')
+    try {
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db)
+        for (const id of ids.slice(i, i + 400)) {
+          batch.update(doc(db, 'pedidos', id), {
+            saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
+          })
+        }
+        await batch.commit()
+      }
+      await updateDoc(doc(db, 'cargas', carga.id), {
+        status: STATUS_CARGA.CANCELADA,
+        canceladaEm: new Date().toISOString(),
+        canceladaPor: nome || '',
+      })
+    } catch (e) {
+      alert('Não foi possível retornar a carga: ' + (e.code || e.message))
+    } finally { setSalvando('') }
+  }
+
   async function cancelarCarga(carga) {
     if (!confirm(`Cancelar a carga #${carga.numero}? Os pedidos voltam a ficar disponíveis para outra carga.`)) return
     await deleteDoc(doc(db, 'cargas', carga.id))
@@ -218,7 +252,10 @@ export default function Carga({ pedidos }) {
               temFiltro={!!resumoFiltros(filtros)} />
           </>)}
 
-      {aba === 'historico' && <Historico cargas={historico} clientes={clientes} />}
+      {aba === 'historico' && (
+        <Historico cargas={historico} podeDesfazer={podeDesfazer}
+          salvando={salvando} onRetornar={retornarParaExpedicao} />
+      )}
     </>
   )
 }
@@ -422,15 +459,20 @@ function RomaneioCarga({ carga, grupos, clientes }) {
 }
 
 // ---------- histórico das viagens ----------
-function Historico({ cargas, clientes }) {
+function Historico({ cargas, podeDesfazer, salvando, onRetornar }) {
   if (!cargas.length) {
     return <div className="empty"><div className="big">🚚</div>Nenhuma carga registrada ainda.</div>
   }
+  const rotulo = { saiu: '🚚 saiu', cancelada: '↩ retornada', concluida: '✓ concluída' }
   return (
-    <div className="card em_dia">
+    <div className="card em_dia" style={{ overflowX: 'auto' }}>
       <table className="rel-tab">
         <thead>
-          <tr><th>Carga</th><th>Saída</th><th>Motorista</th><th>Rotas</th><th className="q">Pedidos</th><th className="q">Itens</th><th>Status</th></tr>
+          <tr>
+            <th>Carga</th><th>Saída</th><th>Motorista</th><th>Rotas</th>
+            <th className="q">Pedidos</th><th className="q">Volumes</th><th>Status</th>
+            {podeDesfazer && <th></th>}
+          </tr>
         </thead>
         <tbody>
           {cargas.map((c) => (
@@ -441,7 +483,23 @@ function Historico({ cargas, clientes }) {
               <td>{(c.rotas || []).join(' · ')}</td>
               <td className="q">{(c.pedidos || []).length}</td>
               <td className="q">{(c.itens || []).length}</td>
-              <td>{c.status === 'saiu' ? '🚚 saiu' : '✓ concluída'}</td>
+              <td>
+                {rotulo[c.status] || c.status}
+                {c.canceladaEm && (
+                  <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                    por {c.canceladaPor || '—'} · {fmtDataHora(c.canceladaEm)}
+                  </div>
+                )}
+              </td>
+              {podeDesfazer && (
+                <td>
+                  {c.status === STATUS_CARGA.SAIU && (
+                    <button className="btn" disabled={!!salvando}
+                      title="Os pedidos voltam para a expedição e ficam livres para outra carga"
+                      onClick={() => onRetornar(c)}>↩ Retornar p/ expedição</button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
