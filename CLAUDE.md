@@ -41,6 +41,14 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   e caem no caminho de quantidade quando o item é legado.
 - ⚠️ **`mapaEtapasComQtd` PRESERVA a entrada de item embalado.** Sem isso um avanço por
   quantidade apagaria o array de volumes — perda silenciosa do que a balança registrou.
+- **Voltar da expedição para a montagem é DESEMBALAR** (`desfazEmbalagem`), não mover
+  volume: os volumes deixam de existir e a quantidade **PEDIDA** que tinha sido baixada
+  (`produzido`) volta para a montagem. Devolver a soma dos volumes perderia a quebra —
+  fechou 100 pedidas com 98,3 reais, e a montagem receberia 98,3, sumindo com 1,7.
+  ⚠️ Só desembala quando **nada saiu** (`podeDesembalar`); com volume já expedido não há
+  resposta certa para "quanto volta", e a tela recusa com aviso em vez de inventar.
+  Bug que originou isto: `movePorVolume` recusa destino fora de `ETAPAS_VOLUME`, então
+  voltar devolvia `null` e **nada acontecia, sem erro na tela**.
 - **Carga por volume:** `itensParaCarga` devolve **um registro por volume** (com `volumeId`
   e `volumeN`); `chaveCarga` inclui o volume, então volume já carregado não entra noutra
   carga. Item legado entra como volume único com `volumeId: ''` e a conta antiga por

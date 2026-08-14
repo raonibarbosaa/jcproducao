@@ -562,7 +562,10 @@ export function mapaEtapasMovendoVolumes(p, movs, quem) {
   ;(p.itens || []).forEach((_, i) => {
     const k = keyDoItem(p, i)
     const m = porIdx.get(i)
-    const novo = m ? movePorVolume(p, i, m.ids, m.para, quem) : null
+    // voltar para a montagem é DESEMBALAR, não mover volume de etapa
+    const novo = !m ? null
+      : m.para === 'montagem' ? desfazEmbalagem(p, i, quem)
+      : movePorVolume(p, i, m.ids, m.para, quem)
     if (novo) { mapa[k] = novo; return }
     const ant = doMapaDoItem(p?.etapas, p, i)
     if (Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[k] = ant; return }
@@ -756,6 +759,35 @@ export function fechaMontagemEmVolumes(p, idx, volumes, consumido, quem) {
     por: quem || '',
     em: base,
   }
+}
+
+// DESFAZ a embalagem: o item volta da expedição para a montagem.
+// Voltar não é "mover volume", é desembalar — os volumes deixam de existir e a
+// quantidade PEDIDA que tinha sido baixada (`produzido`) retorna para a montagem.
+// Devolver a soma dos volumes em vez do `produzido` perderia a quebra: fechou 100
+// pedidas com 98,3 reais, e ao voltar a montagem receberia 98,3, sumindo com 1,7.
+//
+// Só desembala quando NADA saiu ainda. Com volume já expedido ou entregue não há
+// resposta certa para "quanto volta", e inventar uma seria pior que recusar.
+export function desfazEmbalagem(p, idx, quem) {
+  const vs = volumesDoItem(p, idx)
+  if (!vs.length) return null
+  if (vs.some((v) => v.et !== 'expedicao')) return null
+  const bruto = doMapaDoItem(p?.etapas, p, idx)
+  const produzido = Math.max(0, arredondaQtd(bruto?.produzido))
+  return {
+    montagem: arredondaQtd(Math.max(0, arredondaQtd(bruto?.montagem)) + produzido),
+    produzido: 0,
+    volumes: [],
+    por: quem || '',
+    em: new Date().toISOString(),
+  }
+}
+
+// dá para desembalar? (nada saiu ainda)
+export const podeDesembalar = (p, idx) => {
+  const vs = volumesDoItem(p, idx)
+  return vs.length > 0 && vs.every((v) => v.et === 'expedicao')
 }
 
 // move volumes (por id) para outra etapa — é assim que o item anda depois de

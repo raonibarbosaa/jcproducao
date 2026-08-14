@@ -10,7 +10,7 @@ import {
   registrosAuditoria, pegarIP, progressoNoPainel, ordemRota,
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
-  temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes,
+  temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -109,10 +109,20 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
   async function mover(p, movimentos, marca) {
     // Item já embalado não anda por quantidade: move-se o VOLUME inteiro, que é
     // a unidade física dali em diante.
-    const porVolume = (movimentos || [])
-      .filter((m) => m.para && temVolumes(p, m.idx))
-      .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(p, m.idx, m.de), para: m.para }))
-      .filter((m) => m.ids.length)
+    const comVolume = (movimentos || []).filter((m) => m.para && temVolumes(p, m.idx))
+    // voltar para a montagem desfaz a embalagem — só dá enquanto nada saiu
+    const travados = comVolume.filter((m) => m.para === 'montagem' && !podeDesembalar(p, m.idx))
+    if (travados.length) {
+      alert('Não dá para voltar: já há volume expedido ou entregue neste item.\n' +
+        'Cancele a entrega ou traga o volume de volta para a expedição antes.')
+      return
+    }
+    const porVolume = comVolume
+      .map((m) => ({
+        idx: m.idx, para: m.para,
+        ids: m.para === 'montagem' ? [] : volumesNaEtapa(p, m.idx, m.de),
+      }))
+      .filter((m) => m.para === 'montagem' || m.ids.length)
     if (porVolume.length) return moverVolumes(p, porVolume, marca)
 
     const mov = (movimentos || []).filter((m) => m.para && m.qtd > 0)
@@ -212,10 +222,13 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
         (i) => materialDoItem(p.itens[i], itensCad))
       regs.forEach((r, n) => {
         const m = movs[n]
-        const vols = volumesDoItem(p, m.idx).filter((v) => m.ids.includes(v.id))
+        const vols = m.para === 'montagem'
+          ? volumesDoItem(p, m.idx)                       // desembalar desfaz todos
+          : volumesDoItem(p, m.idx).filter((v) => m.ids.includes(v.id))
         r.qtd = arredondaQtd(vols.reduce((sm, v) => sm + v.qtd, 0))
         r.qtdItem = arredondaQtd(p.itens[m.idx]?.qtd)
         r.volumes = vols.length
+        if (m.para === 'montagem') r.desembalou = true
       })
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
