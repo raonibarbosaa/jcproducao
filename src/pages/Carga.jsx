@@ -150,7 +150,13 @@ export default function Carga({ pedidos }) {
         && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
     : []
   const noPlano = new Set((plano?.pedidos || []).map(String))
+  // o pedido é do bolo natural desta previsão (mesmo vendedor E mesma rota)?
+  const daRotaDo = (p, pl) => !!pl
+    && (p.vendedor || '') === (pl.vendedor || '')
+    && (p.rota || 'SEM ROTA') === (pl.rota || 'SEM ROTA')
   const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
+  // a busca em outras rotas roda sobre TODOS os pedidos, não sobre os candidatos
+  const idsBusca = new Set(filtraPedidos(todos, filtros, clientes).map((p) => p.idVenda))
 
   // O que está NA previsão sai de `todos`, não dos candidatos: a rota é viva
   // (recalculada pelo cadastro de cidades), então um pedido cuja cidade mudou de
@@ -162,6 +168,20 @@ export default function Carga({ pedidos }) {
     .filter((p) => !noPlano.has(String(p.idVenda)) && idsFiltrados.has(p.idVenda))
     .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
 
+  // BUSCA EM OUTRAS ROTAS — a exceção que o caminhão faz: passa perto, então
+  // pega. Fica FORA da lista normal de propósito: entrar aqui é decisão, não
+  // rotina, e a fila natural da rota não pode ficar poluída com o sistema todo.
+  // Exige uma busca: sem filtro seriam centenas de pedidos, sem serventia nenhuma.
+  const buscando = !!resumoFiltros(filtros)
+  const deOutrasRotas = (plano && buscando)
+    ? todos
+        .filter((p) => !noPlano.has(String(p.idVenda))
+          && !daRotaDo(p, plano)
+          && idsBusca.has(p.idVenda)
+          && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
+        .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
+    : []
+
   // o que sai AGORA se liberar: só os volumes prontos dos pedidos do plano
   const volumesDoPlano = dentro.flatMap((p) => livresPorPedido.get(String(p.idVenda)) || [])
   const prontosDoPlano = dentro.filter((p) => livresPorPedido.has(String(p.idVenda)))
@@ -170,6 +190,7 @@ export default function Carga({ pedidos }) {
     volumesDoPlano.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)
 
   // resumo de um plano na LISTA (sem abrir): quantos já dá para levar
+  const porIdTodos = new Map(todos.map((p) => [String(p.idVenda), p]))
   const resumoPlano = (pl) => {
     const ids = (pl.pedidos || []).map(String)
     const vols = ids.flatMap((id) => livresPorPedido.get(id) || [])
@@ -178,6 +199,11 @@ export default function Carga({ pedidos }) {
       prontos: ids.filter((id) => livresPorPedido.has(id)).length,
       volumes: vols.length,
       peso: pesoDaLista(vols, itensCad),
+      // a viagem deixou de ser só daquela rota — o card precisa dizer
+      deFora: ids.filter((id) => {
+        const p = porIdTodos.get(id)
+        return p && !daRotaDo(p, pl)
+      }).length,
     }
   }
 
@@ -206,6 +232,18 @@ export default function Carga({ pedidos }) {
     if (!dentroAgora && outro) {
       alert(`O pedido #${p.idVenda} já está no plano #${outro.numero}. Tire de lá primeiro.`)
       return
+    }
+    // trazer pedido de fora é EXCEÇÃO: a viagem deixa de ser só daquela rota, e
+    // ninguém pode descobrir isso na hora de carregar
+    if (!dentroAgora && !daRotaDo(p, plano)) {
+      const outroVend = (p.vendedor || '') !== (plano.vendedor || '')
+      const ok = confirm(outroVend
+        ? `⚠ O pedido #${p.idVenda} é de OUTRO VENDEDOR.\n\n`
+          + `Ele é de ${p.vendedor || '—'} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n`
+          + `e vai entrar na viagem de ${plano.vendedor || '—'} · ${plano.rota}.\n\nConfirmar?`
+        : `O pedido #${p.idVenda} é da ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'}), `
+          + `não da ${plano.rota}.\n\nO caminhão vai precisar passar lá. Confirmar?`)
+      if (!ok) return
     }
     const ids = (plano.pedidos || []).map(String)
     await updateDoc(doc(db, 'planos', plano.id), {
@@ -453,7 +491,8 @@ export default function Carga({ pedidos }) {
       {aba === 'planos' && (plano
         ? <>
             <PlanoAberto
-              plano={plano} dentro={dentro} fora={fora}
+              plano={plano} dentro={dentro} fora={fora} todos={todos}
+              deOutrasRotas={deOutrasRotas} buscando={buscando} daRotaDo={daRotaDo}
               livresPorPedido={livresPorPedido} noutroPlano={noutroPlano}
               itensCad={itensCad} clientes={clientes} cadastros={cadastros}
               totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
@@ -699,6 +738,9 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
                 {r.total > r.prontos && (
                   <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
                 )}
+                {r.deFora > 0 && (
+                  <div className="pl-est falta">⚠ {r.deFora} de outras rotas</div>
+                )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
                     onClick={() => onAbrir(pl.id)}>Abrir</button>
@@ -717,12 +759,15 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
 // Duas listas: o que está NESTA viagem e o que ainda dá para pôr. Todo pedido
 // diz onde está — pronto (com volumes e peso) ou em que setor da fábrica. Esse
 // segundo dado é o motivo da tela existir: sem ele o planejamento é um chute.
-function PlanoAberto({ plano, dentro, fora, livresPorPedido, noutroPlano, itensCad, clientes,
+function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, buscando, daRotaDo,
+                       livresPorPedido, noutroPlano, itensCad, clientes,
                        cadastros, totais, peso, capacidadeKg, prontos, volumes,
                        motorista, setMotorista, motoristas, salvando, temCargaAberta,
                        filtros, setFiltros, onVoltar, onAlterna, onAlternaTodos,
                        onLiberar, onEncerrar, onDevolver }) {
+  const [outras, setOutras] = useState(false)
   const estoura = capacidadeKg > 0 && peso.kg > capacidadeKg
+  const forasteiros = dentro.filter((p) => !daRotaDo(p, plano)).length
   return (
     <>
       <div className="plano-head">
@@ -745,6 +790,11 @@ function PlanoAberto({ plano, dentro, fora, livresPorPedido, noutroPlano, itensC
         <div className="plano-col">
           <div className="pc-head">
             🚚 Nesta viagem <span className="pc-n">{dentro.length}</span>
+            {forasteiros > 0 && (
+              <span className="chip rota-warn" title="Pedidos que não são desta rota">
+                +{forasteiros} de fora
+              </span>
+            )}
             {dentro.length > 0 && (
               <button className="mini-btn" style={{ marginLeft: 'auto' }}
                 onClick={() => onAlternaTodos(false)}>tirar todos</button>
@@ -755,28 +805,59 @@ function PlanoAberto({ plano, dentro, fora, livresPorPedido, noutroPlano, itensC
             : dentro.map((p) => (
                 <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
                   livres={livresPorPedido.get(String(p.idVenda))} dentro
+                  deFora={!daRotaDo(p, plano)}
                   salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
               ))}
         </div>
 
-        {/* ---- o resto da rota ---- */}
+        {/* ---- o resto da rota, e a exceção: buscar fora dela ---- */}
         <div className="plano-col">
           <div className="pc-head">
-            📋 Disponíveis desta rota <span className="pc-n">{fora.length}</span>
-            {fora.length > 0 && (
+            {outras ? '🔍 Buscar em outras rotas' : '📋 Disponíveis desta rota'}
+            <span className="pc-n">{outras ? deOutrasRotas.length : fora.length}</span>
+            {!outras && fora.length > 0 && (
               <button className="mini-btn" style={{ marginLeft: 'auto' }}
                 onClick={() => onAlternaTodos(true)}>pôr todos</button>
             )}
           </div>
-          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor />
-          {fora.length === 0
-            ? <div className="pc-vazio">Nenhum pedido sobrando nesta rota.</div>
-            : fora.map((p) => (
-                <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
-                  livres={livresPorPedido.get(String(p.idVenda))}
-                  noutro={noutroPlano.get(String(p.idVenda))}
-                  salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
-              ))}
+          <div className="pc-modos">
+            <button className={`btn${outras ? '' : ' primary'}`} onClick={() => setOutras(false)}>
+              Desta rota
+            </button>
+            <button className={`btn${outras ? ' primary' : ''}`} onClick={() => setOutras(true)}
+              title="Trazer um pedido de outra rota ou de outro vendedor para esta viagem">
+              🔍 Outras rotas
+            </button>
+          </div>
+
+          {/* na busca livre o seletor de vendedor faz falta; na fila da rota, não */}
+          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor={!outras}
+            pedidos={outras ? todos : undefined} />
+
+          {outras ? (
+            !buscando
+              ? <div className="pc-vazio">
+                  Busque por cliente, nº do pedido, vendedor ou rota. A lista só aparece com
+                  algum filtro — sem isso seriam centenas de pedidos de uma vez.
+                </div>
+              : deOutrasRotas.length === 0
+                ? <div className="pc-vazio">Nenhum pedido de fora desta rota bate com essa busca.</div>
+                : deOutrasRotas.map((p) => (
+                    <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
+                      livres={livresPorPedido.get(String(p.idVenda))}
+                      noutro={noutroPlano.get(String(p.idVenda))} deFora
+                      salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
+                  ))
+          ) : (
+            fora.length === 0
+              ? <div className="pc-vazio">Nenhum pedido sobrando nesta rota.</div>
+              : fora.map((p) => (
+                  <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
+                    livres={livresPorPedido.get(String(p.idVenda))}
+                    noutro={noutroPlano.get(String(p.idVenda))}
+                    salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
+                ))
+          )}
         </div>
       </div>
 
@@ -807,7 +888,7 @@ function PlanoAberto({ plano, dentro, fora, livresPorPedido, noutroPlano, itensC
 }
 
 // uma linha de pedido no planejamento: diz se está pronto ou onde está na fábrica
-function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, salvando, onAlterna, onDevolver }) {
+function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, salvando, onAlterna, onDevolver }) {
   const s = situacaoNoPlano(p, livres, itensCad)
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   return (
@@ -823,6 +904,11 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, salvando, o
         <div className="pl-meta">
           <span className="chip">📍 {p.cidade || '—'}</span>
           <span className={`chip${atrasado ? ' atrasado' : ''}`}>{fmtData(p.previsao)}</span>
+          {/* de onde ele veio: sem isto a viagem muda de itinerário e só se
+              descobre na hora de carregar */}
+          {deFora && (
+            <span className="chip rota-warn">⚠ {p.rota || 'SEM ROTA'} · {p.vendedor || '—'}</span>
+          )}
           {noutro && !dentro && <span className="chip rota-warn">no plano #{noutro.numero}</span>}
         </div>
         {s.pronto && (

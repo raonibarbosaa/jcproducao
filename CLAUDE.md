@@ -585,6 +585,16 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   "+ Criar previsão com estes" (ou "+ Pôr na previsão #N" quando já existe uma
   para aquela rota). É também o ponto de partida natural: a previsão nasce do que
   já está no galpão.
+- **Trazer pedido de FORA da rota (14/08/2026):** a coluna da direita tem dois
+  modos — "Desta rota" (a fila natural) e "🔍 Outras rotas" (busca livre em todo
+  o sistema, incluindo outros vendedores). Fica separado de propósito: puxar de
+  fora é DECISÃO, não rotina, e a fila da rota não pode ficar poluída com o
+  sistema inteiro. A busca **exige um filtro** — sem isso seriam centenas de
+  pedidos de uma vez. Pôr um pedido de fora pede confirmação, mais forte quando
+  é de outro vendedor. Depois disso ele é marcado em TODA parte: chip
+  `⚠ ROTA · VENDEDOR` na linha, `+N de fora` no cabeçalho da viagem e
+  `⚠ N de outras rotas` no card da lista — a viagem muda de itinerário, e
+  ninguém pode descobrir isso só na hora de carregar.
 - ⚠️ **Os seletores da tela saem de TODOS os pedidos, não dos prontos.** Vendedor
   sem nada pronto no momento sumia do filtro, e com ele as rotas dele. E as
   ROTAS do formulário de nova previsão vêm do **cadastro do vendedor**
