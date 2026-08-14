@@ -7,6 +7,7 @@ import {
   CARGA_SEGURA_ITENS,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, totaisPorMaterial, fmtTotais, filtraPedidos, previsaoDe,
+  vendedoresDe, resumoFiltros,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
@@ -34,7 +35,8 @@ export default function Carga({ pedidos }) {
   const [planos, setPlanos] = useState([])
   const [planoId, setPlanoId] = useState('')    // plano sendo montado na tela
   const [aba, setAba] = useState('planos')      // 'planos' | 'montar' | 'historico'
-  const [filtros, setFiltros] = useState({})
+  const [filtros, setFiltros] = useState({})           // dentro do plano
+  const [filtrosLista, setFiltrosLista] = useState({}) // lista de previsões
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
 
   useEffect(() => {
@@ -103,9 +105,12 @@ export default function Carga({ pedidos }) {
   // Sem esta lista o estoque pronto fica INVISÍVEL: ao trocar a montagem direta
   // pelo plano, tudo que já estava pronto sumiu da tela de uma vez. É também o
   // ponto de partida natural — a previsão nasce do que já existe no galpão.
+  const prontosLivres = disponiveis.filter((d) => !emAlgumPlano.has(String(d.p.idVenda)))
+  const idsListaFiltrada = new Set(
+    filtraPedidos(prontosLivres.map((d) => d.p), filtrosLista, clientes).map((p) => p.idVenda))
   const gruposProntos = Object.values(
-    disponiveis
-      .filter((d) => !emAlgumPlano.has(String(d.p.idVenda)))
+    prontosLivres
+      .filter((d) => idsListaFiltrada.has(d.p.idVenda))
       .reduce((acc, d) => {
         const vend = d.p.vendedor || '—'
         const rota = d.p.rota || 'SEM ROTA'
@@ -441,10 +446,14 @@ export default function Carga({ pedidos }) {
               onAlternaTodos={alternaTodos} onLiberar={liberarPlano}
               onEncerrar={encerrarPlano} onDevolver={devolverParaExpedicao} />
           </>
-        : <ListaPlanos planos={abertos} resumo={resumoPlano} todos={todos} cadastros={cadastros}
+        : <ListaPlanos planos={abertos.filter((pl) =>
+              (!filtrosLista.vendedor || (pl.vendedor || '—') === filtrosLista.vendedor)
+              && (!filtrosLista.rota || (pl.rota || 'SEM ROTA') === filtrosLista.rota))} resumo={resumoPlano} todos={todos} cadastros={cadastros}
             salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano}
             gruposProntos={gruposProntos} prontosSemPlano={prontosSemPlano}
-            planoDaRota={planoDaRota} onJuntar={juntarNoPlano} clientes={clientes} />)}
+            planoDaRota={planoDaRota} onJuntar={juntarNoPlano} clientes={clientes}
+            filtros={filtrosLista} setFiltros={setFiltrosLista}
+            baseFiltro={prontosLivres.map((d) => d.p)} totalPlanos={abertos.length} />)}
 
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
@@ -510,7 +519,8 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
 // programar: não dava para reservar lugar para o pedido que ainda está no silk,
 // nem para olhar a rota inteira antes do dia.
 function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar,
-                       gruposProntos, prontosSemPlano, planoDaRota, onJuntar, clientes }) {
+                       gruposProntos, prontosSemPlano, planoDaRota, onJuntar, clientes,
+                       filtros, setFiltros, baseFiltro, totalPlanos }) {
   const [novo, setNovo] = useState(false)
   const [vendedor, setVendedor] = useState('')
   const [rota, setRota] = useState('')
@@ -567,6 +577,14 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
+      <FiltrosBar filtros={filtros} setFiltros={setFiltros}
+        vendedores={vendedoresDe(baseFiltro)} pedidos={baseFiltro} />
+      {resumoFiltros(filtros) && (
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '0 2px 12px' }}>
+          {resumoFiltros(filtros)}
+        </div>
+      )}
+
       {prontosSemPlano > 0 && (
         <div className="prontos-bloco">
           <div className="sug-titulo" style={{ margin: '0 2px 8px' }}>
@@ -613,10 +631,18 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
+      {prontosSemPlano === 0 && baseFiltro.length > 0 && resumoFiltros(filtros) && (
+        <div className="prontos-bloco" style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+          📦 Nenhum dos {baseFiltro.length} pedido(s) prontos bate com esses filtros.
+        </div>
+      )}
+
       {planos.length === 0 ? (
         <div className="empty"><div className="big">📋</div>
-          Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
-          pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.
+          {totalPlanos > 0
+            ? `Nenhuma das ${totalPlanos} previsão(ões) abertas bate com esses filtros.`
+            : <>Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
+                pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.</>}
         </div>
       ) : (
         <div className="cards">
