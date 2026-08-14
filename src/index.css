@@ -807,3 +807,36 @@ input, select { font-family: var(--font); }
   margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
   background: rgba(229,72,77,.08); border: 1px solid var(--danger); color: var(--text);
 }
+
+/* ---------- VIAGENS SUGERIDAS (aba Entregas) ---------- */
+/* A sugestão fica ACIMA da lista de escolha: ela é o resumo que responde "o que
+   vale a pena mandar hoje", e a lista abaixo continua sendo onde se ajusta. */
+.sug-bloco { margin: 0 0 18px; }
+.sug-titulo {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  margin: 0 2px 8px; display: flex; align-items: baseline; gap: 8px;
+}
+.sug-titulo small { font-weight: 400; color: var(--text-faint); font-size: 11px; }
+.sug-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+}
+.sug-card {
+  border: 1px solid var(--border); border-left: 4px solid var(--ok);
+  border-radius: 10px; padding: 10px 12px; background: var(--surface);
+  /* os cards do grid têm alturas diferentes (uns avisam mais que outros); sem
+     isto o botão pára no meio do card e a fileira fica desalinhada */
+  display: flex; flex-direction: column;
+}
+/* no CSS e não em `style` inline: o inline venceria o margin-top:auto e o botão
+   voltaria a parar no meio do card */
+.sug-btn { width: 100%; margin-top: auto; justify-content: center; }
+.sug-card .sug-linha:last-of-type { margin-bottom: 8px; }
+.sug-card.atrasada { border-left-color: var(--danger); }
+.sug-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.sug-vend { font-size: 12px; color: var(--text-dim); margin: 2px 0 8px; }
+.sug-linha { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.sug-linha.ok { color: var(--text); }
+.sug-linha.falta { color: var(--warn); }
+.sug-linha.velho { color: var(--danger); }
+.peso-estoura { color: var(--danger); }

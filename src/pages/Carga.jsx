@@ -9,6 +9,7 @@ import {
   materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
+  viagensSugeridas, pesoDaLista, fmtPeso, diasDesde,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -24,7 +25,7 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 // A expedição monta, confere e marca a saída — mas NÃO dá a entrega: é ela que
 // abre a cobrança, e segue com dono/designer/financeiro na tela de Rota.
 export default function Carga({ pedidos }) {
-  const { clientes, motoristas, itens: itensCad, vendedores: cadastros } = useCadastros()
+  const { clientes, motoristas, itens: itensCad, vendedores: cadastros, logistica } = useCadastros()
   const { nome, perfil } = useAuth()
   const podeDesfazer = perfil === 'dono'   // desfazer uma viagem que já saiu
   const [cargas, setCargas] = useState([])
@@ -94,10 +95,22 @@ export default function Carga({ pedidos }) {
     (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
     || a.rota.localeCompare(b.rota))
 
+  // VIAGENS SUGERIDAS: o bolo `data × vendedor × rota`, o mesmo que agrupa a fila
+  // de produção. Mostra o que já dá para carregar E o que ainda está na fábrica,
+  // para a decisão de sair incompleto ser tomada com o número na frente.
+  // Roda sobre `disponiveis` (não sobre `visiveis`): a sugestão é a visão do todo,
+  // e um filtro de tela não deve mudar o que a logística diz que existe.
+  const viagens = viagensSugeridas(
+    disponiveis,
+    (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) })),
+    itensCad, cadastros)
+  const capacidadeKg = Number(logistica?.capacidadeKg) > 0 ? Number(logistica.capacidadeKg) : 0
+
   const escolhidos = disponiveis.filter((d) => sel.has(d.p.idVenda))
   const totaisSel = escolhidos.reduce(
     (acc, d) => somaTotais(acc, totaisPorMaterial(d.itens.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)),
     TOTAIS_ZERO)
+  const pesoSel = pesoDaLista(escolhidos.flatMap((d) => d.itens), itensCad)
 
   const alterna = (id) => setSel((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
@@ -105,6 +118,13 @@ export default function Carga({ pedidos }) {
   const marcarRota = (r, ligar) => setSel((s) => {
     const n = new Set(s)
     for (const d of r.linhas) ligar ? n.add(d.p.idVenda) : n.delete(d.p.idVenda)
+    return n
+  })
+  // "Montar esta viagem": ACRESCENTA à seleção, nunca substitui — juntar duas
+  // rotas no mesmo caminhão é rotina, e trocar a seleção apagaria a primeira.
+  const montarViagem = (g) => setSel((s) => {
+    const n = new Set(s)
+    for (const p of g.prontos) n.add(p.idVenda)
     return n
   })
 
@@ -280,6 +300,8 @@ export default function Carga({ pedidos }) {
               : `${disponiveis.length} pedido(s) prontos para carregar`}
           </small>
         </h1>
+        <CapacidadeCaminhao valor={capacidadeKg}
+          podeEditar={['dono', 'designer', 'financeiro'].includes(perfil)} />
         <div className="spacer" />
         <div className="vista-toggle">
           <button className={`btn${aba === 'montar' ? ' primary' : ''}`} onClick={() => setAba('montar')}>
@@ -303,8 +325,11 @@ export default function Carga({ pedidos }) {
                 {visiveis.length} de {disponiveis.length} pedido(s) · {resumoFiltros(filtros)}
               </div>
             )}
+            <Sugestoes viagens={viagens} sel={sel} onMontar={montarViagem}
+              capacidadeKg={capacidadeKg} />
             <Montagem rotas={rotas} sel={sel} alterna={alterna} marcarRota={marcarRota}
               clientes={clientes} escolhidos={escolhidos} totais={totaisSel}
+              peso={pesoSel} capacidadeKg={capacidadeKg}
               motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
               salvando={salvando} onCriar={criarCarga} onDevolver={devolverParaExpedicao}
               temFiltro={!!resumoFiltros(filtros)} />
@@ -318,9 +343,115 @@ export default function Carga({ pedidos }) {
   )
 }
 
+// Capacidade do caminhão, em kg — o limite que a sugestão usa para avisar.
+// Fica no cadastro (`config/cadastros.logistica`) e só staff altera: é um número
+// que orienta todo mundo, e mudá-lo sem querer faria a tela mentir para a equipe.
+function CapacidadeCaminhao({ valor, podeEditar }) {
+  const [editando, setEditando] = useState(false)
+  const [txt, setTxt] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar() {
+    const n = Number(String(txt).replace(',', '.'))
+    setSalvando(true)
+    try {
+      await updateDoc(doc(db, 'config', 'cadastros'), {
+        'logistica.capacidadeKg': txt === '' || !(n > 0) ? deleteField() : n,
+      })
+      setEditando(false)
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
+    } finally { setSalvando(false) }
+  }
+
+  if (!editando) {
+    return (
+      <span className="chip" style={{ cursor: podeEditar ? 'pointer' : 'default' }}
+        title={podeEditar ? 'Clique para alterar a capacidade do caminhão' : ''}
+        onClick={() => { if (podeEditar) { setTxt(valor ? String(valor) : ''); setEditando(true) } }}>
+        🚛 {valor > 0 ? `${fmtQtd(valor)} kg por viagem` : 'capacidade não definida'}{podeEditar ? ' ✎' : ''}
+      </span>
+    )
+  }
+  return (
+    <span className="chip" style={{ gap: 6, display: 'inline-flex', alignItems: 'center' }}>
+      🚛 <input className="filtro-input" style={{ width: 90 }} inputMode="decimal" autoFocus
+        value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="kg" />
+      <button className="mini-btn" disabled={salvando} onClick={salvar}>{salvando ? '…' : '✓'}</button>
+      <button className="mini-btn" onClick={() => setEditando(false)}>✕</button>
+    </span>
+  )
+}
+
+// ---------- VIAGENS SUGERIDAS ----------
+// Não decide nada: pré-marca. Com o operador na frente da tela, propor é melhor
+// do que adivinhar — ele sabe de coisas que o sistema não sabe (o cliente pediu
+// para adiar, a estrada está interditada, o carro é o pequeno hoje).
+function Sugestoes({ viagens, sel, onMontar, capacidadeKg }) {
+  if (!viagens.length) return null
+  return (
+    <div className="sug-bloco">
+      <div className="sug-titulo">
+        🚚 Viagens sugeridas
+        <small>por data de entrega · vendedor · rota</small>
+      </div>
+      <div className="sug-grid">
+        {viagens.map((g) => {
+          const todosMarcados = g.prontos.every((p) => sel.has(p.idVenda))
+          const dias = diasDesde(g.desde)
+          const atrasada = situacaoPrazo(g.previsao) === 'atrasado'
+          const estoura = capacidadeKg > 0 && g.peso.kg > capacidadeKg
+          return (
+            <div key={g.chave} className={`sug-card${atrasada ? ' atrasada' : ''}`}>
+              <div className="sug-head">
+                <span className="rb-nome">📍 {g.rota}</span>
+                <span className={`chip${atrasada ? ' atrasado' : ''}`}>{fmtData(g.previsao)}</span>
+              </div>
+              <div className="sug-vend">{g.vendedor}</div>
+
+              <div className="sug-linha ok">
+                ✅ <b>{g.prontos.length}</b> pedido(s) prontos · <b>{g.volumes.length}</b> volume(s)
+                {' · '}<b>{fmtPeso(g.peso)}</b>
+              </div>
+              {/* o que ainda está na fábrica: é ISSO que denuncia rota incompleta
+                  antes de o caminhão sair e obrigar uma segunda viagem */}
+              {g.naLinha.length > 0 && (
+                <div className="sug-linha falta">
+                  ⏳ <b>{g.naLinha.length}</b> pedido(s) ainda na produção
+                </div>
+              )}
+              {dias != null && dias >= 1 && (
+                <div className={`sug-linha${dias >= 7 ? ' velho' : ''}`}>
+                  🕐 o mais antigo está pronto há <b>{dias} dia(s)</b>
+                </div>
+              )}
+              {estoura && (
+                <div className="sug-linha velho">
+                  ⚠ passa da capacidade ({fmtQtd(capacidadeKg)} kg) — vai precisar dividir
+                </div>
+              )}
+              {g.peso.semPeso > 0 && (
+                <div className="sug-linha">
+                  ⚠ {g.peso.semPeso} volume(s) fora da conta: produto sem peso no cadastro de Itens
+                </div>
+              )}
+
+              <button className={`btn sug-btn${todosMarcados ? '' : ' ok'}`}
+                onClick={() => onMontar(g)} disabled={todosMarcados}>
+                {todosMarcados ? '✓ já marcada' : 'Montar esta viagem'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ---------- escolher o que vai no caminhão ----------
 function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totais,
-                    motorista, setMotorista, motoristas, salvando, onCriar, onDevolver, temFiltro }) {
+                    peso, capacidadeKg, motorista, setMotorista, motoristas,
+                    salvando, onCriar, onDevolver, temFiltro }) {
   if (!rotas.length) {
     return <div className="empty"><div className="big">📦</div>
       {temFiltro
@@ -392,6 +523,12 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
         <div className="batch-bar no-print">
           <span>
             <b>{escolhidos.length}</b> pedido(s) · {fmtTotais(totais)}
+            {/* o peso é o que decide se cabe; o alerta é aviso, não trava — quem
+                olha o caminhão é quem carrega, e o limite cadastrado é uma média */}
+            <b className={capacidadeKg > 0 && peso?.kg > capacidadeKg ? 'peso-estoura' : ''}>
+              {' · '}{fmtPeso(peso)}
+              {capacidadeKg > 0 && ` de ${fmtQtd(capacidadeKg)} kg`}
+            </b>
             {/* o filtro esconde, mas não desmarca — senão o operador perderia a
                 seleção ao trocar de rota sem perceber */}
             {temFiltro && <small style={{ color: 'var(--text-faint)' }}> (inclui os fora do filtro)</small>}

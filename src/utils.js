@@ -419,6 +419,71 @@ export function agrupaCargaPorPedido(carga, pedidos) {
   return Object.values(mapa)
 }
 
+// ---------- VIAGENS SUGERIDAS (o quebra-cabeça da expedição) ----------
+// A carga já existia, mas montada na unha: a tela mostrava o que estava PRONTO,
+// nunca o que valia a pena mandar. Faltava o que decide — quanto da rota ainda
+// está na produção, há quanto tempo tem volume parado e quanto pesa o que já cabe.
+//
+// O bolo é `data de entrega × vendedor × rota`, a MESMA chave que agrupa a fila
+// de produção. Não é coincidência: o lote que a fábrica fecha junto é o lote que
+// sobe no caminhão junto, e usar duas regras diferentes faria os dois lados
+// discordarem sobre o que é "a rota de sexta".
+//
+// A data vem primeiro na ordenação porque é o compromisso; a rota desempata na
+// ordem do cadastro do vendedor (a sequência real em que ele roda).
+//
+// `disponiveis` = [{ p, itens }] com os VOLUMES livres (já descontado o que está
+// preso a outra carga) — quem calcula isso é a tela, que conhece as cargas abertas.
+// `todos` = os pedidos da produção, para saber o que ainda está vindo.
+export function viagensSugeridas(disponiveis, todos, itensCad, vendedores) {
+  const chave = (p) => `${p.previsao || '9999-99-99'}|${p.vendedor || '—'}|${p.rota || 'SEM ROTA'}`
+  const mapa = {}
+  const grupo = (p) => (mapa[chave(p)] ??= {
+    chave: chave(p),
+    previsao: p.previsao || '',
+    vendedor: p.vendedor || '—',
+    rota: p.rota || 'SEM ROTA',
+    prontos: [],     // pedidos com volume livre pronto para carregar
+    volumes: [],     // os volumes em si
+    naLinha: [],     // pedidos do mesmo bolo que ainda têm item na fábrica
+    desde: '',       // o volume pronto mais ANTIGO deste bolo
+  })
+
+  for (const d of disponiveis || []) {
+    const g = grupo(d.p)
+    g.prontos.push(d.p)
+    g.volumes.push(...d.itens)
+    // "pronto desde" = quando o item foi movido pela última vez. O volume não tem
+    // carimbo próprio; a entrada de `etapas` tem, e é o que responde "está parado
+    // há quanto tempo" — a pergunta que decide se a viagem sai incompleta.
+    for (const it of d.itens) {
+      const em = d.p.etapas?.[it.itemKey]?.em || ''
+      if (em && (!g.desde || em < g.desde)) g.desde = em
+    }
+  }
+  // O MESMO pedido pode estar dos dois lados (dois volumes prontos, um item ainda
+  // no silk) — e é assim que tem que ser: ele já rende carga e ainda deve mais.
+  for (const p of todos || []) {
+    if (!temTrabalhoNaProducao(p)) continue
+    grupo(p).naLinha.push(p)
+  }
+
+  return Object.values(mapa)
+    .filter((g) => g.prontos.length)      // sem nada pronto não há viagem a montar
+    .map((g) => ({ ...g, peso: pesoDaLista(g.volumes, itensCad) }))
+    .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || '')
+      || (ordemRota(a.vendedor, a.rota, vendedores) - ordemRota(b.vendedor, b.rota, vendedores))
+      || a.rota.localeCompare(b.rota))
+}
+
+// há quantos dias inteiros isso aconteceu (null quando não há data)
+export function diasDesde(iso) {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return null
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000))
+}
+
 // ---------- ORDEM DO FLUXO / PROGRESSO DA ROTA NO SETOR ----------
 // posição da etapa no caminho do item: linha → montagem → expedição → expedido.
 export const posNoFluxo = (et) =>
@@ -979,6 +1044,46 @@ export function valorDaQtd(item, qtd, itensCad) {
 // quantos produtos de uma lista ainda estão sem preço (para avisar no cadastro)
 export const itensSemPreco = (itensCad) =>
   (itensCad || []).filter((c) => !(Number(c.preco) > 0)).length
+
+// ---------- PESO (o que limita a carga do caminhão) ----------
+// O volume de PLÁSTICO já é kg: ele foi para a balança no fechamento da montagem.
+// O de papel/etiqueta/alça guarda QUANTIDADE — ninguém pesa sacola de papel uma a
+// uma —, então o peso sai do cadastro de Itens (kg por unidade) e é ESTIMADO.
+//
+// A distinção não é preciosismo: o peso é o número que decide se o caminhão está
+// cheio. Somar pesado com estimado sem dizer qual é qual faz o operador carregar
+// confiando numa conta que ninguém verificou. Produto sem peso cadastrado NÃO
+// entra na soma e é contado à parte — um total que ignora volumes em silêncio
+// mente para baixo, e é justamente aí que o caminhão passa do limite.
+export function pesoDaQtd(produto, qtd, itensCad) {
+  const n = arredondaQtd(qtd)
+  if (materialDoItem({ produto }, itensCad) === 'plastico') return { kg: n, estimado: false }
+  const nm = normaliza(produto)
+  const cad = nm ? (itensCad || []).find((c) => normaliza(c.produto) === nm) : null
+  const pu = Number(cad?.pesoUnit)
+  if (!(pu > 0)) return { kg: 0, estimado: false, semPeso: true }
+  return { kg: arredondaQtd(n * pu), estimado: true }
+}
+
+// soma o peso de uma lista de volumes/itens ({produto, qtd})
+export function pesoDaLista(itens, itensCad) {
+  let kg = 0, estimado = false, semPeso = 0
+  for (const it of itens || []) {
+    const r = pesoDaQtd(it.produto, it.qtd, itensCad)
+    if (r.semPeso) { semPeso++; continue }
+    kg = arredondaQtd(kg + r.kg)
+    if (r.estimado) estimado = true
+  }
+  return { kg, estimado, semPeso }
+}
+
+export const fmtPeso = (r) =>
+  `${r?.estimado ? '~' : ''}${fmtQtd(r?.kg || 0)} kg${r?.semPeso ? ` + ${r.semPeso} sem peso` : ''}`
+
+// quantos produtos ainda estão sem peso por unidade (só interessa fora do plástico,
+// que já é pesado no fechamento da montagem)
+export const itensSemPeso = (itensCad) =>
+  (itensCad || []).filter((c) => c.tipo !== 'plastico' && !(Number(c.pesoUnit) > 0)).length
 
 // ---------- ACABAMENTOS POR ITEM (fluxo da gráfica: laminação + furo) ----------
 // definidos pelo designer na Triagem; executados na Montagem.

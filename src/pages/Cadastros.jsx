@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda } from '../utils.js'
+import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -658,6 +658,14 @@ function CardItem({ it, onTipo, onUnidade, onEditar, onExcluir }) {
           : <span className="chip rota-warn" title="Sem preço, o valor da quantidade real não é calculado">
               sem preço
             </span>}
+        {/* o plástico não precisa: o volume dele já é pesado na montagem */}
+        {it.tipo === 'plastico'
+          ? <span className="chip" title="O volume de plástico já é pesado no fechamento da montagem">pesado na montagem</span>
+          : it.pesoUnit > 0
+            ? <span className="chip">{fmtQtd(it.pesoUnit)} kg por unidade</span>
+            : <span className="chip rota-warn" title="Sem este peso, os volumes deste produto ficam fora do total da carga">
+                sem peso
+              </span>}
       </div>
 
       {/* tipo de material (inline) */}
@@ -701,11 +709,15 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
   const [tipo, setTipo] = useState(inicial?.tipo || '')
   const [unidade, setUnidade] = useState(inicial?.unidade || '')
   const [preco, setPreco] = useState(inicial?.preco != null ? String(inicial.preco) : '')
+  const [pesoUnit, setPesoUnit] = useState(inicial?.pesoUnit != null ? String(inicial.pesoUnit) : '')
 
   function salvar() {
     if (!produto.trim()) { alert('Informe o nome do produto.'); return }
-    const n = Number(String(preco).replace(',', '.'))
-    onSalvar({ produto: produto.trim(), tipo, unidade, preco: preco === '' ? null : (n > 0 ? n : null) })
+    const num = (v) => { const n = Number(String(v).replace(',', '.')); return v === '' ? null : (n > 0 ? n : null) }
+    onSalvar({
+      produto: produto.trim(), tipo, unidade,
+      preco: num(preco), pesoUnit: num(pesoUnit),
+    })
   }
 
   return (
@@ -752,6 +764,21 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
           e o sistema mostra o valor do pedido como veio da planilha.
         </div>
       </div>
+      {/* Peso: o plástico já vai à balança no fechamento da montagem, então o
+          volume dele JÁ é kg. Papel/etiqueta/alça guardam quantidade, e é este
+          campo que transforma "500 un" em kg para a conta do caminhão. */}
+      {tipo !== 'plastico' && (
+        <div className="field" style={{ marginTop: 14, maxWidth: 260 }}>
+          <label>Peso por unidade (kg)</label>
+          <input inputMode="decimal" value={pesoUnit} onChange={(e) => setPesoUnit(e.target.value)}
+            placeholder="0,012" />
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
+            Só para a carga do caminhão: um volume de 500 un × 0,012 pesa 6 kg. O plástico não
+            precisa — o volume dele já é pesado na montagem. Em branco, o volume fica de fora
+            do total e a tela avisa.
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button className="btn primary" onClick={salvar}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>

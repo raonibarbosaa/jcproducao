@@ -55,6 +55,19 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   quantidade. A conferência conta volumes; o romaneio imprime "N volume(s)" e o volume de
   cada linha.
 
+## A Lista de Produção mostra só o SERVIÇO A FAZER (14/08/2026)
+- `categorizados` filtrava por `p.status` e **nunca** por "ainda tem trabalho", então
+  pedido já expedido continuava listado até ser entregue (#5276 aparecia na lista e em
+  nenhuma coluna do quadro). É o espelho do bug do 5001: lá a Rota mostrava o que não
+  estava pronto; aqui a Lista mostrava o que já tinha ficado.
+- **`qtdEmProducao` usa a MESMA fronteira do quadro:** linha, montagem e expedição são
+  painéis; `expedido` e `entregue` não são — por isso o item some do quadro ao ser
+  expedido. `temTrabalhoNaProducao` é o filtro da lista.
+- **A quantidade do card passa a ser a que FALTA:** de 500 com 200 expedidas, a folha
+  impressa diz 300 (e "de 500" ao lado). Dizia 500, e a fábrica repetiria o que já saiu.
+- Pedido sem itens cai no campo antigo `p.etapa`; **na dúvida o pedido FICA** — sumir da
+  lista de produção é pior do que aparecer a mais.
+
 ## Produção PARCIAL por QUANTIDADE (12/08/2026)
 > O item deixou de andar inteiro. De 100 sacolas, 50 podem estar na montagem e 50 na
 > linha, e essa metade segue sozinha até a entrega e a baixa financeira.
@@ -540,6 +553,45 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   documento continua único).
 - Helpers em utils: `itensParaCarga`, `cargaAberta`, `progressoConferencia`,
   `cargaConferida`, `pedidosDaCarga`, `agrupaCargaPorPedido`.
+
+## LOGÍSTICA — viagens sugeridas (14/08/2026)
+> A carga existia, mas montada na unha: a tela mostrava o que estava PRONTO,
+> nunca o que valia a pena mandar.
+
+- **O bolo é `data de entrega × vendedor × rota`** — a MESMA chave que agrupa a
+  fila de produção. Não é coincidência: o lote que a fábrica fecha junto é o que
+  sobe no caminhão junto, e duas regras diferentes fariam os dois lados
+  discordarem sobre o que é "a rota de sexta". `viagensSugeridas` (utils) ordena
+  por **data** (o compromisso) e desempata por `ordemRota`.
+- **A sugestão mostra os dois lados:** ✅ prontos/volumes/peso e ⏳ quantos
+  pedidos do mesmo bolo **ainda estão na produção**. É esse segundo número que
+  denuncia rota incompleta ANTES de o caminhão sair e obrigar uma segunda
+  viagem. O mesmo pedido pode contar dos **dois lados** (dois volumes prontos,
+  um item ainda no silk) — e é assim que tem que ser.
+- **Só pré-marca, nunca cria a carga.** Mesma lição da Conciliação: com o
+  operador na frente da tela, propor é melhor que adivinhar — ele sabe o que o
+  sistema não sabe (cliente pediu para adiar, hoje é o carro pequeno).
+  "Montar esta viagem" **acrescenta** à seleção; juntar duas rotas no mesmo
+  caminhão é rotina, e substituir apagaria a primeira.
+- ⚠️ **A carga NÃO reserva pedido que ainda está na linha** (decisão de
+  14/08/2026). Ela só recebe volume real e conferível; o que está vindo aparece
+  como "⏳ ainda na produção" e entra quando for expedido. Reservar deixaria a
+  conferência com item que não está no caminhão.
+- **PESO (`pesoDaQtd`/`pesoDaLista`/`fmtPeso`):** o volume de **plástico já é kg**
+  — foi à balança no fechamento da montagem. O de papel/etiqueta/alça guarda
+  QUANTIDADE, e o peso sai do campo **`pesoUnit`** (kg por unidade) do cadastro de
+  Itens: 500 un × 0,012 = 6 kg. O resultado diz se é `estimado` (a tela põe `~`),
+  porque somar pesado com estimado sem avisar faz o operador carregar confiando
+  numa conta que ninguém verificou. ⚠️ **Produto sem `pesoUnit` NÃO entra na
+  soma** e é contado à parte (`semPeso`): um total que ignora volumes em silêncio
+  mente **para baixo**, e é aí que o caminhão passa do limite.
+- **Capacidade:** `config/cadastros.logistica.capacidadeKg`, editável no
+  cabeçalho de Entregas só por staff (as rules já dão write de `config` só a
+  staff). É **aviso, não trava** — quem olha o caminhão é quem carrega.
+- **Sequência de cidades: não existe** — o motorista decide na hora (decisão do
+  dono). O romaneio continua agrupado por cidade, sem impor ordem.
+- A sugestão roda sobre `disponiveis`, **não** sobre `visiveis`: filtro de tela
+  não muda o que a logística diz que existe.
 
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO

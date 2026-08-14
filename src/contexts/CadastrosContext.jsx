@@ -13,6 +13,8 @@ export function CadastrosProvider({ children }) {
   const [clientes, setClientes] = useState([])
   const [itens, setItens] = useState([])
   const [motoristas, setMotoristas] = useState([])
+  // parâmetros de logística (hoje só a capacidade do caminhão, em kg)
+  const [logistica, setLogistica] = useState({})
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -25,6 +27,7 @@ export function CadastrosProvider({ children }) {
       setClientes([])
       setItens([])
       setMotoristas([])
+      setLogistica({})
       setCarregando(false)
       return
     }
@@ -36,11 +39,13 @@ export function CadastrosProvider({ children }) {
         setClientes(Array.isArray(d.clientes) ? d.clientes : [])
         setItens(Array.isArray(d.itens) ? d.itens : [])
         setMotoristas(Array.isArray(d.motoristas) ? d.motoristas : [])
+        setLogistica(d.logistica && typeof d.logistica === 'object' ? d.logistica : {})
       } else {
         setVendedores([])
         setClientes([])
         setItens([])
         setMotoristas([])
+        setLogistica({})
       }
       setCarregando(false)
     }, (e) => {
@@ -51,7 +56,7 @@ export function CadastrosProvider({ children }) {
   }, [user?.uid])
 
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, logistica, carregando }}>
       {children}
     </CadCtx.Provider>
   )
