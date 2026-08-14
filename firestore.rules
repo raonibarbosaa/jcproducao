@@ -106,6 +106,14 @@ service cloud.firestore {
       allow delete: if ehStaff();
     }
 
+    // Planos de entrega: a PREVISÃO da viagem, montada antes de a mercadoria
+    // existir. Guarda números de pedido (a carga é que guarda volume). Mesma
+    // regra da carga — quem monta a viagem é quem planeja.
+    match /planos/{id} {
+      allow read: if ehStaff() || ehExpedicao() || ehOperador();
+      allow create, update, delete: if trabalhaComCarga();
+    }
+
     // Problemas: erro reportado por quem está produzindo (o papel diz uma coisa,
     // o sistema outra). QUALQUER pessoa com perfil reporta — quem vê o erro é
     // quem está com a peça na mão. Só staff resolve/fecha.

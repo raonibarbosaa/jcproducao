@@ -6,10 +6,10 @@ import {
   cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
   CARGA_SEGURA_ITENS,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
-  materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
-  filtraPedidos, vendedoresDe, previsaoDe, resumoFiltros,
+  materialDoItem, totaisPorMaterial, fmtTotais, filtraPedidos, previsaoDe,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
-  viagensSugeridas, pesoDaLista, fmtPeso, diasDesde,
+  pesoDaLista, fmtPeso, temTrabalhoNaProducao,
+  STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -29,10 +29,11 @@ export default function Carga({ pedidos }) {
   const { nome, perfil } = useAuth()
   const podeDesfazer = perfil === 'dono'   // desfazer uma viagem que já saiu
   const [cargas, setCargas] = useState([])
-  const [sel, setSel] = useState(() => new Set())
   const [motorista, setMotorista] = useState('')
   const [salvando, setSalvando] = useState('')
-  const [aba, setAba] = useState('montar')      // 'montar' | 'historico'
+  const [planos, setPlanos] = useState([])
+  const [planoId, setPlanoId] = useState('')    // plano sendo montado na tela
+  const [aba, setAba] = useState('planos')      // 'planos' | 'montar' | 'historico'
   const [filtros, setFiltros] = useState({})
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
 
@@ -40,6 +41,13 @@ export default function Carga({ pedidos }) {
     const unsub = onSnapshot(collection(db, 'cargas'),
       (snap) => setCargas(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (e) => console.error('Erro ao ler cargas:', e))
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'planos'),
+      (snap) => setPlanos(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (e) => console.error('Erro ao ler planos:', e))
     return unsub
   }, [])
 
@@ -79,54 +87,109 @@ export default function Carga({ pedidos }) {
     if (livres.length) disponiveis.push({ p, itens: livres })
   }
 
-  const vendedoresFiltro = vendedoresDe(disponiveis.map((d) => d.p))
-  // o filtro vale só para o que APARECE; a seleção sobrevive à troca de filtro
-  const idsFiltrados = new Set(
-    filtraPedidos(disponiveis.map((d) => d.p), filtros, clientes).map((p) => p.idVenda))
-  const visiveis = disponiveis.filter((d) => idsFiltrados.has(d.p.idVenda))
-
-  // agrupa por rota (na ordem do cadastro do vendedor) só para facilitar a escolha
-  const porRota = {}
-  for (const d of visiveis) {
-    const r = d.p.rota || 'SEM ROTA'
-    ;(porRota[r] ??= { rota: r, vendedor: d.p.vendedor || '', linhas: [] }).linhas.push(d)
-  }
-  const rotas = Object.values(porRota).sort((a, b) =>
-    (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
-    || a.rota.localeCompare(b.rota))
-
-  // VIAGENS SUGERIDAS: o bolo `data × vendedor × rota`, o mesmo que agrupa a fila
-  // de produção. Mostra o que já dá para carregar E o que ainda está na fábrica,
-  // para a decisão de sair incompleto ser tomada com o número na frente.
-  // Roda sobre `disponiveis` (não sobre `visiveis`): a sugestão é a visão do todo,
-  // e um filtro de tela não deve mudar o que a logística diz que existe.
-  const viagens = viagensSugeridas(
-    disponiveis,
-    (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) })),
-    itensCad, cadastros)
   const capacidadeKg = Number(logistica?.capacidadeKg) > 0 ? Number(logistica.capacidadeKg) : 0
+  const livresPorPedido = new Map(disponiveis.map((d) => [String(d.p.idVenda), d.itens]))
+  const todos = (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))
 
-  const escolhidos = disponiveis.filter((d) => sel.has(d.p.idVenda))
-  const totaisSel = escolhidos.reduce(
-    (acc, d) => somaTotais(acc, totaisPorMaterial(d.itens.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)),
-    TOTAIS_ZERO)
-  const pesoSel = pesoDaLista(escolhidos.flatMap((d) => d.itens), itensCad)
+  // ---------- planos ----------
+  const abertos = planosAbertos(planos)
+  const plano = planos.find((x) => x.id === planoId) || null
+  // um pedido só pode estar num plano aberto por vez: duas viagens contando com
+  // a mesma mercadoria é o erro que some sozinho na hora de carregar
+  const noutroPlano = pedidosEmPlanos(planos, planoId)
 
-  const alterna = (id) => setSel((s) => {
-    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
-  })
-  const marcarRota = (r, ligar) => setSel((s) => {
-    const n = new Set(s)
-    for (const d of r.linhas) ligar ? n.add(d.p.idVenda) : n.delete(d.p.idVenda)
-    return n
-  })
-  // "Montar esta viagem": ACRESCENTA à seleção, nunca substitui — juntar duas
-  // rotas no mesmo caminhão é rotina, e trocar a seleção apagaria a primeira.
-  const montarViagem = (g) => setSel((s) => {
-    const n = new Set(s)
-    for (const p of g.prontos) n.add(p.idVenda)
-    return n
-  })
+  // Candidatos do plano: TODO pedido do vendedor+rota que ainda tem serviço na
+  // fábrica OU já tem volume livre. É o ponto do planejamento — enxergar o que
+  // está vindo, não só o que já está pronto.
+  const candidatos = plano
+    ? todos.filter((p) => (p.vendedor || '') === (plano.vendedor || '')
+        && (p.rota || 'SEM ROTA') === (plano.rota || 'SEM ROTA')
+        && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
+    : []
+  const noPlano = new Set((plano?.pedidos || []).map(String))
+  const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
+
+  const dentro = candidatos.filter((p) => noPlano.has(String(p.idVenda)))
+  const fora = candidatos
+    .filter((p) => !noPlano.has(String(p.idVenda)) && idsFiltrados.has(p.idVenda))
+    .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
+
+  // o que sai AGORA se liberar: só os volumes prontos dos pedidos do plano
+  const volumesDoPlano = dentro.flatMap((p) => livresPorPedido.get(String(p.idVenda)) || [])
+  const prontosDoPlano = dentro.filter((p) => livresPorPedido.has(String(p.idVenda)))
+  const pesoPlano = pesoDaLista(volumesDoPlano, itensCad)
+  const totaisPlano = totaisPorMaterial(
+    volumesDoPlano.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)
+
+  // resumo de um plano na LISTA (sem abrir): quantos já dá para levar
+  const resumoPlano = (pl) => {
+    const ids = (pl.pedidos || []).map(String)
+    const vols = ids.flatMap((id) => livresPorPedido.get(id) || [])
+    return {
+      total: ids.length,
+      prontos: ids.filter((id) => livresPorPedido.has(id)).length,
+      volumes: vols.length,
+      peso: pesoDaLista(vols, itensCad),
+    }
+  }
+
+  async function criarPlano({ vendedor, rota, saidaPrevista }) {
+    setSalvando('plano')
+    try {
+      const ref = doc(collection(db, 'planos'))
+      await setDoc(ref, {
+        numero: proximoNumeroPlano(planos),
+        status: STATUS_PLANO.ABERTO,
+        vendedor, rota, saidaPrevista: saidaPrevista || '',
+        pedidos: [], cargas: [],
+        criadoEm: new Date().toISOString(), criadoPor: nome || '',
+      })
+      setPlanoId(ref.id)
+    } catch (e) {
+      alert('Não foi possível criar o plano: ' + (e.code || e.message))
+    } finally { setSalvando('') }
+  }
+
+  // põe/tira um pedido da previsão — é o "acrescentar ou retirar" da viagem
+  async function alternaNoPlano(p) {
+    if (!plano || salvando) return
+    const dentroAgora = noPlano.has(String(p.idVenda))
+    const outro = noutroPlano.get(String(p.idVenda))
+    if (!dentroAgora && outro) {
+      alert(`O pedido #${p.idVenda} já está no plano #${outro.numero}. Tire de lá primeiro.`)
+      return
+    }
+    const ids = (plano.pedidos || []).map(String)
+    await updateDoc(doc(db, 'planos', plano.id), {
+      pedidos: dentroAgora ? ids.filter((x) => x !== String(p.idVenda)) : [...ids, String(p.idVenda)],
+    })
+  }
+
+  async function alternaTodos(ligar) {
+    if (!plano || salvando) return
+    const ids = new Set((plano.pedidos || []).map(String))
+    for (const p of (ligar ? fora : dentro)) {
+      if (ligar && noutroPlano.has(String(p.idVenda))) continue
+      ligar ? ids.add(String(p.idVenda)) : ids.delete(String(p.idVenda))
+    }
+    await updateDoc(doc(db, 'planos', plano.id), { pedidos: [...ids] })
+  }
+
+  async function encerrarPlano() {
+    if (!plano) return
+    if (!confirm(`Encerrar o plano #${plano.numero} (${plano.rota})?\n\n` +
+      `Ele sai da lista de planos abertos. Os pedidos que sobraram voltam a ficar livres.`)) return
+    await updateDoc(doc(db, 'planos', plano.id), {
+      status: STATUS_PLANO.ENCERRADO, encerradoEm: new Date().toISOString(), encerradoPor: nome || '',
+    })
+    setPlanoId('')
+  }
+
+  async function apagarPlano(pl) {
+    if (!confirm(`Apagar o plano #${pl.numero}? Nada acontece com os pedidos.`)) return
+    await deleteDoc(doc(db, 'planos', pl.id))
+    if (planoId === pl.id) setPlanoId('')
+  }
 
   // Devolve o pedido de "expedido" para a EXPEDIÇÃO: ele volta a aparecer na
   // coluna do quadro, de onde o ← desembala para a montagem.
@@ -161,29 +224,44 @@ export default function Carga({ pedidos }) {
     } finally { setSalvando('') }
   }
 
-  async function criarCarga() {
-    if (!escolhidos.length || salvando) return
+  // LIBERAR PARA ENTREGA: o plano solta o que está PRONTO e continua aberto com o
+  // resto. Uma rota rende várias viagens — encerrar aqui obrigaria a refazer o
+  // planejamento a cada carga, e o que ficou para trás sumiria de vista.
+  async function liberarPlano() {
+    if (!plano || !prontosDoPlano.length || salvando) return
     if (motoristasAtivos.length > 0 && !motorista) {
       alert('Escolha o motorista da carga.')
       return
     }
-    setSalvando('criar')
+    const ficam = dentro.length - prontosDoPlano.length
+    if (!confirm(
+      `Liberar ${prontosDoPlano.length} pedido(s) · ${volumesDoPlano.length} volume(s) para entrega?\n\n` +
+      (ficam ? `${ficam} pedido(s) continuam no plano, esperando ficar prontos.` : 'O plano fica sem pendências.'))) return
+    setSalvando('liberar')
     try {
-      const numero = proximoNumeroCarga(cargas)
-      const itens = escolhidos.flatMap((d) => d.itens)
-      await setDoc(doc(collection(db, 'cargas')), {
-        numero,
+      const ref = doc(collection(db, 'cargas'))
+      await setDoc(ref, {
+        numero: proximoNumeroCarga(cargas),
         status: STATUS_CARGA.MONTANDO,
         motorista: motorista || '',
-        itens,
-        pedidos: escolhidos.map((d) => d.p.idVenda),
-        rotas: [...new Set(escolhidos.map((d) => d.p.rota || 'SEM ROTA'))],
+        itens: volumesDoPlano,
+        pedidos: prontosDoPlano.map((p) => p.idVenda),
+        rotas: [...new Set(prontosDoPlano.map((p) => p.rota || 'SEM ROTA'))],
+        planoId: plano.id, planoNumero: plano.numero || 0,
         criadaEm: new Date().toISOString(),
         criadaPor: nome || '',
       })
-      setSel(new Set()); setMotorista('')
+      // os liberados saem da previsão: o que eles tinham de pronto virou carga
+      const restam = (plano.pedidos || []).map(String)
+        .filter((id) => !prontosDoPlano.some((p) => String(p.idVenda) === id))
+      await updateDoc(doc(db, 'planos', plano.id), {
+        pedidos: restam,
+        cargas: [...(plano.cargas || []), ref.id],
+        liberadoEm: new Date().toISOString(), liberadoPor: nome || '',
+      })
+      setMotorista(''); setAba('montar')
     } catch (e) {
-      alert('Não foi possível criar a carga: ' + (e.code || e.message))
+      alert('Não foi possível liberar: ' + (e.code || e.message))
     } finally { setSalvando('') }
   }
 
@@ -297,13 +375,16 @@ export default function Carga({ pedidos }) {
           <small>
             {aberta
               ? `carga #${aberta.numero} em montagem`
-              : `${disponiveis.length} pedido(s) prontos para carregar`}
+              : `${abertos.length} plano(s) · ${disponiveis.length} pedido(s) prontos`}
           </small>
         </h1>
         <CapacidadeCaminhao valor={capacidadeKg}
           podeEditar={['dono', 'designer', 'financeiro'].includes(perfil)} />
         <div className="spacer" />
         <div className="vista-toggle">
+          <button className={`btn${aba === 'planos' ? ' primary' : ''}`} onClick={() => setAba('planos')}>
+            📋 Planejamento {abertos.length > 0 && `(${abertos.length})`}
+          </button>
           <button className={`btn${aba === 'montar' ? ' primary' : ''}`} onClick={() => setAba('montar')}>
             📦 Carga atual
           </button>
@@ -313,27 +394,33 @@ export default function Carga({ pedidos }) {
         </div>
       </div>
 
+      {aba === 'planos' && (plano
+        ? <>
+            <PlanoAberto
+              plano={plano} dentro={dentro} fora={fora}
+              livresPorPedido={livresPorPedido} noutroPlano={noutroPlano}
+              itensCad={itensCad} clientes={clientes} cadastros={cadastros}
+              totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
+              prontos={prontosDoPlano.length} volumes={volumesDoPlano.length}
+              motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
+              salvando={salvando} temCargaAberta={!!aberta}
+              filtros={filtros} setFiltros={setFiltros}
+              onVoltar={() => setPlanoId('')} onAlterna={alternaNoPlano}
+              onAlternaTodos={alternaTodos} onLiberar={liberarPlano}
+              onEncerrar={encerrarPlano} onDevolver={devolverParaExpedicao} />
+          </>
+        : <ListaPlanos planos={abertos} resumo={resumoPlano} todos={todos} cadastros={cadastros}
+            salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano} />)}
+
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
             salvando={salvando} onConferir={conferir} onConferirTudo={conferirTudo}
             onSaida={marcarSaida} onCancelar={cancelarCarga} />
-        : <>
-            <FiltrosBar filtros={filtros} setFiltros={setFiltros}
-              vendedores={vendedoresFiltro} pedidos={disponiveis.map((d) => d.p)} />
-            {resumoFiltros(filtros) && (
-              <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '0 2px 10px' }}>
-                {visiveis.length} de {disponiveis.length} pedido(s) · {resumoFiltros(filtros)}
-              </div>
-            )}
-            <Sugestoes viagens={viagens} sel={sel} onMontar={montarViagem}
-              capacidadeKg={capacidadeKg} />
-            <Montagem rotas={rotas} sel={sel} alterna={alterna} marcarRota={marcarRota}
-              clientes={clientes} escolhidos={escolhidos} totais={totaisSel}
-              peso={pesoSel} capacidadeKg={capacidadeKg}
-              motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
-              salvando={salvando} onCriar={criarCarga} onDevolver={devolverParaExpedicao}
-              temFiltro={!!resumoFiltros(filtros)} />
-          </>)}
+        : <div className="empty"><div className="big">📦</div>
+            Nenhuma carga em montagem. A carga nasce de um plano — vá em
+            <b> 📋 Planejamento</b>, monte a previsão da viagem e clique em
+            <b> 🚚 Liberar para entrega</b>.
+          </div>)}
 
       {aba === 'historico' && (
         <Historico cargas={historico} podeDesfazer={podeDesfazer}
@@ -383,155 +470,186 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
   )
 }
 
-// ---------- VIAGENS SUGERIDAS ----------
-// Não decide nada: pré-marca. Com o operador na frente da tela, propor é melhor
-// do que adivinhar — ele sabe de coisas que o sistema não sabe (o cliente pediu
-// para adiar, a estrada está interditada, o carro é o pequeno hoje).
-function Sugestoes({ viagens, sel, onMontar, capacidadeKg }) {
-  if (!viagens.length) return null
+// ---------- PLANEJAMENTO: a lista de previsões abertas ----------
+// A carga NASCE de um plano. Antes a viagem se montava marcando pedidos numa
+// lista solta — servia para "carregar o que está pronto agora", mas não para
+// programar: não dava para reservar lugar para o pedido que ainda está no silk,
+// nem para olhar a rota inteira antes do dia.
+function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar }) {
+  const [novo, setNovo] = useState(false)
+  const [vendedor, setVendedor] = useState('')
+  const [rota, setRota] = useState('')
+  const [data, setData] = useState('')
+
+  const vendedores = [...new Set(todos.map((p) => p.vendedor).filter(Boolean))].sort()
+  const rotas = [...new Set(todos.filter((p) => !vendedor || p.vendedor === vendedor)
+    .map((p) => p.rota || 'SEM ROTA'))]
+    .sort((a, b) => (ordemRota(vendedor, a, cadastros) - ordemRota(vendedor, b, cadastros))
+      || a.localeCompare(b))
+
+  function criar() {
+    if (!vendedor || !rota) { alert('Escolha o vendedor e a rota da viagem.'); return }
+    onCriar({ vendedor, rota, saidaPrevista: data })
+    setNovo(false); setVendedor(''); setRota(''); setData('')
+  }
+
   return (
-    <div className="sug-bloco">
-      <div className="sug-titulo">
-        🚚 Viagens sugeridas
-        <small>por data de entrega · vendedor · rota</small>
-      </div>
-      <div className="sug-grid">
-        {viagens.map((g) => {
-          const todosMarcados = g.prontos.every((p) => sel.has(p.idVenda))
-          const dias = diasDesde(g.desde)
-          const atrasada = situacaoPrazo(g.previsao) === 'atrasado'
-          const estoura = capacidadeKg > 0 && g.peso.kg > capacidadeKg
-          return (
-            <div key={g.chave} className={`sug-card${atrasada ? ' atrasada' : ''}`}>
-              <div className="sug-head">
-                <span className="rb-nome">📍 {g.rota}</span>
-                <span className={`chip${atrasada ? ' atrasado' : ''}`}>{fmtData(g.previsao)}</span>
-              </div>
-              <div className="sug-vend">{g.vendedor}</div>
-
-              <div className="sug-linha ok">
-                ✅ <b>{g.prontos.length}</b> pedido(s) prontos · <b>{g.volumes.length}</b> volume(s)
-                {' · '}<b>{fmtPeso(g.peso)}</b>
-              </div>
-              {/* o que ainda está na fábrica: é ISSO que denuncia rota incompleta
-                  antes de o caminhão sair e obrigar uma segunda viagem */}
-              {g.naLinha.length > 0 && (
-                <div className="sug-linha falta">
-                  ⏳ <b>{g.naLinha.length}</b> pedido(s) ainda na produção
-                </div>
-              )}
-              {dias != null && dias >= 1 && (
-                <div className={`sug-linha${dias >= 7 ? ' velho' : ''}`}>
-                  🕐 o mais antigo está pronto há <b>{dias} dia(s)</b>
-                </div>
-              )}
-              {estoura && (
-                <div className="sug-linha velho">
-                  ⚠ passa da capacidade ({fmtQtd(capacidadeKg)} kg) — vai precisar dividir
-                </div>
-              )}
-              {g.peso.semPeso > 0 && (
-                <div className="sug-linha">
-                  ⚠ {g.peso.semPeso} volume(s) fora da conta: produto sem peso no cadastro de Itens
-                </div>
-              )}
-
-              <button className={`btn sug-btn${todosMarcados ? '' : ' ok'}`}
-                onClick={() => onMontar(g)} disabled={todosMarcados}>
-                {todosMarcados ? '✓ já marcada' : 'Montar esta viagem'}
-              </button>
+    <>
+      {novo ? (
+        <div className="card em_dia" style={{ marginBottom: 18, borderLeftColor: 'var(--accent)' }}>
+          <h3 style={{ marginBottom: 12 }}>Nova previsão de entrega</h3>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field">
+              <label>Vendedor</label>
+              <select className="filtro-input" value={vendedor}
+                onChange={(e) => { setVendedor(e.target.value); setRota('') }}>
+                <option value="">escolha…</option>
+                {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
             </div>
-          )
-        })}
-      </div>
-    </div>
+            <div className="field">
+              <label>Rota</label>
+              <select className="filtro-input" value={rota} onChange={(e) => setRota(e.target.value)}
+                disabled={!vendedor}>
+                <option value="">{vendedor ? 'escolha…' : 'escolha o vendedor'}</option>
+                {rotas.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Saída prevista (opcional)</label>
+              <input type="date" className="filtro-input filtro-date" value={data}
+                onChange={(e) => setData(e.target.value)} />
+            </div>
+            <button className="btn ok" disabled={!!salvando} onClick={criar}>
+              {salvando === 'plano' ? 'Criando…' : '✓ Criar previsão'}
+            </button>
+            <button className="btn" onClick={() => setNovo(false)}>Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn primary" onClick={() => setNovo(true)}>+ Nova previsão de entrega</button>
+        </div>
+      )}
+
+      {planos.length === 0 ? (
+        <div className="empty"><div className="big">📋</div>
+          Nenhuma previsão aberta. Crie uma para começar a montar a viagem de uma rota —
+          dá para pôr pedidos que ainda estão na produção.
+        </div>
+      ) : (
+        <div className="cards">
+          {planos.slice().sort((a, b) => (a.saidaPrevista || '9999').localeCompare(b.saidaPrevista || '9999')
+            || (Number(a.numero) || 0) - (Number(b.numero) || 0)).map((pl) => {
+            const r = resumo(pl)
+            return (
+              <div key={pl.id} className="card em_dia plano-card">
+                <div className="card-top">
+                  <div className="cliente">📍 {pl.rota}</div>
+                  <div className="idv">#{pl.numero}</div>
+                </div>
+                <div className="meta-row">
+                  <span className="chip">👤 {pl.vendedor || '—'}</span>
+                  {pl.saidaPrevista && <span className="chip">🚚 saída {fmtData(pl.saidaPrevista + 'T00:00:00')}</span>}
+                </div>
+                <div className="pl-est ok" style={{ marginTop: 8 }}>
+                  <b>{r.total}</b> pedido(s) na previsão · <b>{r.prontos}</b> pronto(s)
+                </div>
+                {r.volumes > 0 && (
+                  <div className="pl-est">📦 {r.volumes} volume(s) · {fmtPeso(r.peso)}</div>
+                )}
+                {r.total > r.prontos && (
+                  <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => onAbrir(pl.id)}>Abrir</button>
+                  <button className="btn" onClick={() => onApagar(pl)} title="Apagar a previsão (não mexe nos pedidos)">🗑</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 
-// ---------- escolher o que vai no caminhão ----------
-function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totais,
-                    peso, capacidadeKg, motorista, setMotorista, motoristas,
-                    salvando, onCriar, onDevolver, temFiltro }) {
-  if (!rotas.length) {
-    return <div className="empty"><div className="big">📦</div>
-      {temFiltro
-        ? 'Nenhum pedido com esses filtros.'
-        : <>Nada expedido para carregar. Os pedidos aparecem aqui depois do <b>✓ Expedir</b> no quadro.</>}
-    </div>
-  }
+// ---------- PLANEJAMENTO: montar UMA viagem ----------
+// Duas listas: o que está NESTA viagem e o que ainda dá para pôr. Todo pedido
+// diz onde está — pronto (com volumes e peso) ou em que setor da fábrica. Esse
+// segundo dado é o motivo da tela existir: sem ele o planejamento é um chute.
+function PlanoAberto({ plano, dentro, fora, livresPorPedido, noutroPlano, itensCad, clientes,
+                       cadastros, totais, peso, capacidadeKg, prontos, volumes,
+                       motorista, setMotorista, motoristas, salvando, temCargaAberta,
+                       filtros, setFiltros, onVoltar, onAlterna, onAlternaTodos,
+                       onLiberar, onEncerrar, onDevolver }) {
+  const estoura = capacidadeKg > 0 && peso.kg > capacidadeKg
   return (
     <>
-      {rotas.map((r) => {
-        const todosMarcados = r.linhas.every((d) => sel.has(d.p.idVenda))
-        return (
-          <div key={r.rota} style={{ marginBottom: 16 }}>
-            <div className="rota-band">
-              <span className="rb-nome">📍 {r.rota}</span>
-              <span className="rb-count">{r.linhas.length} pedido(s)</span>
-              <button className="btn no-print" style={{ marginLeft: 'auto' }}
-                onClick={() => marcarRota(r, !todosMarcados)}>
-                {todosMarcados ? 'Desmarcar rota' : 'Marcar rota toda'}
-              </button>
-            </div>
-            <div className="cards">
-              {r.linhas.map(({ p, itens }) => {
-                const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
-                const marcado = sel.has(p.idVenda)
-                return (
-                  <div key={p.idVenda} className={`card ${atrasado ? 'atrasado' : 'em_dia'}`}
-                    style={marcado ? { borderColor: 'var(--ok)' } : null}>
-                    <label style={{ display: 'flex', gap: 10, cursor: 'pointer', alignItems: 'flex-start' }}>
-                      <input type="checkbox" className="card-check" checked={marcado}
-                        onChange={() => alterna(p.idVenda)} />
-                      <span style={{ flex: 1 }}>
-                        <span className="card-top">
-                          <span className="cliente">{nomeCliente(p.cliente, clientes)}</span>
-                          <span className="idv">#{p.idVenda}</span>
-                        </span>
-                        <span className="meta-row">
-                          <span className="chip">📍 {p.cidade || '—'}</span>
-                          <span className={`chip ${atrasado ? 'atrasado' : ''}`}>{fmtData(p.previsao)}</span>
-                        </span>
-                      </span>
-                    </label>
-                    <div className="no-print" style={{ marginTop: 6 }}>
-                      <button className="btn" disabled={!!salvando}
-                        style={{ padding: '4px 10px', fontSize: 12 }}
-                        title="Volta para a coluna Expedição do quadro (de lá o ← devolve para a montagem)"
-                        onClick={() => onDevolver({ p })}>↩ devolver p/ expedição</button>
-                    </div>
-                    <ul className="itens">
-                      {itens.map((it) => (
-                        <li key={chaveCarga(it)}>
-                          <span>
-                            <SeloLinha linha={it.linha} />{it.produto}
-                            {it.volumeN > 0 && <small className="q-de"> · vol. {it.volumeN}</small>}
-                          </span>
-                          <span className="q">{fmtQtd(it.qtd)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )
-              })}
-            </div>
+      <div className="plano-head">
+        <button className="btn" onClick={onVoltar}>← Previsões</button>
+        <div>
+          <div className="ph-titulo">📍 {plano.rota} <small>#{plano.numero}</small></div>
+          <div className="ph-sub">
+            {plano.vendedor || '—'}
+            {plano.saidaPrevista && ` · saída prevista ${fmtData(plano.saidaPrevista + 'T00:00:00')}`}
           </div>
-        )
-      })}
+        </div>
+        <div className="spacer" />
+        <button className="btn" onClick={onEncerrar} title="Tira esta previsão da lista de abertas">
+          Encerrar previsão
+        </button>
+      </div>
 
-      {escolhidos.length > 0 && (
+      <div className="plano-cols">
+        {/* ---- nesta viagem ---- */}
+        <div className="plano-col">
+          <div className="pc-head">
+            🚚 Nesta viagem <span className="pc-n">{dentro.length}</span>
+            {dentro.length > 0 && (
+              <button className="mini-btn" style={{ marginLeft: 'auto' }}
+                onClick={() => onAlternaTodos(false)}>tirar todos</button>
+            )}
+          </div>
+          {dentro.length === 0
+            ? <div className="pc-vazio">Nada na previsão ainda. Marque ao lado o que vai nesta viagem.</div>
+            : dentro.map((p) => (
+                <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
+                  livres={livresPorPedido.get(String(p.idVenda))} dentro
+                  salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
+              ))}
+        </div>
+
+        {/* ---- o resto da rota ---- */}
+        <div className="plano-col">
+          <div className="pc-head">
+            📋 Disponíveis desta rota <span className="pc-n">{fora.length}</span>
+            {fora.length > 0 && (
+              <button className="mini-btn" style={{ marginLeft: 'auto' }}
+                onClick={() => onAlternaTodos(true)}>pôr todos</button>
+            )}
+          </div>
+          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor />
+          {fora.length === 0
+            ? <div className="pc-vazio">Nenhum pedido sobrando nesta rota.</div>
+            : fora.map((p) => (
+                <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
+                  livres={livresPorPedido.get(String(p.idVenda))}
+                  noutro={noutroPlano.get(String(p.idVenda))}
+                  salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
+              ))}
+        </div>
+      </div>
+
+      {dentro.length > 0 && (
         <div className="batch-bar no-print">
           <span>
-            <b>{escolhidos.length}</b> pedido(s) · {fmtTotais(totais)}
-            {/* o peso é o que decide se cabe; o alerta é aviso, não trava — quem
-                olha o caminhão é quem carrega, e o limite cadastrado é uma média */}
-            <b className={capacidadeKg > 0 && peso?.kg > capacidadeKg ? 'peso-estoura' : ''}>
-              {' · '}{fmtPeso(peso)}
-              {capacidadeKg > 0 && ` de ${fmtQtd(capacidadeKg)} kg`}
+            <b>{prontos}</b> de {dentro.length} pronto(s) · <b>{volumes}</b> volume(s)
+            {volumes > 0 && ` · ${fmtTotais(totais)}`}
+            <b className={estoura ? 'peso-estoura' : ''}>
+              {' · '}{fmtPeso(peso)}{capacidadeKg > 0 && ` de ${fmtQtd(capacidadeKg)} kg`}
             </b>
-            {/* o filtro esconde, mas não desmarca — senão o operador perderia a
-                seleção ao trocar de rota sem perceber */}
-            {temFiltro && <small style={{ color: 'var(--text-faint)' }}> (inclui os fora do filtro)</small>}
           </span>
           {motoristas.length > 0 && (
             <select className="btn" value={motorista} onChange={(e) => setMotorista(e.target.value)}>
@@ -539,14 +657,57 @@ function Montagem({ rotas, sel, alterna, marcarRota, clientes, escolhidos, totai
               {motoristas.map((m, i) => <option key={i} value={m.nome}>{m.nome}</option>)}
             </select>
           )}
-          <button className="btn ok" disabled={!!salvando} onClick={onCriar}>
-            {salvando === 'criar' ? 'Criando…' : '📦 Montar carga'}
+          <button className="btn ok" disabled={!!salvando || !prontos || temCargaAberta}
+            title={temCargaAberta ? 'Termine a carga que está em montagem antes de liberar outra' : ''}
+            onClick={onLiberar}>
+            {salvando === 'liberar' ? 'Liberando…' : `🚚 Liberar ${prontos} p/ entrega`}
           </button>
         </div>
       )}
     </>
   )
 }
+
+// uma linha de pedido no planejamento: diz se está pronto ou onde está na fábrica
+function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, salvando, onAlterna, onDevolver }) {
+  const s = situacaoNoPlano(p, livres, itensCad)
+  const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
+  return (
+    <div className={`pl-linha${s.pronto ? ' pronto' : ''}`}>
+      <button className={`btn${dentro ? '' : ' ok'} pl-acao`} disabled={!!salvando || (!dentro && !!noutro)}
+        title={noutro ? `Já está no plano #${noutro.numero}` : ''}
+        onClick={onAlterna}>{dentro ? '−' : '+'}</button>
+      <div className="pl-corpo">
+        <div className="pl-top">
+          <b>{nomeCliente(p.cliente, clientes)}</b>
+          <span className="idv">#{p.idVenda}</span>
+        </div>
+        <div className="pl-meta">
+          <span className="chip">📍 {p.cidade || '—'}</span>
+          <span className={`chip${atrasado ? ' atrasado' : ''}`}>{fmtData(p.previsao)}</span>
+          {noutro && !dentro && <span className="chip rota-warn">no plano #{noutro.numero}</span>}
+        </div>
+        {s.pronto && (
+          <div className="pl-est ok">
+            ✅ pronto · {s.volumes} volume(s) · {fmtPeso(s.peso)}
+            {dentro && (
+              <button className="mini-btn" style={{ marginLeft: 8 }} disabled={!!salvando}
+                title="Volta para a coluna Expedição do quadro"
+                onClick={() => onDevolver({ p })}>↩ expedição</button>
+            )}
+          </div>
+        )}
+        {/* onde o resto está: é o que diz se falta um dia ou uma semana */}
+        {s.pendencias.length > 0 && (
+          <div className="pl-est falta">
+            ⏳ {s.pendencias.map((x) => `${x.itens} em ${x.nome}`).join(' · ')}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 
 // ---------- conferir e marcar a saída ----------
 function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir, onConferirTudo, onSaida, onCancelar, onTirar }) {

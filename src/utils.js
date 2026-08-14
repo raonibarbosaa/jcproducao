@@ -419,6 +419,62 @@ export function agrupaCargaPorPedido(carga, pedidos) {
   return Object.values(mapa)
 }
 
+// ---------- PLANO DE ENTREGA (a previsão da viagem) ----------
+// Camada ACIMA da carga, e a diferença entre as duas é a razão de existirem:
+//   PLANO  guarda NÚMEROS DE PEDIDO — na hora de planejar o volume ainda nem
+//          existe, e metade do que vai na viagem continua na produção.
+//   CARGA  guarda VOLUMES — é o que o motorista conta e a conferência marca.
+// Misturar os dois faria a conferência cobrar item que não está no caminhão.
+//
+// O plano NÃO se encerra ao liberar: ele solta o que ficou pronto, mantém o
+// resto e continua acompanhando a rota até alguém encerrar. Uma rota rende
+// várias viagens, e é isso que a tela precisa refletir.
+export const STATUS_PLANO = { ABERTO: 'aberto', ENCERRADO: 'encerrado' }
+
+export const proximoNumeroPlano = (planos) =>
+  (planos || []).reduce((m, p) => Math.max(m, Number(p.numero) || 0), 0) + 1
+
+export const planosAbertos = (planos) =>
+  (planos || []).filter((p) => (p.status || STATUS_PLANO.ABERTO) === STATUS_PLANO.ABERTO)
+
+// Um pedido só pode estar num plano aberto por vez — senão duas viagens contam
+// com a mesma mercadoria e as duas se planejam errado.
+export function pedidosEmPlanos(planos, exceto) {
+  const m = new Map()
+  for (const pl of planosAbertos(planos)) {
+    if (exceto && pl.id === exceto) continue
+    for (const id of pl.pedidos || []) m.set(String(id), pl)
+  }
+  return m
+}
+
+// Onde estão os itens deste pedido que AINDA não saíram, agrupados por etapa.
+// É a resposta de "esse pedido está vindo, mas vindo de onde" — sem isso o
+// planejador vê só "não está pronto" e não sabe se falta um dia ou uma semana.
+export function pendenciasDoPedido(p) {
+  const por = {}
+  ;(p?.itens || []).forEach((_, i) => {
+    if (qtdEmProducao(p, i) <= 0) return
+    const et = etapaDoItem(p, i)
+    if (!et) return
+    ;(por[et] ??= { etapa: et, nome: nomeEtapaItem(et), itens: 0 }).itens++
+  })
+  return Object.values(por).sort((a, b) => posNoFluxo(a.etapa) - posNoFluxo(b.etapa))
+}
+
+// Situação de um pedido dentro do plano: o que já dá para carregar e o que falta.
+// `livres` são os volumes ainda não comprometidos com outra carga (quem calcula
+// isso é a tela, que conhece as cargas abertas).
+export function situacaoNoPlano(p, livres, itensCad) {
+  const vols = livres || []
+  return {
+    volumes: vols.length,
+    peso: pesoDaLista(vols, itensCad),
+    pendencias: pendenciasDoPedido(p),
+    pronto: vols.length > 0,
+  }
+}
+
 // ---------- VIAGENS SUGERIDAS (o quebra-cabeça da expedição) ----------
 // A carga já existia, mas montada na unha: a tela mostrava o que estava PRONTO,
 // nunca o que valia a pena mandar. Faltava o que decide — quanto da rota ainda

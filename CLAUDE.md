@@ -554,29 +554,34 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - Helpers em utils: `itensParaCarga`, `cargaAberta`, `progressoConferencia`,
   `cargaConferida`, `pedidosDaCarga`, `agrupaCargaPorPedido`.
 
-## LOGÍSTICA — viagens sugeridas (14/08/2026)
-> A carga existia, mas montada na unha: a tela mostrava o que estava PRONTO,
-> nunca o que valia a pena mandar.
+## LOGÍSTICA — o PLANO de entrega (14/08/2026)
+> **A carga NASCE de um plano.** A montagem direta (marcar pedidos numa lista
+> solta e clicar "Montar carga") foi REMOVIDA — decisão do dono em 14/08/2026.
 
-- **O bolo é `data de entrega × vendedor × rota`** — a MESMA chave que agrupa a
-  fila de produção. Não é coincidência: o lote que a fábrica fecha junto é o que
-  sobe no caminhão junto, e duas regras diferentes fariam os dois lados
-  discordarem sobre o que é "a rota de sexta". `viagensSugeridas` (utils) ordena
-  por **data** (o compromisso) e desempata por `ordemRota`.
-- **A sugestão mostra os dois lados:** ✅ prontos/volumes/peso e ⏳ quantos
-  pedidos do mesmo bolo **ainda estão na produção**. É esse segundo número que
-  denuncia rota incompleta ANTES de o caminhão sair e obrigar uma segunda
-  viagem. O mesmo pedido pode contar dos **dois lados** (dois volumes prontos,
-  um item ainda no silk) — e é assim que tem que ser.
-- **Só pré-marca, nunca cria a carga.** Mesma lição da Conciliação: com o
-  operador na frente da tela, propor é melhor que adivinhar — ele sabe o que o
-  sistema não sabe (cliente pediu para adiar, hoje é o carro pequeno).
-  "Montar esta viagem" **acrescenta** à seleção; juntar duas rotas no mesmo
-  caminhão é rotina, e substituir apagaria a primeira.
-- ⚠️ **A carga NÃO reserva pedido que ainda está na linha** (decisão de
-  14/08/2026). Ela só recebe volume real e conferível; o que está vindo aparece
-  como "⏳ ainda na produção" e entra quando for expedido. Reservar deixaria a
-  conferência com item que não está no caminhão.
+- **Duas camadas, e a diferença é a razão de existirem:**
+  - **PLANO** (`planos`) guarda **números de pedido**. Na hora de planejar o
+    volume ainda nem existe e metade da viagem continua na produção.
+  - **CARGA** (`cargas`) guarda **volumes**. É o que o motorista conta e a
+    conferência marca.
+  Misturar faria a conferência cobrar item que não está no caminhão.
+- **`planos/{id}`** = `{numero, status(aberto|encerrado), vendedor, rota,
+  saidaPrevista, pedidos:[idVenda], cargas:[cargaId], criadoEm/Por}`.
+- **A tela é uma prancheta, não um relatório.** Escolhe vendedor + rota e mostra
+  DUAS colunas: "Nesta viagem" × "Disponíveis desta rota". Cada linha diz onde o
+  pedido está — ✅ pronto (volumes + peso) ou ⏳ **em que setor** o que falta está
+  parado (`pendenciasDoPedido`). Esse segundo dado é o motivo da tela existir:
+  sem ele, planejar é chutar. ⚠️ A primeira versão disto foi um painel de
+  "viagens sugeridas" (cards com o resumo de cada bolo) e foi **rejeitada pelo
+  dono**: mostrava e não deixava fazer. Não recolocar.
+- **Liberar para entrega solta o que está PRONTO e o plano CONTINUA aberto**
+  com o resto. Uma rota rende várias viagens; encerrar a cada carga obrigaria a
+  refazer o planejamento e o que ficou para trás sumiria de vista. `plano.cargas`
+  acumula as viagens que saíram.
+- ⚠️ **Um pedido só pode estar num plano aberto por vez** (`pedidosEmPlanos`) —
+  senão duas viagens se planejam contando com a mesma mercadoria. A linha do
+  outro plano aparece com o `+` travado e a tag "no plano #N".
+- **Liberar fica travado enquanto existe carga em montagem** — só uma carga
+  aberta por vez, senão a segunda nasce escondida atrás da conferência.
 - **PESO (`pesoDaQtd`/`pesoDaLista`/`fmtPeso`):** o volume de **plástico já é kg**
   — foi à balança no fechamento da montagem. O de papel/etiqueta/alça guarda
   QUANTIDADE, e o peso sai do campo **`pesoUnit`** (kg por unidade) do cadastro de
@@ -586,12 +591,13 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   soma** e é contado à parte (`semPeso`): um total que ignora volumes em silêncio
   mente **para baixo**, e é aí que o caminhão passa do limite.
 - **Capacidade:** `config/cadastros.logistica.capacidadeKg`, editável no
-  cabeçalho de Entregas só por staff (as rules já dão write de `config` só a
-  staff). É **aviso, não trava** — quem olha o caminhão é quem carrega.
+  cabeçalho de Entregas só por staff. É **aviso, não trava** — quem olha o
+  caminhão é quem carrega.
 - **Sequência de cidades: não existe** — o motorista decide na hora (decisão do
   dono). O romaneio continua agrupado por cidade, sem impor ordem.
-- A sugestão roda sobre `disponiveis`, **não** sobre `visiveis`: filtro de tela
-  não muda o que a logística diz que existe.
+- **Rules:** `planos` com a mesma regra da carga (`trabalhaComCarga`) — quem
+  monta a viagem é quem planeja. ⚠️ Publicar as rules ANTES do build: sem elas a
+  aba Planejamento abre e o onSnapshot morre com permission-denied.
 
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
