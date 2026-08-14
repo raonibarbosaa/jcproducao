@@ -392,6 +392,23 @@ input, select { font-family: var(--font); }
 .qc-count { background: var(--accent); color: #1a1205; font-size: 12px; font-weight: 800; border-radius: 10px; padding: 1px 9px; }
 .qc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; min-height: 48px; }
 .qc-vazio { color: var(--text-faint); font-size: 13px; text-align: center; padding: 10px; }
+/* fechamento da montagem em volumes */
+.vol-lista { list-style: none; padding: 0; margin: 0; }
+.vol-lista li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 0; border-bottom: 1px dashed var(--border); font-size: 13px;
+}
+.vol-lista li .q { margin-left: auto; font-family: var(--mono); font-weight: 700; }
+.vol-resumo {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+  font-size: 13px; padding: 8px 10px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.vol-sobra {
+  margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--accent); font-size: 13px;
+}
+
 /* produção parcial: quanto avançar deste item */
 .qtd-input {
   width: 62px; padding: 2px 6px; font-size: 12px; font-family: var(--mono);
@@ -749,3 +766,8 @@ input, select { font-family: var(--font); }
 }
 .assist-aviso { font-size: 15px; color: var(--text-faint); line-height: 1.4; }
 .assist-dicas { font-size: 14px; color: var(--text-faint); line-height: 1.45; }
+
+/* dica no lugar do botão grande, na coluna de montagem */
+.qc-dica {
+  font-size: 12px; color: var(--text-faint); padding: 4px 2px; line-height: 1.35;
+}

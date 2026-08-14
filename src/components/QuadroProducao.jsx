@@ -9,11 +9,13 @@ import {
   materialDoItem, montagemDoMaterial, itemPertenceAoPainel, podeNoMaterial, MONTAGENS,
   registrosAuditoria, pegarIP, progressoNoPainel, ordemRota,
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
+  fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
 import SeloLinha from './SeloLinha.jsx'
+import FecharMontagem from './FecharMontagem.jsx'
 
 // Quadro de produção POR ITEM, uma FILA POR SETOR: cada painel recebido mostra
 // só o que está NAQUELE posto agora — o item some da fila assim que avança.
@@ -38,6 +40,8 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
   // que está naquela etapa (o caso comum é concluir a quantidade inteira).
   const [qtds, setQtds] = useState({})
   const poeQtd = (k, v) => setQtds((s) => ({ ...s, [k]: v }))
+  // item cujo fechamento de montagem está aberto: { p, idx }
+  const [fechando, setFechando] = useState(null)
   // IP pego uma vez por sessão da tela — não atrasa cada movimento
   const [ip, setIp] = useState('')
   useEffect(() => { pegarIP().then(setIp) }, [])
@@ -135,6 +139,52 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
     }
   }
 
+  // Fecha a montagem de UM item criando os volumes. É por item porque cada
+  // produto é embalado separado — não faz sentido fechar o card inteiro de uma vez.
+  async function fecharMontagem(p, idx, volumes, consumido) {
+    if (salvando) return
+    const marca = `fechar|${p.idVenda}|${idx}`
+    setSalvando(marca)
+    try {
+      const entrada = fechaMontagemEmVolumes(p, idx, volumes, consumido, nome)
+      if (!entrada) { setFechando(null); return }
+      const etapas = { ...(p.etapas || {}) }
+      ;(p.itens || []).forEach((_, i) => {
+        const k = keyDoItem(p, i)
+        if (i === idx) { etapas[k] = entrada; return }
+        // congela os outros no formato novo, como o mapaEtapasComQtd faz
+        const d = distribuicaoDoItem(p, i)
+        const ant = doMapaDoItem(p?.etapas, p, i)
+        etapas[k] = ant?.volumes
+          ? ant
+          : { montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
+              por: ant?.por || '', em: ant?.em || '' }
+      })
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'pedidos', p.idVenda), { etapas })
+      const quem = {
+        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+        perfil: perfil || '', ip,
+      }
+      const regs = registrosAuditoria(p, [idx], 'expedicao', quem,
+        (i) => materialDoItem(p.itens[i], itensCad))
+      regs.forEach((r) => {
+        r.de = 'montagem'
+        r.qtd = arredondaQtd(volumes.reduce((sm, v) => sm + (Number(v.qtd) || 0), 0))
+        r.qtdItem = arredondaQtd(p.itens[idx]?.qtd)
+        r.volumes = volumes.length
+      })
+      for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
+      await batch.commit()
+      setFechando(null)
+    } catch (e) {
+      console.error('Erro ao fechar montagem:', e)
+      alert('Erro ao fechar: ' + e.message)
+    } finally {
+      setSalvando('')
+    }
+  }
+
   if (!paineis.length) {
     return <div className="empty"><div className="big">🏭</div>Você não tem setores de produção liberados. Fale com o administrador.</div>
   }
@@ -151,6 +201,14 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
           ⚠ {semMaterial.size} item(ns) na montagem sem <b>material</b> no cadastro de Itens — aparecem em
           todas as montagens até alguém dizer se são papel, plástico, etiqueta ou alça.
         </div>
+      )}
+      {fechando && (
+        <FecharMontagem
+          p={fechando.p} idx={fechando.idx} clientes={clientes} itensCad={itensCad}
+          salvando={!!salvando}
+          onCancelar={() => setFechando(null)}
+          onFechar={(vols, consumido) => fecharMontagem(fechando.p, fechando.idx, vols, consumido)}
+        />
       )}
       <div className="quadro">
         {paineis.map((pa) => (
@@ -247,17 +305,24 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                                 {/* avança/volta SÓ este item, e só a quantidade digitada */}
                                 {podeMoverEtapa(pa.etapa) && (
                                   <span style={{ display: 'inline-flex', gap: 2, alignItems: 'center' }}>
-                                    <input className="qtd-input" type="number" min="0" max={aqui}
-                                      step={un === 'kg' ? '0.001' : '1'}
-                                      placeholder={String(aqui)}
-                                      value={digitado ?? ''}
-                                      onChange={(e) => poeQtd(chave, e.target.value)}
-                                      title={`Quanto avançar (de ${fmtQtd(aqui)} ${un})`} />
+                                    {pa.tipo !== 'montagem' && (
+                                      <input className="qtd-input" type="number" min="0" max={aqui}
+                                        step={un === 'kg' ? '0.001' : '1'}
+                                        placeholder={String(aqui)}
+                                        value={digitado ?? ''}
+                                        onChange={(e) => poeQtd(chave, e.target.value)}
+                                        title={`Quanto avançar (de ${fmtQtd(aqui)} ${un})`} />
+                                    )}
                                     {antItem && (
                                       <button className="mini-btn" title={`Voltar ${fmtQtd(aMover)} para ${nomeEtapaItem(antItem)}`}
                                         disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: antItem, qtd: aMover }], marca)}>←</button>
                                     )}
-                                    {prox && (
+                                    {prox && pa.tipo === 'montagem' && (
+                                      // embalar é por item: abre o fechamento em volumes
+                                      <button className="mini-btn" title="Fechar este item em volumes"
+                                        disabled={!!salvando} onClick={() => setFechando({ p, idx: i })}>📦</button>
+                                    )}
+                                    {prox && pa.tipo !== 'montagem' && (
                                       <button className="mini-btn" title={`Avançar ${fmtQtd(aMover)} para ${nomeEtapaItem(prox)}`}
                                         disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: prox, qtd: aMover }], marca)}>→</button>
                                     )}
@@ -297,7 +362,12 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis })
                             onClick={() => mover(p, movsPara(anteriorDe), marca)}
                           >←</button>
                         )}
-                        {prox && prox !== 'expedido' && (
+                        {prox && prox !== 'expedido' && pa.tipo === 'montagem' && (
+                          <span className="qc-dica">
+                            📦 feche item a item — cada produto vai nos seus volumes
+                          </span>
+                        )}
+                        {prox && prox !== 'expedido' && pa.tipo !== 'montagem' && (
                           <button className="btn ok qc-avancar" disabled={!!salvando}
                             onClick={() => mover(p, movsPara(prox), marca)}>
                             {salvando === marca

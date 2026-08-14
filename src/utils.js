@@ -520,11 +520,15 @@ export function mapaEtapasComQtd(p, movimentos, quem) {
     const k = keyDoItem(p, i)
     const m = porIdx.get(i)
     const movido = m ? moveQtdItem(p, i, m.de, m.para, m.qtd) : null
+    const ant = doMapaDoItem(p?.etapas, p, i)
+    // Item já embalado anda por VOLUME, não por quantidade solta: preservar a
+    // entrada como está evita que um avanço por quantidade apague os volumes —
+    // seria perda silenciosa do que a montagem pesou.
+    if (Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[k] = ant; return }
     if (movido) {
       mapa[k] = { ...movido, por: quem || '', em: agora }
     } else {
       const d = distribuicaoDoItem(p, i)
-      const ant = doMapaDoItem(p?.etapas, p, i)
       mapa[k] = {
         montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
         por: ant?.por || '', em: ant?.em || '',
