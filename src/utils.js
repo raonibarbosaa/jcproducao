@@ -721,6 +721,29 @@ export function qtdNaEtapa(p, idx, etapa) {
   return arredondaQtd(d[etapa])
 }
 
+// Quanto deste item ainda está DENTRO da fábrica: tudo menos o que já foi
+// expedido ou entregue. É a MESMA fronteira do quadro — linha, montagem e
+// expedição são painéis; `expedido` e `entregue` não são, e por isso o item
+// some do quadro ao ser expedido.
+//
+// O BUG QUE ISSO CONSERTA: a Lista de Produção filtrava só por `p.status`, então
+// pedido já expedido continuava listado como serviço a fazer até ser entregue (o
+// pedido 5276 aparecia na lista e em nenhuma coluna do quadro). Pior no parcial:
+// de 500 com 200 expedidas, a folha impressa mandava produzir 500 de novo.
+export const qtdEmProducao = (p, idx) => {
+  const d = distribuicaoDoItem(p, idx)
+  return arredondaQtd(Object.entries(d)
+    .reduce((s, [e, n]) => s + (e === 'expedido' || e === 'entregue' ? 0 : n), 0))
+}
+// o pedido ainda tem ALGUM serviço na fábrica?
+// Sem itens (pedido antigo/Zeus) não há quantidade por item para consultar —
+// aí vale o campo antigo do pedido inteiro. Na dúvida o pedido FICA: sumir da
+// lista de produção é pior do que aparecer a mais.
+export const temTrabalhoNaProducao = (p) => {
+  if (!p?.itens?.length) return !['expedido', 'entregue'].includes(p?.etapa)
+  return p.itens.some((_, i) => qtdEmProducao(p, i) > 0)
+}
+
 // o que ainda não terminou (tudo menos o que já foi entregue)
 export const qtdPendente = (p, idx) => {
   const d = distribuicaoDoItem(p, idx)

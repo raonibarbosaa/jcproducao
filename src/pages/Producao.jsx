@@ -7,6 +7,7 @@ import {
   linhasPresentes, itensDaLinha, materialDoItem, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais,
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
   paineisVisiveis, itemPertenceAoPainel, podeNoMaterial, indexaProblemas,
+  qtdEmProducao, temTrabalhoNaProducao, fmtQtd,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -74,7 +75,14 @@ export default function Producao({ pedidos, problemas }) {
   const paineisDoQuadro = painelAba === 'geral' ? meusPaineis : meusPaineis.filter((pa) => pa.id === painelAba)
   const nomeAba = abasQuadro.find((a) => a.id === painelAba)?.label || '—'
 
-  let lista = categorizados
+  // A lista é o SERVIÇO A FAZER — só o que ainda está na fábrica. Pedido já
+  // expedido some daqui (ele vive em Entregas/Rota), senão a folha impressa
+  // mandaria produzir de novo o que já saiu. Quem nunca passou pelo quadro tem
+  // tudo na linha, então continua aparecendo — nada de legado escondido.
+  const emProducao = categorizados.filter(temTrabalhoNaProducao)
+  const jaSairam = categorizados.length - emProducao.length
+
+  let lista = emProducao
   // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
   if (filtroLinha) lista = lista.filter((p) => linhasPresentes(p).includes(filtroLinha))
   // filtroMaterial: pedido que TEM algum item desse material (papel/plástico)
@@ -97,6 +105,19 @@ export default function Producao({ pedidos, problemas }) {
       // filtroMaterial: dentro da linha, só os itens do material escolhido
       if (filtroMaterial) itensFatia = itensFatia.filter((it) => materialDoItem(it, itensCad) === filtroMaterial)
       if (filtroMaterial && !itensFatia.length) continue // esse card não tem item do material
+      // só o que ainda está na fábrica, e a quantidade do card passa a ser ELA:
+      // de 500 com 200 já expedidas, o que falta produzir é 300. Imprimir 500
+      // faria a fábrica repetir o que já saiu.
+      if (totalItens) {
+        itensFatia = itensFatia
+          .map((it) => {
+            const falta = qtdEmProducao(p, it._idx)
+            if (falta <= 0) return null
+            return falta === Number(it.qtd) ? it : { ...it, qtd: falta, _qtdPedida: it.qtd }
+          })
+          .filter(Boolean)
+        if (!itensFatia.length) continue   // tudo desta linha já saiu
+      }
       arvore[vend] ??= {}
       arvore[vend][data] ??= {}
       arvore[vend][data][m] ??= {}
@@ -112,7 +133,7 @@ export default function Producao({ pedidos, problemas }) {
   }
 
   const vendedoresOrd = Object.keys(arvore).sort()
-  const filtrado = lista.length !== categorizados.length
+  const filtrado = lista.length !== emProducao.length
 
   // ---------- seleção / alteração em lote (dono e designer) ----------
   // seleção é por idVenda (o pedido), não por card — pedido dividido em várias
@@ -170,7 +191,8 @@ export default function Producao({ pedidos, problemas }) {
               ? (painelAba === 'geral'
                   ? `${totalNoFluxo} item(ns) no fluxo`
                   : `${conta[painelAba] || 0} item(ns) neste setor`)
-              : (filtrado ? `${lista.length} de ${categorizados.length} pedidos` : `${lista.length} pedidos`)}
+              : (filtrado ? `${lista.length} de ${emProducao.length} pedidos` : `${lista.length} pedidos`)
+                + (jaSairam ? ` · ${jaSairam} já expedido(s)` : '')}
           </small>
         </h1>
         <div className="spacer" />
@@ -218,7 +240,11 @@ export default function Producao({ pedidos, problemas }) {
       <div className="screen-only">
         {lista.length === 0 ? (
           <div className="empty"><div className="big">🏭</div>
-            {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
+            {categorizados.length === 0
+              ? 'Nenhum pedido categorizado ainda.'
+              : emProducao.length === 0
+                ? `Nada em produção — ${jaSairam} pedido(s) já foram expedidos e estão em Entregas/Rota.`
+                : 'Nenhum pedido com esses filtros.'}
           </div>
         ) : (
           vendedoresOrd.map((vend) => (
@@ -326,7 +352,14 @@ function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
       </div>
       <ul className="itens">
         {p.itens.map((it, i) => (
-          <li key={i}><span><SeloLinha linha={p._linhaCard} />{it.produto}</span><span className="q">{it.qtd}</span></li>
+          <li key={i}>
+            <span><SeloLinha linha={p._linhaCard} />{it.produto}</span>
+            <span className="q">
+              {fmtQtd(it.qtd)}
+              {/* parte do item já saiu: o que falta produzir é este número, não o pedido */}
+              {it._qtdPedida != null && <small className="q-parcial"> de {fmtQtd(it._qtdPedida)}</small>}
+            </span>
+          </li>
         ))}
       </ul>
       {p.obs && <div style={{ fontSize: 12, color: 'var(--warn)', marginTop: 6 }}>⚠ {p.obs}</div>}
@@ -375,7 +408,12 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, filtro
                           </div>
                           <table className="pr-itens"><tbody>
                             {p.itens.map((it, i) => (
-                              <tr key={i}><td><SeloLinha linha={p._linhaCard} />{it.produto}</td><td className="q">{it.qtd}</td></tr>
+                              <tr key={i}>
+                                <td><SeloLinha linha={p._linhaCard} />{it.produto}</td>
+                                <td className="q">{fmtQtd(it.qtd)}
+                                  {it._qtdPedida != null && <small className="q-parcial"> de {fmtQtd(it._qtdPedida)}</small>}
+                                </td>
+                              </tr>
                             ))}
                           </tbody></table>
                           {p.obs && <div className="pr-obs">⚠ {p.obs}</div>}
