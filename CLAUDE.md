@@ -397,6 +397,36 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
    continua com esse nome. FALTA: romaneio de conferência no fim da lista por vendedor/dia
    (data que o vendedor passou o pedido, data de entrega prevista, assinatura sua e dele).
 
+## SEGURANÇA — falha aberta corrigida (15/08/2026)
+> Achado numa revisão de segurança. Três coisas somadas expunham a base comercial
+> na internet; nenhuma delas isolada parecia grave.
+
+- **O cadastro público do Firebase está ATIVO** e o repositório é público, então
+  a `apiKey` é conhecida: qualquer pessoa cria uma conta válida. (Verificado sem
+  criar conta: `accounts:signUp` com senha curta responde `WEAK_PASSWORD`, e não
+  `ADMIN_ONLY_OPERATION`.)
+- **`AuthContext` dava `perfil = 'dono'` a quem não tem doc em `usuarios`** — o
+  comentário dizia "fallback seguro p/ admin" e era o contrário. Quem se
+  cadastrasse entrava com a INTERFACE DE DONO. Agora falha fechado (`semPerfil`),
+  e o `App` mostra "Acesso não liberado" antes de qualquer aba. ⚠️ O
+  `ACESSO[perfil] || ACESSO.dono` do App era o mesmo buraco por outro caminho.
+- **`config/{doc}` era legível com `logado()`** — e é onde moram a carteira de
+  clientes, a tabela de preços, as rotas de cada vendedor e o telefone dos
+  motoristas. Virou `temPerfil()`: conta recém-criada não tem doc em `usuarios`,
+  então não lê nada. ⚠️ A regra de `usuarios` **tem** que continuar aceitando
+  `logado()` para o próprio uid, senão ninguém descobre o próprio perfil e o
+  login inteiro trava.
+- **`auditoria` não conferia quem assinava** — dava para gravar movimento em nome
+  de outra pessoa. Agora exige `porUid == request.auth.uid`. Os 3 pontos de
+  escrita (todos no `QuadroProducao`) já mandavam o uid do usuário logado.
+- ⚠️ **Continua em aberto (aceito):** o registro de auditoria vai no mesmo
+  `writeBatch` montado no navegador, então uma chamada direta à API move a etapa
+  SEM gravar o log. Fechar isso exige Cloud Functions (plano Blaze). **O log é
+  bom contra engano, não contra má-fé.**
+- ⚠️ **Continua em aberto (aceito):** operador com qualquer setor reescreve o
+  mapa `etapas` de QUALQUER pedido — a regra valida o mapa como bloco, não item
+  a item.
+
 ## Perfil Vendedor + segurança (Fase B — em produção)
 - **Perfil `vendedor`:** acesso só à aba "Meus Pedidos" (`MeusPedidos.jsx`), vê apenas os
   pedidos do próprio vendedor. Vínculo via campo `vendedorNome` em `usuarios/{uid}` (casado

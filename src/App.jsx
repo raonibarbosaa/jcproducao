@@ -33,7 +33,7 @@ const ACESSO = {
 }
 
 export default function App() {
-  const { user, perfil, vendedorNome, setores, carregando } = useAuth()
+  const { user, perfil, semPerfil, nome, logout, vendedorNome, setores, carregando } = useAuth()
   const { vendedores: cadastros } = useCadastros()
   const [pedidosCrus, setPedidos] = useState([])
   const [problemas, setProblemas] = useState([])
@@ -77,6 +77,22 @@ export default function App() {
 
   if (carregando) return <div className="loading">Carregando…</div>
   if (!user) return <Login />
+  // Autenticado sem cadastro: NÃO entra. O `ACESSO[perfil] || ACESSO.dono` mais
+  // abaixo cairia no perfil de dono com `perfil` nulo — outro caminho de falha
+  // aberta, e este fecha os dois de uma vez.
+  if (semPerfil || !perfil) {
+    return (
+      <div className="loading" style={{ flexDirection: 'column', gap: 14, textAlign: 'center', padding: 24 }}>
+        <div style={{ fontSize: 40 }}>🔒</div>
+        <div><b>Acesso não liberado</b></div>
+        <div style={{ color: 'var(--text-dim)', maxWidth: 420, fontSize: 14 }}>
+          A conta <b>{user.email}</b> não está cadastrada neste sistema.
+          Fale com o administrador para liberar o seu acesso.
+        </div>
+        <button className="btn" onClick={logout}>Sair</button>
+      </div>
+    )
+  }
 
   // o perfil dá a base; para o operador, os SETORES ainda podem abrir aba
   const abas = abasDoUsuario(perfil, setores, ACESSO[perfil] || ACESSO.dono)

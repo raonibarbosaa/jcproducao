@@ -81,10 +81,16 @@ service cloud.firestore {
       allow write: if ehStaff();
     }
 
-    // Cadastros (config/cadastros): qualquer autenticado lê (o app precisa para
+    // Cadastros (config/cadastros): quem TEM PERFIL lê (o app precisa para
     // resolver nomes/rotas); apenas staff altera.
+    //
+    // ⚠️ Era `logado()` e isso era um vazamento: o cadastro público do Firebase
+    // está aberto e o repositório é público, então qualquer pessoa criava uma
+    // conta e lia este documento — que guarda a CARTEIRA DE CLIENTES, a TABELA
+    // DE PREÇOS, as rotas de cada vendedor e o telefone dos motoristas.
+    // `temPerfil()` fecha porque a conta recém-criada não tem doc em `usuarios`.
     match /config/{doc} {
-      allow read: if logado();
+      allow read: if temPerfil();
       allow write: if ehStaff();
     }
 
@@ -132,7 +138,11 @@ service cloud.firestore {
     // apaga, nem o dono: um log que pode ser corrigido não prova nada.
     match /auditoria/{id} {
       allow read: if temPerfil() && meu().perfil == 'dono';
-      allow create: if ehStaff() || ehOperador() || ehExpedicao();
+      // ⚠️ `porUid` TEM que ser quem está assinando: sem isso dava para gravar
+      // um movimento em nome de outra pessoa, e um log que aceita assinatura
+      // falsa não serve de prova.
+      allow create: if (ehStaff() || ehOperador() || ehExpedicao())
+        && request.resource.data.porUid == request.auth.uid;
       allow update, delete: if false;
     }
   }

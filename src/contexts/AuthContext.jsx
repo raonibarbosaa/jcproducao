@@ -12,7 +12,8 @@ export const useAuth = () => useContext(AuthCtx)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)       // { uid, email }
-  const [perfil, setPerfil] = useState(null)    // 'designer' | 'financeiro' | 'dono' | 'vendedor'
+  const [perfil, setPerfil] = useState(null)   // 'designer' | 'financeiro' | 'dono' | 'vendedor' | 'operador' | 'expedicao'
+  const [semPerfil, setSemPerfil] = useState(false)  // autenticado, mas NÃO cadastrado
   const [nome, setNome] = useState('')
   const [vendedorNome, setVendedorNome] = useState(null) // vínculo p/ perfil 'vendedor'
   const [setores, setSetores] = useState([])   // setores liberados p/ perfil 'operador'
@@ -36,26 +37,35 @@ export function AuthProvider({ children }) {
               return
             }
             setPerfil(d.perfil || 'dono')
+            setSemPerfil(false)
             setNome(d.nome || u.email)
             setVendedorNome(d.vendedorNome || null)
             setSetores(Array.isArray(d.setores) ? d.setores : [])
             setMateriais(Array.isArray(d.materiais) ? d.materiais : [])
           } else {
-            // sem documento de perfil -> trata como dono (fallback seguro p/ admin)
-            setPerfil('dono')
+            // ⚠️ SEM documento de perfil = SEM acesso. Antes isto virava 'dono'
+            // com o comentário "fallback seguro p/ admin" — e era o contrário:
+            // o cadastro público do Firebase está aberto, então qualquer pessoa
+            // que criasse uma conta caía aqui e ganhava a INTERFACE DE DONO.
+            // Falhar fechado é o certo: quem não foi cadastrado não entra.
+            setPerfil(null)
+            setSemPerfil(true)
             setNome(u.email)
             setVendedorNome(null)
             setSetores([]); setMateriais([])
           }
         } catch (e) {
           console.error('Erro ao ler perfil:', e)
-          setPerfil('dono')
+          // erro de leitura também fecha: conceder dono por causa de uma falha
+          // de rede é exatamente o caminho que um atacante procura
+          setPerfil(null)
+          setSemPerfil(true)
           setNome(u.email)
           setVendedorNome(null)
           setSetores([]); setMateriais([])
         }
       } else {
-        setUser(null); setPerfil(null); setNome(''); setVendedorNome(null); setSetores([]); setMateriais([])
+        setUser(null); setPerfil(null); setSemPerfil(false); setNome(''); setVendedorNome(null); setSetores([]); setMateriais([])
       }
       setCarregando(false)
     })
@@ -70,7 +80,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, perfil, nome, vendedorNome, setores, materiais, carregando, login, logout }}>
+    <AuthCtx.Provider value={{ user, perfil, semPerfil, nome, vendedorNome, setores, materiais, carregando, login, logout }}>
       {children}
     </AuthCtx.Provider>
   )
