@@ -577,6 +577,11 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   com o resto. Uma rota rende várias viagens; encerrar a cada carga obrigaria a
   refazer o planejamento e o que ficou para trás sumiria de vista. `plano.cargas`
   acumula as viagens que saíram.
+- **Ordem da tela: PREVISÕES em cima, "Prontos sem previsão" embaixo.** Invertido
+  (como nasceu), seis previsões sumiam atrás de dezenas de cards de estoque e o
+  dono perguntou "como vejo os 6 pedidos que estão em planejamento?" (14/08/2026).
+  A previsão é o documento de trabalho, o que a pessoa volta para abrir; o estoque
+  pronto é matéria-prima.
 - ⚠️ **"Prontos sem previsão" é obrigatório na tela.** Ao trocar a montagem direta
   pelo plano, TODO o estoque já expedido sumiu da tela de uma vez — não havia
   plano nenhum, então não havia onde vê-lo (bug relatado pelo dono em 14/08/2026:

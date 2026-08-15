@@ -868,7 +868,8 @@ input, select { font-family: var(--font); }
 
 /* estoque pronto que ainda não entrou em previsão nenhuma — sem esta lista o
    galpão fica invisível na tela e o operador acha que os pedidos sumiram */
-.prontos-bloco { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+/* fica ABAIXO das previsões: a linha separa por cima, não por baixo */
+.prontos-bloco { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--border); }
 .sug-titulo { font-size: 13px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .sug-titulo small { font-weight: 400; color: var(--text-faint); font-size: 11px; }
 /* os cards do grupo têm alturas diferentes (uns listam mais pedidos); sem o

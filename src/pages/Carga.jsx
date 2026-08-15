@@ -661,6 +661,59 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
+      {/* As PREVISÕES vêm primeiro: são o documento de trabalho, o que a pessoa
+          volta para abrir. O estoque pronto é matéria-prima e fica embaixo —
+          invertido, seis previsões sumiam atrás de dezenas de cards de estoque
+          e ninguém achava a aba pelo próprio nome. */}
+      <div className="sug-titulo" style={{ margin: '0 2px 8px' }}>
+        📋 Previsões abertas
+        {totalPlanos > 0 && <small>{totalPlanos} viagem(ns) em montagem</small>}
+      </div>
+      {planos.length === 0 ? (
+        <div className="empty"><div className="big">📋</div>
+          {totalPlanos > 0
+            ? `Nenhuma das ${totalPlanos} previsão(ões) abertas bate com esses filtros.`
+            : <>Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
+                pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.</>}
+        </div>
+      ) : (
+        <div className="cards">
+          {planos.slice().sort((a, b) => (a.saidaPrevista || '9999').localeCompare(b.saidaPrevista || '9999')
+            || (Number(a.numero) || 0) - (Number(b.numero) || 0)).map((pl) => {
+            const r = resumo(pl)
+            return (
+              <div key={pl.id} className="card em_dia plano-card">
+                <div className="card-top">
+                  <div className="cliente">📍 {pl.rota}</div>
+                  <div className="idv">#{pl.numero}</div>
+                </div>
+                <div className="meta-row">
+                  <span className="chip">👤 {pl.vendedor || '—'}</span>
+                  {pl.saidaPrevista && <span className="chip">🚚 saída {fmtData(pl.saidaPrevista + 'T00:00:00')}</span>}
+                </div>
+                <div className="pl-est ok" style={{ marginTop: 8 }}>
+                  <b>{r.total}</b> pedido(s) na previsão · <b>{r.prontos}</b> pronto(s)
+                </div>
+                {r.volumes > 0 && (
+                  <div className="pl-est">📦 {r.volumes} volume(s) · {fmtPeso(r.peso)}</div>
+                )}
+                {r.total > r.prontos && (
+                  <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
+                )}
+                {r.deFora > 0 && (
+                  <div className="pl-est falta">⚠ {r.deFora} de outras rotas</div>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => onAbrir(pl.id)}>Abrir</button>
+                  <button className="btn" onClick={() => onApagar(pl)} title="Apagar a previsão (não mexe nos pedidos)">🗑</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {prontosSemPlano > 0 && (
         <div className="prontos-bloco">
           <div className="sug-titulo" style={{ margin: '0 2px 8px' }}>
@@ -713,50 +766,6 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         </div>
       )}
 
-      {planos.length === 0 ? (
-        <div className="empty"><div className="big">📋</div>
-          {totalPlanos > 0
-            ? `Nenhuma das ${totalPlanos} previsão(ões) abertas bate com esses filtros.`
-            : <>Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
-                pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.</>}
-        </div>
-      ) : (
-        <div className="cards">
-          {planos.slice().sort((a, b) => (a.saidaPrevista || '9999').localeCompare(b.saidaPrevista || '9999')
-            || (Number(a.numero) || 0) - (Number(b.numero) || 0)).map((pl) => {
-            const r = resumo(pl)
-            return (
-              <div key={pl.id} className="card em_dia plano-card">
-                <div className="card-top">
-                  <div className="cliente">📍 {pl.rota}</div>
-                  <div className="idv">#{pl.numero}</div>
-                </div>
-                <div className="meta-row">
-                  <span className="chip">👤 {pl.vendedor || '—'}</span>
-                  {pl.saidaPrevista && <span className="chip">🚚 saída {fmtData(pl.saidaPrevista + 'T00:00:00')}</span>}
-                </div>
-                <div className="pl-est ok" style={{ marginTop: 8 }}>
-                  <b>{r.total}</b> pedido(s) na previsão · <b>{r.prontos}</b> pronto(s)
-                </div>
-                {r.volumes > 0 && (
-                  <div className="pl-est">📦 {r.volumes} volume(s) · {fmtPeso(r.peso)}</div>
-                )}
-                {r.total > r.prontos && (
-                  <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
-                )}
-                {r.deFora > 0 && (
-                  <div className="pl-est falta">⚠ {r.deFora} de outras rotas</div>
-                )}
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
-                    onClick={() => onAbrir(pl.id)}>Abrir</button>
-                  <button className="btn" onClick={() => onApagar(pl)} title="Apagar a previsão (não mexe nos pedidos)">🗑</button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
     </>
   )
 }
