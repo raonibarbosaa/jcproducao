@@ -12,6 +12,7 @@ import {
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
   rotasDoVendedor, pendenciasDoPedido, MODO_ORDER,
+  keyDoItem, linhaDoItem, qtdEmProducao, etapaDoItem, nomeEtapaItem,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -948,16 +949,23 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
 
 // uma linha de pedido no planejamento: diz se está pronto ou onde está na fábrica
 function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, salvando, onAlterna, onDevolver }) {
+  // Clicar no pedido abre os PRODUTOS. Fechado por padrão: a lista precisa caber
+  // na tela para escolher a viagem; aberta em todos, viraria uma parede de texto.
+  // Mas na hora de decidir o que sobe no caminhão, o que importa é o produto —
+  // "3 volumes" não diz se é a sacola grande ou a etiqueta.
+  const [aberto, setAberto] = useState(false)
   const s = situacaoNoPlano(p, livres, itensCad)
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
+  const nItens = (p.itens || []).length
   return (
     <div className={`pl-linha${s.pronto ? ' pronto' : ''}`}>
       <button className={`btn${dentro ? '' : ' ok'} pl-acao`} disabled={!!salvando || (!dentro && !!noutro)}
         title={noutro ? `Já está no plano #${noutro.numero}` : ''}
         onClick={onAlterna}>{dentro ? '−' : '+'}</button>
       <div className="pl-corpo">
-        <div className="pl-top">
-          <b>{nomeCliente(p.cliente, clientes)}</b>
+        <div className="pl-top pl-abre" onClick={() => setAberto((v) => !v)}
+          title={aberto ? 'Fechar os produtos' : 'Ver os produtos deste pedido'}>
+          <b><span className="pl-seta">{aberto ? '▾' : '▸'}</span>{nomeCliente(p.cliente, clientes)}</b>
           <span className="idv">#{p.idVenda}</span>
         </div>
         <div className="pl-meta">
@@ -985,6 +993,36 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
           <div className="pl-est falta">
             ⏳ {s.pendencias.map((x) => `${x.itens} em ${x.nome}`).join(' · ')}
           </div>
+        )}
+        {!aberto && nItens > 0 && (
+          <button className="pl-veritens" onClick={() => setAberto(true)}>
+            ver {nItens} produto(s)
+          </button>
+        )}
+        {aberto && (
+          <ul className="pl-itens">
+            {(p.itens || []).map((it, i) => {
+              const chave = it.key || keyDoItem(p, i)
+              const vols = (livres || []).filter((v) => v.itemKey === chave)
+              const falta = qtdEmProducao(p, i)
+              return (
+                <li key={i}>
+                  <div className="pli-nome">
+                    <SeloLinha linha={linhaDoItem(p, i)} />{it.produto}
+                  </div>
+                  <div className="pli-est">
+                    {vols.length > 0 && (
+                      <span className="ok">✅ {vols.length} vol · {fmtPeso(pesoDaLista(vols, itensCad))}</span>
+                    )}
+                    {falta > 0 && (
+                      <span className="falta">⏳ {fmtQtd(falta)} em {nomeEtapaItem(etapaDoItem(p, i)) || '—'}</span>
+                    )}
+                    {vols.length === 0 && falta <= 0 && <span>—</span>}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         )}
       </div>
     </div>

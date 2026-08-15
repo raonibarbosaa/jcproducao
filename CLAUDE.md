@@ -604,6 +604,11 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   `⚠ ROTA · VENDEDOR` na linha, `+N de fora` no cabeçalho da viagem e
   `⚠ N de outras rotas` no card da lista — a viagem muda de itinerário, e
   ninguém pode descobrir isso só na hora de carregar.
+- **Clicar no pedido abre os PRODUTOS** (`LinhaPlano`), fechado por padrão: a
+  lista precisa caber na tela para escolher a viagem, e tudo aberto viraria uma
+  parede de texto. Cada produto mostra o selo da linha, os volumes prontos com
+  peso e, quando falta, quanto e em que setor — "3 volumes" não diz se é a sacola
+  grande ou a etiqueta, e é o produto que decide o que sobe no caminhão.
 - **Filtro por SITUAÇÃO** (`SITUACOES`: Todos · ✅ Prontos · 📦 Na montagem ·
   🏭 Na linha) nas duas listas do plano. "O que já dá para levar" e "o que sai da
   montagem a tempo" são perguntas diferentes, e a lista misturada não responde

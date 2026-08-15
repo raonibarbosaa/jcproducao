@@ -887,3 +887,20 @@ input, select { font-family: var(--font); }
 .pc-sit .chip { cursor: pointer; border-color: var(--border); }
 .pc-sit .chip:hover { border-color: var(--text-faint); }
 .pc-sit .chip.sit-on { background: var(--accent); color: #1a1205; border-color: var(--accent); font-weight: 700; }
+
+/* pedido do planejamento: clicar abre os produtos */
+.pl-abre { cursor: pointer; user-select: none; }
+.pl-abre:hover b { color: var(--accent); }
+.pl-seta { display: inline-block; width: 14px; color: var(--text-faint); font-size: 11px; }
+.pl-veritens {
+  background: none; border: none; padding: 3px 0 0 14px;
+  color: var(--text-faint); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.pl-veritens:hover { color: var(--accent); }
+.pl-itens { list-style: none; margin: 6px 0 2px 14px; padding: 0; border-left: 2px solid var(--border); }
+.pl-itens li { padding: 4px 0 4px 9px; font-size: 12px; }
+.pl-itens li + li { border-top: 1px dashed var(--border); }
+.pli-nome { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.pli-est { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px; color: var(--text-faint); font-size: 11px; }
+.pli-est .ok { color: var(--ok); }
+.pli-est .falta { color: var(--warn); }
