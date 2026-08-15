@@ -12,6 +12,7 @@ import {
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
   docProblema, problemaDoItem, temCorrecao,
+  tempoNaEtapa, fmtDuracao, diasDe,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -26,6 +27,19 @@ import ReportarErro from './ReportarErro.jsx'
 // quem monta papel não é quem monta plástico; a etapa gravada segue 'montagem'.
 // Recebe uma LISTA de painéis: um só = fila do operador; todos = visão geral.
 // NÃO mostra valor para operador/designer/expedição (só dono e financeiro).
+// Há quanto tempo isto está parado aqui. A cor sobe com a espera, mas o número
+// aparece sempre: esconder o tempo pequeno faria o chip surgir "do nada" no dia
+// em que já está tarde.
+function Espera({ ms }) {
+  const d = diasDe(ms)
+  const nivel = d >= 7 ? ' esp-grave' : d >= 3 ? ' esp-alerta' : ''
+  return (
+    <span className={`chip espera${nivel}`} title="Tempo parado neste setor">
+      ⏱ {fmtDuracao(ms)}
+    </span>
+  )
+}
+
 export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas }) {
   const { user, perfil, nome, setores, materiais } = useAuth()
   const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
@@ -357,6 +371,10 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                       {/* a ROTA está na faixa do grupo — aqui vale a cidade da entrega */}
                       <span className="chip">📍 {p.cidade || p.rota || '—'}</span>
                       <DataEntrega p={p} atrasado={atrasado} />
+                      {/* Há quanto tempo o mais antigo deste card espera NESTE setor.
+                          Não é enfeite: em produção por encomenda quase todo o prazo
+                          é fila, e a fila é invisível sem alguém dizer o número. */}
+                      <Espera ms={Math.max(...idxs.map((i) => tempoNaEtapa(p, i, pa.etapa)))} />
                       {parcial && (
                         <span className="chip" title="Os outros itens deste pedido estão em outra etapa">
                           {idxs.length} de {(p.itens || []).length} itens

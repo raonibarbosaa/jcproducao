@@ -419,6 +419,121 @@ export function agrupaCargaPorPedido(carga, pedidos) {
   return Object.values(mapa)
 }
 
+// ---------- RELÓGIO: quanto tempo o item passa em cada etapa ----------
+// Serve para a estatística da linha (onde a fila cresce) e para o card avisar
+// "está há 6 dias no silk". O tempo medido é quase todo FILA, não trabalho — em
+// produção por encomenda a peça passa a maior parte do tempo esperando —, e é
+// justamente a fila que dá para atacar.
+//
+// Onde mora: dentro de `etapas[key]`, junto do resto — o import sobrescreve
+// `itens`, então qualquer coisa que precise sobreviver mora no mapa por chave.
+//   desde:  { <etapa>: iso }  quando esta etapa PASSOU A TER quantidade
+//   tempos: { <etapa>: ms  }  somado das passagens já ENCERRADAS
+//
+// É por item × ETAPA (e não um relógio só por item) porque com produção parcial
+// o mesmo item fica em duas etapas ao mesmo tempo: 50 na montagem e 50 no silk.
+// Um relógio só devolveria "última movimentação", que não responde onde a fila
+// está — e achar a fila é o objetivo.
+export const MS_DIA = 86400000
+
+// Compara a distribuição ANTES × DEPOIS e carimba as entradas/saídas de etapa.
+// Roda no fim de todo construtor de mapa, num lugar só: espalhar o carimbo por
+// cada caminho de movimentação deixaria algum de fora, e um relógio que às vezes
+// não conta é pior que nenhum — ninguém desconfia de um número que existe.
+export function carimbaTempos(p, mapaNovo, agora) {
+  if (!mapaNovo || typeof mapaNovo !== 'object') return mapaNovo
+  const t = agora || new Date().toISOString()
+  const depois = { ...p, etapas: mapaNovo }
+  const out = { ...mapaNovo }
+  ;(p?.itens || []).forEach((_, i) => {
+    const k = keyDoItem(p, i)
+    const entrada = out[k]
+    if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return
+    const antes = distribuicaoDoItem(p, i)
+    const dep = distribuicaoDoItem(depois, i)
+    const desde = { ...(entrada.desde || {}) }
+    const tempos = { ...(entrada.tempos || {}) }
+    // De quando este item está parado, na falta de carimbo: a última
+    // movimentação, senão a entrada do pedido no sistema. É o que salva a
+    // PRIMEIRA passagem de cada item — no dia em que o relógio entra no ar
+    // ninguém tem carimbo, e sem isto toda fila que já existia fecharia com
+    // zero e as etapas cheias seriam remarcadas como recém-chegadas.
+    const antigo = doMapaDoItem(p?.etapas, p, i)?.em || p?.importadoEm || p?.dataVenda || t
+    for (const et of new Set([...Object.keys(antes), ...Object.keys(dep)])) {
+      const tinha = (antes[et] || 0) > 0
+      const tem = (dep[et] || 0) > 0
+      if (tem) {
+        // já estava aqui: NÃO reinicia o relógio por causa de um movimento que
+        // foi de outra parte do item (com produção parcial isso é rotina)
+        if (!desde[et]) desde[et] = tinha ? antigo : t
+      } else if (tinha) {
+        const ini = Date.parse(desde[et] || antigo)
+        const ms = Number.isFinite(ini) ? Date.parse(t) - ini : 0
+        if (ms > 0) tempos[et] = (tempos[et] || 0) + ms
+        delete desde[et]
+      }
+    }
+    out[k] = { ...entrada, desde, tempos }
+  })
+  return out
+}
+
+// Desde quando o item está NESTA etapa. Sem carimbo (item que já estava parado
+// antes de o relógio existir) cai na última movimentação e, por fim, na entrada
+// do pedido no sistema: um número aproximado é mais útil que um traço.
+export function desdeNaEtapa(p, idx, etapa) {
+  const e = doMapaDoItem(p?.etapas, p, idx)
+  return e?.desde?.[etapa] || e?.em || p?.importadoEm || p?.dataVenda || ''
+}
+
+// Tempo (ms) que o item está/esteve nesta etapa, contando a passagem atual.
+export function tempoNaEtapa(p, idx, etapa, agora) {
+  const e = doMapaDoItem(p?.etapas, p, idx)
+  const t = agora ? Date.parse(agora) : Date.now()
+  let ms = Number(e?.tempos?.[etapa]) || 0
+  if (qtdNaEtapa(p, idx, etapa) > 0) {
+    const ini = Date.parse(desdeNaEtapa(p, idx, etapa))
+    if (Number.isFinite(ini)) ms += Math.max(0, t - ini)
+  }
+  return ms
+}
+
+// Idade do item desde que ENTROU no sistema — inclui o tempo em triagem, que é
+// invisível em todo relatório de chão de fábrica e costuma ser dos maiores.
+export function idadeDoItem(p, idx, agora) {
+  const ini = Date.parse(p?.importadoEm || p?.dataVenda || desdeNaEtapa(p, idx, etapaDoItem(p, idx)))
+  if (!Number.isFinite(ini)) return null
+  return Math.max(0, (agora ? Date.parse(agora) : Date.now()) - ini)
+}
+
+// Idade do PEDIDO: a do item mais antigo ainda em produção (é ele que segura a
+// entrega). Sem item pendente, devolve null — pedido que já saiu não "espera".
+export function idadeDoPedido(p, agora) {
+  let maior = null
+  ;(p?.itens || []).forEach((_, i) => {
+    if (qtdEmProducao(p, i) <= 0) return
+    const v = idadeDoItem(p, i, agora)
+    if (v != null && (maior == null || v > maior)) maior = v
+  })
+  return maior
+}
+
+// "3d 4h" / "5h 20min" / "12min" — tempo CORRIDO (decisão do dono em 14/08/2026):
+// é o que o cliente sente. Ele espera 5 dias, não 3 dias úteis.
+export function fmtDuracao(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `${min}min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h ${min % 60}min`
+  const d = Math.floor(h / 24)
+  return `${d}d ${h % 24}h`
+}
+
+// só o número de dias inteiros — para pintar o card de acordo com a espera
+export const diasDe = (ms) => (ms == null ? null : Math.floor(ms / MS_DIA))
+
 // ---------- PLANO DE ENTREGA (a previsão da viagem) ----------
 // Camada ACIMA da carga, e a diferença entre as duas é a razão de existirem:
 //   PLANO  guarda NÚMEROS DE PEDIDO — na hora de planejar o volume ainda nem
@@ -667,6 +782,9 @@ export function contaEtapasVendedor(pedidos) {
 // mapaEtapasCom fazia) para congelar o legado: item que não se move fica gravado
 // já no formato novo, e nunca mais depende do fallback de leitura.
 export function mapaEtapasComQtd(p, movimentos, quem) {
+  return carimbaTempos(p, mapaEtapasComQtdCru(p, movimentos, quem))
+}
+function mapaEtapasComQtdCru(p, movimentos, quem) {
   const porIdx = new Map((movimentos || []).map((m) => [m.idx, m]))
   const agora = new Date().toISOString()
   const mapa = {}
@@ -695,6 +813,9 @@ export function mapaEtapasComQtd(p, movimentos, quem) {
 // Materializa `etapas` movendo VOLUMES. movs = [{ idx, ids, para }].
 // Item sem volume (legado, que andou antes do embalo) é congelado como está.
 export function mapaEtapasMovendoVolumes(p, movs, quem) {
+  return carimbaTempos(p, mapaEtapasMovendoVolumesCru(p, movs, quem))
+}
+function mapaEtapasMovendoVolumesCru(p, movs, quem) {
   const porIdx = new Map((movs || []).map((m) => [m.idx, m]))
   const mapa = {}
   ;(p.itens || []).forEach((_, i) => {
@@ -899,6 +1020,9 @@ export function moveQtdItem(p, idx, de, para, qtd) {
 // A soma dos volumes NÃO precisa bater com `consumido`: é isso que registra a
 // quebra (98,3 kg produzidos de um lote de 100 pedidas).
 export function fechaMontagemEmVolumes(p, idx, volumes, consumido, quem) {
+  return carimbaTempos(p, fechaMontagemEmVolumesCru(p, idx, volumes, consumido, quem))
+}
+function fechaMontagemEmVolumesCru(p, idx, volumes, consumido, quem) {
   const d = distribuicaoDoItem(p, idx)
   const naMontagem = arredondaQtd(d.montagem)
   const baixa = Math.min(arredondaQtd(consumido), naMontagem)
@@ -931,6 +1055,10 @@ export function fechaMontagemEmVolumes(p, idx, volumes, consumido, quem) {
 // Só desembala quando NADA saiu ainda. Com volume já expedido ou entregue não há
 // resposta certa para "quanto volta", e inventar uma seria pior que recusar.
 export function desfazEmbalagem(p, idx, quem) {
+  const m = desfazEmbalagemCru(p, idx, quem)
+  return m ? carimbaTempos(p, m) : m
+}
+function desfazEmbalagemCru(p, idx, quem) {
   const vs = volumesDoItem(p, idx)
   if (!vs.length) return null
   if (vs.some((v) => v.et !== 'expedicao')) return null
@@ -997,6 +1125,9 @@ export function etapaAnteriorItem(et, linha) {
 // `destino` pode ser um id de etapa ou uma função (idx) => etapa — o card de
 // Montagem/Expedição pode ter itens de linhas diferentes voltando cada um pra sua.
 export function mapaEtapasCom(p, idxs, destino, quem) {
+  return carimbaTempos(p, mapaEtapasComCru(p, idxs, destino, quem))
+}
+function mapaEtapasComCru(p, idxs, destino, quem) {
   const alvo = new Set(idxs)
   const paraOnde = typeof destino === 'function' ? destino : () => destino
   const mapa = {}

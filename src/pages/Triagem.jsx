@@ -117,6 +117,10 @@ export default function Triagem({ pedidos }) {
         for (const p of aImportar.slice(i, i + 450)) {
           const ja = existentes[p.idVenda]
           const dados = { ...p }
+          // relógio da fila: quando o pedido ENTROU no sistema. Só na primeira
+          // vez — reimportar a mesma planilha não pode zerar a espera, senão o
+          // pedido parado há duas semanas aparece como novo.
+          if (!ja?.importadoEm) dados.importadoEm = new Date().toISOString()
           if (ja && ja.status) { dados.status = ja.status }
           if (ja && ja.linhasItens) { dados.linhasItens = ja.linhasItens }
           if (ja && ja.obs) dados.obs = ja.obs || dados.obs

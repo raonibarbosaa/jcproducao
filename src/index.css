@@ -906,3 +906,8 @@ input, select { font-family: var(--font); }
 .pli-est { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 2px; color: var(--text-faint); font-size: 11px; }
 .pli-est .ok { color: var(--ok); }
 .pli-est .falta { color: var(--warn); }
+
+/* tempo parado no setor — a cor sobe com a espera */
+.chip.espera { font-variant-numeric: tabular-nums; }
+.chip.espera.esp-alerta { color: var(--warn); border-color: var(--warn); }
+.chip.espera.esp-grave { color: var(--danger); border-color: var(--danger); }

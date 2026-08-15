@@ -17,6 +17,45 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
+## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
+> Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
+> em produção por encomenda a peça passa a maior parte do tempo esperando, e é a
+> fila que dá para atacar.
+
+- **Onde mora:** dentro de `etapas[key]`, junto do resto (o import sobrescreve
+  `itens`) — `desde: { <etapa>: iso }` (passagem em aberto) e
+  `tempos: { <etapa>: ms }` (passagens já encerradas). Mais `importadoEm` no
+  pedido, gravado **só na primeira** importação: reimportar não pode zerar a
+  espera de um pedido parado há duas semanas.
+- **Por item × ETAPA, não um relógio por item** (decisão do dono): com produção
+  parcial o mesmo item fica em duas etapas ao mesmo tempo (50 na montagem, 50 no
+  silk). Um relógio só devolveria "última movimentação", que não diz onde a fila
+  está — e achar a fila é o objetivo.
+- **`carimbaTempos` roda num lugar só:** todo construtor de mapa
+  (`mapaEtapasComQtd`, `mapaEtapasCom`, `mapaEtapasMovendoVolumes`,
+  `fechaMontagemEmVolumes`, `desfazEmbalagem`) virou um invólucro sobre a versão
+  `...Cru`. Espalhar o carimbo por cada caminho deixaria algum de fora, e um
+  relógio que às vezes não conta é pior que nenhum — ninguém desconfia de um
+  número que existe.
+- ⚠️ **Duas armadilhas que os testes pegaram** (`smoke29`):
+  1. Sem carimbo (todo item no dia da virada), fechar uma etapa dava **zero**.
+     Agora cai em `em` → `importadoEm` → `dataVenda`, e a fila que já existia
+     entra na conta aproximada em vez de sumir.
+  2. Etapa que **continuava** com quantidade era remarcada como recém-chegada
+     quando outra parte do item se movia. Só carimba `agora` quando a etapa
+     estava vazia antes; senão preserva o início.
+- **Leitura:** `tempoNaEtapa`, `desdeNaEtapa`, `idadeDoItem` (desde a importação —
+  inclui a triagem, que some de todo relatório de chão de fábrica),
+  `idadeDoPedido` (o item mais antigo ainda em produção), `fmtDuracao`, `diasDe`.
+- **Tempo CORRIDO**, não útil (decisão do dono): é o que o cliente sente — ele
+  espera 5 dias, não 3 dias úteis.
+- **No quadro:** chip `⏱` por card com o tempo parado NAQUELE setor; amarelo a
+  partir de 3 dias, vermelho a partir de 7.
+- **FALTA: o relatório de gargalo** (mediana e P85 por etapa/linha, aging WIP).
+  A `auditoria` já é um registro de eventos com `de`/`para`/`quando` desde
+  11/08/2026 e serve de base histórica; faltam os eventos de importação,
+  classificação na triagem e entrega para fechar a cadeia.
+
 ## VOLUMES — o pacote físico (13/08/2026)
 > O motorista conta volume, não pesa kg. Depois da montagem o item deixa de andar
 > por quantidade solta e passa a andar por VOLUME.
