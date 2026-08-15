@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd } from '../utils.js'
+import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -663,9 +663,13 @@ function CardItem({ it, onTipo, onUnidade, onEditar, onExcluir }) {
           ? <span className="chip" title="O volume de plástico já é pesado no fechamento da montagem">pesado na montagem</span>
           : it.pesoUnit > 0
             ? <span className="chip">{fmtQtd(it.pesoUnit)} kg por unidade</span>
-            : <span className="chip rota-warn" title="Sem este peso, os volumes deste produto ficam fora do total da carga">
-                sem peso
-              </span>}
+            : PESO_PADRAO[it.tipo] > 0
+              ? <span className="chip" title="Média usada enquanto este produto não tiver peso próprio">
+                  {fmtQtd(PESO_PADRAO[it.tipo] * 1000)} g (média)
+                </span>
+              : <span className="chip rota-warn" title="Sem este peso, os volumes deste produto ficam fora do total da carga">
+                  sem peso
+                </span>}
       </div>
 
       {/* tipo de material (inline) */}
@@ -774,8 +778,10 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
             placeholder="0,012" />
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
             Só para a carga do caminhão: um volume de 500 un × 0,012 pesa 6 kg. O plástico não
-            precisa — o volume dele já é pesado na montagem. Em branco, o volume fica de fora
-            do total e a tela avisa.
+            precisa — o volume dele já é pesado na montagem.
+            {PESO_PADRAO[tipo] > 0
+              ? ` Em branco, o sistema usa a média de ${fmtQtd(PESO_PADRAO[tipo] * 1000)} g por unidade.`
+              : ' Em branco, o volume fica de fora do total e a tela avisa.'}
           </div>
         </div>
       )}

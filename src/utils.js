@@ -1119,35 +1119,50 @@ export const itensSemPreco = (itensCad) =>
 // confiando numa conta que ninguém verificou. Produto sem peso cadastrado NÃO
 // entra na soma e é contado à parte — um total que ignora volumes em silêncio
 // mente para baixo, e é justamente aí que o caminhão passa do limite.
+// Peso médio por unidade quando o produto não tem o dele cadastrado.
+// 40 g por sacola de PAPEL é a média informada pelo dono (14/08/2026). Serve
+// para o total da carga sair utilizável desde o primeiro dia, sem esperar
+// alguém preencher produto por produto — o peso do cadastro sempre ganha deste.
+// Etiqueta e alça não têm média: sem chute, elas continuam contadas à parte.
+export const PESO_PADRAO = { papel: 0.04 }
+
 export function pesoDaQtd(produto, qtd, itensCad) {
   const n = arredondaQtd(qtd)
-  if (materialDoItem({ produto }, itensCad) === 'plastico') return { kg: n, estimado: false }
+  const mat = materialDoItem({ produto }, itensCad)
+  if (mat === 'plastico') return { kg: n, estimado: false }
   const nm = normaliza(produto)
   const cad = nm ? (itensCad || []).find((c) => normaliza(c.produto) === nm) : null
   const pu = Number(cad?.pesoUnit)
-  if (!(pu > 0)) return { kg: 0, estimado: false, semPeso: true }
-  return { kg: arredondaQtd(n * pu), estimado: true }
+  if (pu > 0) return { kg: arredondaQtd(n * pu), estimado: true }
+  const padrao = PESO_PADRAO[mat]
+  // `padrao: true` distingue a média genérica do peso medido daquele produto —
+  // as duas são estimativas, mas não valem a mesma coisa numa conferência
+  if (padrao > 0) return { kg: arredondaQtd(n * padrao), estimado: true, padrao: true }
+  return { kg: 0, estimado: false, semPeso: true }
 }
 
 // soma o peso de uma lista de volumes/itens ({produto, qtd})
 export function pesoDaLista(itens, itensCad) {
-  let kg = 0, estimado = false, semPeso = 0
+  let kg = 0, estimado = false, semPeso = 0, padrao = 0
   for (const it of itens || []) {
     const r = pesoDaQtd(it.produto, it.qtd, itensCad)
     if (r.semPeso) { semPeso++; continue }
     kg = arredondaQtd(kg + r.kg)
     if (r.estimado) estimado = true
+    if (r.padrao) padrao++
   }
-  return { kg, estimado, semPeso }
+  return { kg, estimado, semPeso, padrao }
 }
 
 export const fmtPeso = (r) =>
   `${r?.estimado ? '~' : ''}${fmtQtd(r?.kg || 0)} kg${r?.semPeso ? ` + ${r.semPeso} sem peso` : ''}`
 
-// quantos produtos ainda estão sem peso por unidade (só interessa fora do plástico,
-// que já é pesado no fechamento da montagem)
+// quantos produtos ainda estão sem peso próprio. O plástico não entra (já é
+// pesado na montagem) e o papel também não (cai na média de 40 g) — sobra o que
+// realmente fica de fora da conta: etiqueta e alça.
 export const itensSemPeso = (itensCad) =>
-  (itensCad || []).filter((c) => c.tipo !== 'plastico' && !(Number(c.pesoUnit) > 0)).length
+  (itensCad || []).filter((c) => c.tipo !== 'plastico' && !PESO_PADRAO[c.tipo]
+    && !(Number(c.pesoUnit) > 0)).length
 
 // ---------- ACABAMENTOS POR ITEM (fluxo da gráfica: laminação + furo) ----------
 // definidos pelo designer na Triagem; executados na Montagem.
