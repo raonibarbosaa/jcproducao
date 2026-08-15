@@ -628,12 +628,13 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - **PESO (`pesoDaQtd`/`pesoDaLista`/`fmtPeso`):** o volume de **plástico já é kg**
   — foi à balança no fechamento da montagem. O de papel/etiqueta/alça guarda
   QUANTIDADE, e o peso sai do campo **`pesoUnit`** (kg por unidade) do cadastro de
-  Itens: 500 un × 0,012 = 6 kg. **Sem peso próprio, o PAPEL cai na média de
-  `PESO_PADRAO.papel` = 40 g por sacola** (valor informado pelo dono em
-  14/08/2026) e o resultado vem com `padrao: true` — a média genérica e o peso
-  medido daquele produto são as duas estimativas, mas não valem a mesma coisa
-  numa conferência. O peso cadastrado no produto SEMPRE ganha da média.
-  Etiqueta e alça não têm média: sem chute, seguem contadas à parte.
+  Itens: 500 un × 0,012 = 6 kg. **Sem peso próprio vale `PESO_PADRAO`** — papel
+  40 g, alça torcida 45 g (médias informadas pelo dono em 14/08/2026) — e o
+  resultado vem com `padrao: true`: a média genérica e o peso medido daquele
+  produto são as duas estimativas, mas não valem a mesma coisa numa conferência.
+  O peso cadastrado no produto SEMPRE ganha da média. **ETIQUETA segue sem
+  média**: sem chute, continua contada à parte em vez de entrar no total com um
+  número inventado.
   O resultado diz se é `estimado` (a tela põe `~`),
   porque somar pesado com estimado sem avisar faz o operador carregar confiando
   numa conta que ninguém verificou. ⚠️ **Produto sem `pesoUnit` NÃO entra na

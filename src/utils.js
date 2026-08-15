@@ -1120,11 +1120,12 @@ export const itensSemPreco = (itensCad) =>
 // entra na soma e é contado à parte — um total que ignora volumes em silêncio
 // mente para baixo, e é justamente aí que o caminhão passa do limite.
 // Peso médio por unidade quando o produto não tem o dele cadastrado.
-// 40 g por sacola de PAPEL é a média informada pelo dono (14/08/2026). Serve
-// para o total da carga sair utilizável desde o primeiro dia, sem esperar
-// alguém preencher produto por produto — o peso do cadastro sempre ganha deste.
-// Etiqueta e alça não têm média: sem chute, elas continuam contadas à parte.
-export const PESO_PADRAO = { papel: 0.04 }
+// Médias informadas pelo dono (14/08/2026): 40 g por sacola de PAPEL, 45 g por
+// ALÇA TORCIDA. Servem para o total da carga sair utilizável desde o primeiro
+// dia, sem esperar alguém preencher produto por produto — o peso cadastrado no
+// produto sempre ganha deste. ETIQUETA segue sem média: sem chute, ela continua
+// contada à parte em vez de entrar no total com um número inventado.
+export const PESO_PADRAO = { papel: 0.04, alca_torcida: 0.045 }
 
 export function pesoDaQtd(produto, qtd, itensCad) {
   const n = arredondaQtd(qtd)
