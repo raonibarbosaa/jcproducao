@@ -891,10 +891,12 @@ input, select { font-family: var(--font); }
 /* pedido do planejamento: clicar abre os produtos */
 .pl-abre { cursor: pointer; user-select: none; }
 .pl-abre:hover b { color: var(--accent); }
-.pl-seta { display: inline-block; width: 14px; color: var(--text-faint); font-size: 11px; }
+/* a seta precisa ser vista: com ela apagada, ninguém percebe que a linha abre */
+.pl-seta { display: inline-block; width: 12px; color: var(--accent); font-size: 12px; }
 .pl-veritens {
-  background: none; border: none; padding: 3px 0 0 14px;
-  color: var(--text-faint); font-size: 11px; font-weight: 600; cursor: pointer;
+  background: none; border: none; padding: 4px 0 0 14px;
+  color: var(--text-dim); font-size: 11px; font-weight: 600; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
 }
 .pl-veritens:hover { color: var(--accent); }
 .pl-itens { list-style: none; margin: 6px 0 2px 14px; padding: 0; border-left: 2px solid var(--border); }

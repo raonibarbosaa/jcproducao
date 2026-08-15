@@ -965,7 +965,7 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
       <div className="pl-corpo">
         <div className="pl-top pl-abre" onClick={() => setAberto((v) => !v)}
           title={aberto ? 'Fechar os produtos' : 'Ver os produtos deste pedido'}>
-          <b><span className="pl-seta">{aberto ? '▾' : '▸'}</span>{nomeCliente(p.cliente, clientes)}</b>
+          <b><span className="pl-seta">{aberto ? '▾' : '▸'}</span> {nomeCliente(p.cliente, clientes)}</b>
           <span className="idv">#{p.idVenda}</span>
         </div>
         <div className="pl-meta">
@@ -996,7 +996,7 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
         )}
         {!aberto && nItens > 0 && (
           <button className="pl-veritens" onClick={() => setAberto(true)}>
-            ver {nItens} produto(s)
+            ▸ ver {nItens} produto(s)
           </button>
         )}
         {aberto && (
@@ -1023,6 +1023,14 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
               )
             })}
           </ul>
+        )}
+        {/* simétrico ao "ver N produto(s)": aberto, o único jeito de fechar era
+            clicar no nome do cliente — que não parece clicável, e a pessoa fica
+            procurando o botão que não existe */}
+        {aberto && (
+          <button className="pl-veritens" onClick={() => setAberto(false)}>
+            ▾ fechar produtos
+          </button>
         )}
       </div>
     </div>
