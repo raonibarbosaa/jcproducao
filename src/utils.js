@@ -590,63 +590,6 @@ export function situacaoNoPlano(p, livres, itensCad) {
   }
 }
 
-// ---------- VIAGENS SUGERIDAS (o quebra-cabeça da expedição) ----------
-// A carga já existia, mas montada na unha: a tela mostrava o que estava PRONTO,
-// nunca o que valia a pena mandar. Faltava o que decide — quanto da rota ainda
-// está na produção, há quanto tempo tem volume parado e quanto pesa o que já cabe.
-//
-// O bolo é `data de entrega × vendedor × rota`, a MESMA chave que agrupa a fila
-// de produção. Não é coincidência: o lote que a fábrica fecha junto é o lote que
-// sobe no caminhão junto, e usar duas regras diferentes faria os dois lados
-// discordarem sobre o que é "a rota de sexta".
-//
-// A data vem primeiro na ordenação porque é o compromisso; a rota desempata na
-// ordem do cadastro do vendedor (a sequência real em que ele roda).
-//
-// `disponiveis` = [{ p, itens }] com os VOLUMES livres (já descontado o que está
-// preso a outra carga) — quem calcula isso é a tela, que conhece as cargas abertas.
-// `todos` = os pedidos da produção, para saber o que ainda está vindo.
-export function viagensSugeridas(disponiveis, todos, itensCad, vendedores) {
-  const chave = (p) => `${p.previsao || '9999-99-99'}|${p.vendedor || '—'}|${p.rota || 'SEM ROTA'}`
-  const mapa = {}
-  const grupo = (p) => (mapa[chave(p)] ??= {
-    chave: chave(p),
-    previsao: p.previsao || '',
-    vendedor: p.vendedor || '—',
-    rota: p.rota || 'SEM ROTA',
-    prontos: [],     // pedidos com volume livre pronto para carregar
-    volumes: [],     // os volumes em si
-    naLinha: [],     // pedidos do mesmo bolo que ainda têm item na fábrica
-    desde: '',       // o volume pronto mais ANTIGO deste bolo
-  })
-
-  for (const d of disponiveis || []) {
-    const g = grupo(d.p)
-    g.prontos.push(d.p)
-    g.volumes.push(...d.itens)
-    // "pronto desde" = quando o item foi movido pela última vez. O volume não tem
-    // carimbo próprio; a entrada de `etapas` tem, e é o que responde "está parado
-    // há quanto tempo" — a pergunta que decide se a viagem sai incompleta.
-    for (const it of d.itens) {
-      const em = d.p.etapas?.[it.itemKey]?.em || ''
-      if (em && (!g.desde || em < g.desde)) g.desde = em
-    }
-  }
-  // O MESMO pedido pode estar dos dois lados (dois volumes prontos, um item ainda
-  // no silk) — e é assim que tem que ser: ele já rende carga e ainda deve mais.
-  for (const p of todos || []) {
-    if (!temTrabalhoNaProducao(p)) continue
-    grupo(p).naLinha.push(p)
-  }
-
-  return Object.values(mapa)
-    .filter((g) => g.prontos.length)      // sem nada pronto não há viagem a montar
-    .map((g) => ({ ...g, peso: pesoDaLista(g.volumes, itensCad) }))
-    .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || '')
-      || (ordemRota(a.vendedor, a.rota, vendedores) - ordemRota(b.vendedor, b.rota, vendedores))
-      || a.rota.localeCompare(b.rota))
-}
-
 // há quantos dias inteiros isso aconteceu (null quando não há data)
 export function diasDesde(iso) {
   if (!iso) return null
@@ -1019,10 +962,10 @@ export function moveQtdItem(p, idx, de, para, qtd) {
 // diz que encerrou, ou só a parte fechada quando ainda falta produzir.
 // A soma dos volumes NÃO precisa bater com `consumido`: é isso que registra a
 // quebra (98,3 kg produzidos de um lote de 100 pedidas).
+// ⚠️ Devolve a ENTRADA de `etapas[key]`, não o mapa inteiro — quem monta o mapa
+// é a tela, e é ela que chama `carimbaTempos` no fim. Envolver esta função com
+// o carimbo era no-op: ele procura chaves de item num objeto que é uma entrada.
 export function fechaMontagemEmVolumes(p, idx, volumes, consumido, quem) {
-  return carimbaTempos(p, fechaMontagemEmVolumesCru(p, idx, volumes, consumido, quem))
-}
-function fechaMontagemEmVolumesCru(p, idx, volumes, consumido, quem) {
   const d = distribuicaoDoItem(p, idx)
   const naMontagem = arredondaQtd(d.montagem)
   const baixa = Math.min(arredondaQtd(consumido), naMontagem)
@@ -1054,11 +997,9 @@ function fechaMontagemEmVolumesCru(p, idx, volumes, consumido, quem) {
 //
 // Só desembala quando NADA saiu ainda. Com volume já expedido ou entregue não há
 // resposta certa para "quanto volta", e inventar uma seria pior que recusar.
+// Também devolve a ENTRADA. É chamada de dentro de `mapaEtapasMovendoVolumes`,
+// que já carimba o mapa resultante.
 export function desfazEmbalagem(p, idx, quem) {
-  const m = desfazEmbalagemCru(p, idx, quem)
-  return m ? carimbaTempos(p, m) : m
-}
-function desfazEmbalagemCru(p, idx, quem) {
   const vs = volumesDoItem(p, idx)
   if (!vs.length) return null
   if (vs.some((v) => v.et !== 'expedicao')) return null

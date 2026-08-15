@@ -753,6 +753,46 @@ apuração de custo por pedido/linha/produto e margem. Depende do cadastro de It
 > Lembrete contábil: critério de rateio e apuração (custo de estoque/CMV) tem implicação
 > fiscal — validar o método com a contabilidade da JC antes de virar número oficial.
 
+## TESTES — `npm test` (15/08/2026)
+- **Onde:** `tests/*.test.mjs` + `tests/_run.mjs`, sem dependência (ESM puro no
+  `node`). Antes viviam em pasta temporária e **se perderam** numa troca de
+  sessão; agora são versionados.
+- **O que cobrem:** as invariantes cuja quebra é SILENCIOSA — quantidade que
+  some, volume apagado, relógio que zera, correção que o import desfaz, rota
+  congelada, peso que mente para baixo. Não cobrem React nem Firestore.
+- **`tests/import.test.mjs` faz ida e volta por uma planilha de verdade** e é a
+  prova de fogo da biblioteca `xlsx`: se ela for trocada, é ali que se valida.
+- ⚠️ O arreio é **um módulo só** para todos os arquivos, então `resultado()`
+  reporta o DELTA desde a chamada anterior — senão os números acumulam.
+- ⚠️ No arreio, entrada de etapa **vazia não entra no mapa**: um `{}` já conta
+  como "formato novo" e esconde o fallback do campo antigo `p.etapa`.
+
+## ⚠️ `fechaMontagemEmVolumes` e `desfazEmbalagem` devolvem ENTRADA, não mapa
+Bug achado ao escrever os testes (15/08/2026): as duas estavam envolvidas por
+`carimbaTempos`, que espera um MAPA indexado por chave de item. Carimbar uma
+entrada é **no-op** — ele procura chaves de item num objeto que não é mapa e
+devolve tudo igual, sem erro. Resultado: **fechar a montagem em volumes não
+contava o tempo da montagem**, e a estatística sairia subnotificada justo no
+setor que se quer medir. Hoje o carimbo é aplicado por quem monta o mapa
+(`QuadroProducao`, no fechamento). Regra: **só envolva com `carimbaTempos`
+função que devolve MAPA**.
+
+## Dependências — o que o `npm audit` não diz (15/08/2026)
+- **`xlsx` migrada para a distribuição oficial da SheetJS** (`0.20.3` via
+  cdn.sheetjs.com). A versão do npm parou na `0.18.5`, que tem prototype
+  pollution e ReDoS — e é a ÚNICA biblioteca que processa arquivo vindo de fora
+  (a planilha do Posseidon). Validada pelo `tests/import.test.mjs`.
+- **`react-router-dom` fica na 6.30.4.** Os advisories de open redirect cobrem
+  toda a 6.x e a 7.x até 7.17, e só saem na 7.18 (major com quebra). ⚠️ **Não é
+  alcançável aqui**: o app tem exatamente 3 destinos de navegação
+  (`App.jsx` ×2, `Layout.jsx` ×1), todos interpolando nomes de aba vindos de
+  `ACESSO[perfil]` — listas literais, nunca dado do usuário. E não há SSR, o que
+  descarta o advisory de hidratação. Migrar major em produção por vulnerabilidade
+  inalcançável é trocar risco real por risco teórico.
+- **Os 13 alertas restantes são `undici`/`protobufjs`**, dependências do Firebase
+  para Node. **Não chegam ao bundle do navegador** (verificado: 0 ocorrências em
+  `dist`). São ruído neste projeto.
+
 ## Armadilhas recorrentes do código (LER ANTES DE EDITAR)
 - **Props não declaradas na assinatura** de subcomponentes (`CardTriagem`, `CardProd`,
   `ImpressaoProducao`) causam **tela preta** — o build do Vite não pega. Sempre declarar a

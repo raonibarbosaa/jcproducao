@@ -12,7 +12,7 @@ import {
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
   docProblema, problemaDoItem, temCorrecao,
-  tempoNaEtapa, fmtDuracao, diasDe,
+  tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -197,8 +197,12 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
           : { montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
               por: ant?.por || '', em: ant?.em || '' }
       })
+      // O relógio é carimbado AQUI porque é aqui que o mapa existe:
+      // `fechaMontagemEmVolumes` devolve só a ENTRADA do item, e carimbar uma
+      // entrada é no-op — foi assim que o tempo da montagem deixou de ser
+      // contado neste caminho, sem erro nenhum aparecer.
       const batch = writeBatch(db)
-      batch.update(doc(db, 'pedidos', p.idVenda), { etapas })
+      batch.update(doc(db, 'pedidos', p.idVenda), { etapas: carimbaTempos(p, etapas) })
       const quem = {
         porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
         perfil: perfil || '', ip,
