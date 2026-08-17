@@ -999,7 +999,11 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
           {/* Na previsão do DIA o seletor de vendedor é essencial: a lista tem
               todos eles. Na previsão antiga (um vendedor só) ele não separaria
               nada — e por isso continua escondido lá. */}
+          {/* ⚠️ `vendedores` sai de TODOS os pedidos, nunca da lista já filtrada:
+              tirada da lista visível, escolher um vendedor apagaria os outros do
+              seletor e não daria mais para trocar direto para outro. */}
           <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor={!outras && !porData}
+            vendedores={vendedoresDe(todos)}
             pedidos={outras || porData ? todos : undefined} />
 
           <div className="pc-sit">
