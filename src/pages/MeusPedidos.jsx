@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import {
   previsaoDe, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
   nomeCliente, MODO_NM, linhaDoItem, pegarIP,
-  indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora,
+  indexaCienciasPorPedido, cienciaDoPedido, docCiencia, fmtDataHora,
   unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
   indexaProblemas, problemasDoPedido, nomeCampoErro,
 } from '../utils.js'
@@ -26,6 +26,9 @@ export default function MeusPedidos({ pedidos, problemas }) {
   const [entregues, setEntregues] = useState([])
   const [vista, setVista] = useState('lista')   // 'lista' (ciência) | 'quadro' (acompanhar)
   const [filtros, setFiltros] = useState({})    // só no quadro
+  const [filtrosLista, setFiltrosLista] = useState({})   // só na lista (ciência)
+  // a lista abre na FILA: o que ele ainda não assinou
+  const [soSemCiencia, setSoSemCiencia] = useState(true)
   const [salvando, setSalvando] = useState('')
 
   useEffect(() => {
@@ -53,13 +56,31 @@ export default function MeusPedidos({ pedidos, problemas }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
   const cat = base.filter((p) => p.status)
 
+  // A lista é a FILA DO QUE FALTA ASSINAR: assinou, o pedido sai daqui na hora
+  // (o dono e o designer continuam vendo tudo na aba Ciência). "Ver todos"
+  // reexibe os já assinados — some da fila não é some do sistema, e o vendedor
+  // precisa conseguir voltar a um pedido que ele mesmo acabou de assinar.
+  const listaFiltrada = filtraPedidos(cat, filtrosLista, clientes)
+  const visiveis = soSemCiencia
+    ? listaFiltrada.filter((p) => !cienciaDoPedido(mapaC, 'vendedor', p.idVenda))
+    : listaFiltrada
+  const semCienciaTotal = cat.filter((p) => !cienciaDoPedido(mapaC, 'vendedor', p.idVenda)).length
+
   const arvore = {}
-  for (const p of cat) {
+  for (const p of visiveis) {
     const r = p.rota || 'SEM ROTA'
     arvore[r] ??= []
     arvore[r].push(p)
   }
   const rotas = Object.keys(arvore).sort()
+  // ⚠️ o contador da faixa conta a ROTA INTEIRA, não o que sobrou na tela: com a
+  // fila filtrada ele diria sempre "0 de N com ciência" e viraria mentira
+  const totalDaRota = {}
+  for (const p of cat) {
+    const r = p.rota || 'SEM ROTA'
+    ;(totalDaRota[r] ??= { total: 0, cientes: 0 }).total++
+    if (cienciaDoPedido(mapaC, 'vendedor', p.idVenda)) totalDaRota[r].cientes++
+  }
 
   // ---------- quadro de acompanhamento ----------
   // O pedido vive partido entre duas coleções: o que está em produção fica em
@@ -97,7 +118,12 @@ export default function MeusPedidos({ pedidos, problemas }) {
     <>
       <div className="toolbar no-print">
         <h1 className="page-title">Meus Pedidos
-          <small>{vendedorNome || nome} · {cat.length} pedido(s)</small>
+          <small>
+            {vendedorNome || nome} · {cat.length} pedido(s)
+            {vista === 'lista' && (semCienciaTotal
+              ? ` · ${semCienciaTotal} sem ciência`
+              : ' · tudo com ciência')}
+          </small>
         </h1>
         <div className="spacer" />
         <div className="vista-toggle no-print">
@@ -106,6 +132,15 @@ export default function MeusPedidos({ pedidos, problemas }) {
           <button className={`btn${vista === 'quadro' ? ' primary' : ''}`} onClick={() => setVista('quadro')}
             title="Acompanhar a produção até a entrega">▦ Acompanhar</button>
         </div>
+        {vista === 'lista' && (
+          <button className={`btn${soSemCiencia ? ' primary' : ''}`}
+            onClick={() => setSoSemCiencia((v) => !v)}
+            title={soSemCiencia
+              ? 'Mostrar também os pedidos que você já assinou'
+              : 'Mostrar só o que falta assinar'}>
+            {soSemCiencia ? '⏳ Só sem ciência' : '☰ Ver todos'}
+          </button>
+        )}
         {vista === 'lista' && <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>}
       </div>
 
@@ -121,22 +156,49 @@ export default function MeusPedidos({ pedidos, problemas }) {
         </div>
       )}
 
+      {vista === 'lista' && (
+        <div className="screen-only">
+          {/* mesma barra de busca das outras abas — sem o seletor de vendedor,
+              que na tela dele não separaria nada */}
+          <FiltrosBar filtros={filtrosLista} setFiltros={setFiltrosLista} semVendedor
+            rotas={rotasFiltro} pedidos={cat} />
+          {(resumoFiltros(filtrosLista) || soSemCiencia) && (
+            <div className="qv-resumo">
+              {visiveis.length} de {cat.length} pedido(s)
+              {soSemCiencia && ' · só os sem ciência'}
+              {resumoFiltros(filtrosLista) && ` · ${resumoFiltros(filtrosLista)}`}
+            </div>
+          )}
+        </div>
+      )}
+
       {vista === 'lista' && (cat.length === 0 ? (
         <div className="empty"><div className="big">📦</div>Nenhum pedido para você no momento.</div>
+      ) : rotas.length === 0 ? (
+        <div className="empty"><div className="big">{soSemCiencia ? '✅' : '🔎'}</div>
+          {soSemCiencia && !resumoFiltros(filtrosLista)
+            ? <>Tudo com ciência. Nenhum pedido esperando sua assinatura.</>
+            : <>Nenhum pedido com esses filtros.</>}
+          <div>
+            {soSemCiencia && (
+              <button className="btn" style={{ marginTop: 10 }}
+                onClick={() => setSoSemCiencia(false)}>☰ Ver todos os pedidos</button>
+            )}
+          </div>
+        </div>
       ) : (
         rotas.map((rota) => {
           const foraRota = rota === 'FORA DE ROTA' || rota === 'SEM ROTA'
           const ps = arvore[rota]
-          const faltam = semCiencia(mapaC, 'vendedor', ps)
-          const cientes = ps.length - faltam.length
+          const tot = totalDaRota[rota] || { total: ps.length, cientes: 0 }
           return (
             <div key={rota} style={{ marginBottom: 16 }}>
               <div className={`rota-band ${foraRota ? 'warn' : ''}`}>
                 <span className="rb-nome">📍 {rota}</span>
                 <span className="rb-count">{ps.length} pedido(s)</span>
                 <div className="no-print" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span className="chip" style={faltam.length ? null : { color: 'var(--ok)' }}>
-                    {faltam.length ? '' : '✓ '}{cientes} de {ps.length} com ciência
+                  <span className="chip" style={tot.cientes < tot.total ? null : { color: 'var(--ok)' }}>
+                    {tot.cientes < tot.total ? '' : '✓ '}{tot.cientes} de {tot.total} com ciência
                   </span>
                 </div>
               </div>
@@ -197,7 +259,8 @@ function CardMeu({ p, clientes, c, salvando, onCiencia, problemas }) {
       <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
       <div className="no-print" style={{ marginTop: 8 }}>
         {c
-          ? <span className="chip" style={{ color: 'var(--ok)' }} title={c.porEmail || ''}>
+          ? <span className="chip" style={{ color: 'var(--ok)' }}
+              title={`Assinado por ${c.porNome || c.porEmail || '—'}${c.ip ? ` · IP ${c.ip}` : ''}`}>
               ✓ ciência em {fmtDataHora(c.quando)}
             </span>
           : <button className="btn ok" style={{ width: '100%' }} disabled={!!salvando}

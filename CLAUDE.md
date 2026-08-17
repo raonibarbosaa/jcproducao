@@ -459,6 +459,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
     conferência que ninguém pode mais dar deixaria a tela vermelha para sempre.
   - A aba mostra **nome, e-mail, data/hora e IP** de quem assinou (`.ci-bloco`).
     Já era gravado; cabia espremido num chip de uma linha.
+  - **A lista do vendedor é a FILA DO QUE FALTA ASSINAR:** abre em "⏳ Só sem
+    ciência", e o pedido **sai dali no instante em que ele assina**. O botão
+    "☰ Ver todos" reexibe os assinados — some da fila não pode virar some do
+    sistema, e ele precisa poder voltar a um pedido que acabou de assinar.
+    Ganhou também a `FiltrosBar` das outras telas (sem o seletor de vendedor).
+    ⚠️ O contador da faixa (`N de M com ciência`) conta a **rota inteira**, não
+    o que sobrou na tela: com a fila filtrada ele diria sempre "0 de N".
+  - **Aba Ciência = duas listas, não um interruptor:** "⏳ Sem ciência" (a
+    cobrança) × "✓ Conferidos pelo vendedor" (o arquivo, com os blocos já
+    abertos — ali o que interessa é ler quem assinou).
 - **Ciência POR PEDIDO (FEITO — era por rota):** a ciência de rota gravava `pedidoIds`
   num **retrato do momento**; pedido que entrasse na rota depois ficava coberto por um
   "✓ ciente" que nunca o viu. Agora o **pedido é a unidade**: `ciencias` guarda

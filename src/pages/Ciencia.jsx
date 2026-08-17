@@ -25,7 +25,7 @@ export default function Ciencia({ pedidos }) {
   const { clientes, vendedores } = useCadastros()
   const [ciencias, setCiencias] = useState([])
   const [abertos, setAbertos] = useState({})   // { "vendedor|rota": true }
-  const [soPendentes, setSoPendentes] = useState(false)
+  const [aba, setAba] = useState('pendentes')  // 'pendentes' | 'conferidos'
   const [filtros, setFiltros] = useState({})
 
   const alternar = (k) => setAbertos((s) => ({ ...s, [k]: !s[k] }))
@@ -46,9 +46,12 @@ export default function Ciencia({ pedidos }) {
   // resolver deixaria a tela permanentemente vermelha.
   const pendente = (p) => !cienciaDoPedido(mapaC, 'vendedor', p.idVenda)
 
+  // Duas listas, não um interruptor: o pedido assinado SAI da tela do vendedor,
+  // e é aqui que ele passa a existir. "Conferidos" é o arquivo de quem assinou,
+  // quando e de onde; "Sem ciência" é a cobrança.
   const arvore = {}
   for (const p of cat) {
-    if (soPendentes && !pendente(p)) continue
+    if (aba === 'pendentes' ? !pendente(p) : pendente(p)) continue
     const v = p.vendedor || '—'
     const r = p.rota || 'SEM ROTA'
     arvore[v] ??= {}
@@ -57,6 +60,7 @@ export default function Ciencia({ pedidos }) {
   }
   const vends = Object.keys(arvore).sort()
   const totalPendentes = cat.filter(pendente).length
+  const totalConferidos = cat.length - totalPendentes
 
   return (
     <>
@@ -68,9 +72,18 @@ export default function Ciencia({ pedidos }) {
           </small>
         </h1>
         <div className="spacer" />
-        <button className={`btn${soPendentes ? ' primary' : ''}`} onClick={() => setSoPendentes((v) => !v)}>
-          {soPendentes ? '☑' : '☐'} Só sem ciência
-        </button>
+        <div className="vista-toggle">
+          <button className={`btn${aba === 'pendentes' ? ' primary' : ''}`}
+            onClick={() => setAba('pendentes')}
+            title="Pedidos que o vendedor ainda não assinou">
+            ⏳ Sem ciência {totalPendentes > 0 && `(${totalPendentes})`}
+          </button>
+          <button className={`btn${aba === 'conferidos' ? ' primary' : ''}`}
+            onClick={() => setAba('conferidos')}
+            title="Pedidos já conferidos pelo vendedor — com quem assinou, quando e de onde">
+            ✓ Conferidos pelo vendedor {totalConferidos > 0 && `(${totalConferidos})`}
+          </button>
+        </div>
       </div>
 
       <FiltrosBar filtros={filtros} setFiltros={setFiltros}
@@ -78,10 +91,14 @@ export default function Ciencia({ pedidos }) {
 
       {vends.length === 0 ? (
         <div className="empty"><div className="big">✍️</div>
-          {soPendentes && cat.length
-            ? 'Nenhuma pendência — todos os pedidos com ciência do vendedor.'
-            // com filtro na tela, dizer "não há pedido" seria mentira
-            : (categorizados.length ? 'Nenhum pedido com esses filtros.' : 'Nenhum pedido categorizado para conferir.')}
+          {/* com filtro na tela, dizer "não há pedido" seria mentira */}
+          {!categorizados.length
+            ? 'Nenhum pedido categorizado para conferir.'
+            : aba === 'pendentes'
+              ? (cat.length === categorizados.length
+                  ? 'Nenhuma pendência — todos os pedidos com ciência do vendedor.'
+                  : 'Nenhum pedido sem ciência com esses filtros.')
+              : 'Nenhum pedido conferido pelo vendedor com esses filtros.'}
         </div>
       ) : (
         vends.map((v) => (
@@ -92,7 +109,9 @@ export default function Ciencia({ pedidos }) {
               const faltamV = semCiencia(mapaC, 'vendedor', ps)
               const faltamD = semCiencia(mapaC, 'designer', ps)
               const chave = v + '|' + rota
-              const aberto = !!abertos[chave]
+              // na aba dos conferidos os blocos já abrem: o que interessa ali é
+              // justamente ler quem assinou, quando e de onde
+              const aberto = abertos[chave] ?? (aba === 'conferidos')
               return (
                 <div key={rota} style={{ marginBottom: 14 }}>
                   <div className={`rota-band ${foraRota ? 'warn' : ''}`} style={{ cursor: 'pointer' }}
