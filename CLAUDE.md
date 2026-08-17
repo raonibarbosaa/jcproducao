@@ -442,6 +442,23 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   pedidos dele. Foi decisão deliberada.
 - **Impressão da Triagem (Fase A):** botão 🖨 + layout `print-only` (ImpressaoTriagem) por
   vendedor→rota.
+- **CIÊNCIA: só o VENDEDOR assina, um pedido por vez (17/08/2026).**
+  - O atalho **"dar ciência na rota inteira" foi REMOVIDO** — não recolocar: um
+    clique assinava dezenas de pedidos que ninguém tinha olhado, e a ciência
+    existe para provar que o vendedor viu AQUELE pedido.
+  - **Dono e designer NÃO dão ciência.** O botão "✓ Conferir" saiu da aba
+    Ciência (que virou só leitura) e a rule passou a aceitar `create` apenas de
+    `ehVendedor()`, em nome do próprio `vendedorNome` e com
+    `porUid == request.auth.uid` — tirar o botão sem fechar a regra seria
+    esconder o caminho, não trancá-lo. `update: if false` (registro de
+    assinatura corrigível não prova nada).
+  - **Conferências antigas (`tipo: 'designer'`) continuam aparecendo** como
+    histórico, no card e no contador. Apagar registro que existiu é reescrever o
+    passado; o que não existe mais é o caminho para criar outro.
+  - "Pendente" passou a significar só "sem ciência do vendedor": cobrar uma
+    conferência que ninguém pode mais dar deixaria a tela vermelha para sempre.
+  - A aba mostra **nome, e-mail, data/hora e IP** de quem assinou (`.ci-bloco`).
+    Já era gravado; cabia espremido num chip de uma linha.
 - **Ciência POR PEDIDO (FEITO — era por rota):** a ciência de rota gravava `pedidoIds`
   num **retrato do momento**; pedido que entrasse na rota depois ficava coberto por um
   "✓ ciente" que nunca o viu. Agora o **pedido é a unidade**: `ciencias` guarda
@@ -484,6 +501,20 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   `.qv-itens li` joga a etapa para a linha de baixo).
   **Só leitura** — e a segurança não depende disso: o App consulta com
   `where('vendedor','==')` e a regra impõe o mesmo no servidor.
+- **Filtro "Onde está" + relógio no quadro do vendedor (17/08/2026):** barra de
+  etapas no topo (e os chips do pipeline de cada viagem viraram botões) — clicar
+  em SILK SCREEN mostra só os itens que estão lá, sem perder a organização por
+  rota. É filtro de ITEM: o pedido fica se tiver algum item na etapa e o card
+  mostra só esses. ⚠️ **Os contadores saem sempre do TOTAL, nunca da lista já
+  filtrada** — tirados do que está na tela, escolher "Silk" zeraria as outras
+  etapas e não daria mais para trocar direto para elas (é o mesmo erro que o
+  seletor de vendedor do planejamento cometeu).
+  Cada item mostra **desde quando está parado ali** (`entradaNaEtapa` em utils,
+  levado ao vendedor por `unificaPedidosVendedor` em `desde`/`desdeExato`):
+  data, hora e o tempo corrido. ⚠️ O `~` marca carimbo **aproximado** — item
+  parado antes de o relógio existir cai no fallback (última movimentação →
+  importação → venda), e hora cravada que não é cravada vira discussão no chão
+  de fábrica.
 - **`unificaPedidosVendedor` (utils) junta as DUAS coleções:** o pedido do vendedor
   vivia partido — o que está em produção em `pedidos`, o que saiu em `entregues` (e
   pedido entregue por inteiro **some** de `pedidos`, existe só como remessa). O helper

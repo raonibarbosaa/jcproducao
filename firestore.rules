@@ -94,13 +94,21 @@ service cloud.firestore {
       allow write: if ehStaff();
     }
 
-    // Ciências (conferido): staff vê todas; vendedor vê e cria as do seu vendedor.
+    // Ciência: staff LÊ todas; quem CRIA é só o vendedor, e só em nome dele.
+    // ⚠️ Dono e designer não dão ciência (decisão do dono em 17/08/2026) — a
+    // ciência é a assinatura de quem vendeu, e assinada por outro não prova
+    // nada. Tirar o botão da tela sem fechar aqui seria esconder o caminho, não
+    // trancá-lo. Também exige que a assinatura seja do próprio usuário logado:
+    // sem isso dava para gravar ciência em nome de outra pessoa.
     match /ciencias/{id} {
       allow read: if ehStaff()
         || (ehVendedor() && resource.data.vendedor == meuVendedor());
-      allow create: if ehStaff()
-        || (ehVendedor() && request.resource.data.vendedor == meuVendedor());
-      allow update, delete: if ehStaff();
+      allow create: if ehVendedor()
+        && request.resource.data.vendedor == meuVendedor()
+        && request.resource.data.porUid == request.auth.uid;
+      // registro de assinatura não se edita: corrigível, não provaria nada
+      allow update: if false;
+      allow delete: if ehStaff();
     }
 
     // Cargas: a viagem do caminhão, montada pela EXPEDIÇÃO. Ela cria, confere e

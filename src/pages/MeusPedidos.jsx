@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   previsaoDe, fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM,
@@ -14,9 +14,9 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
 // Tela do perfil VENDEDOR: vê apenas os próprios pedidos (filtrados no App e
-// impostos pelas regras), agrupados por rota. A CIÊNCIA é POR PEDIDO — o botão
-// da rota é só um atalho que dá ciência nos que ainda faltam. Assim um pedido
-// que entra na rota depois nunca fica coberto por uma ciência que não o viu.
+// impostos pelas regras), agrupados por rota. A CIÊNCIA é POR PEDIDO, um a um:
+// ela existe para provar que o vendedor viu AQUELE pedido, e o atalho da rota
+// inteira assinava dezenas que ninguém tinha olhado.
 export default function MeusPedidos({ pedidos, problemas }) {
   // sem cadastro de Itens: as três montagens viram uma só na visão do vendedor,
   // então o material do item deixou de importar aqui
@@ -72,27 +72,20 @@ export default function MeusPedidos({ pedidos, problemas }) {
     .sort((a, b) => (ordemRota(vendedorNome, a, vendedores) - ordemRota(vendedorNome, b, vendedores))
       || a.localeCompare(b))
 
-  // dá ciência num pedido só ou em todos os que faltam na rota (mesmo caminho)
-  async function darCiencia(ps, marca) {
-    const faltam = semCiencia(mapaC, 'vendedor', ps)
-    if (!faltam.length || salvando) return
-    const msg = faltam.length === 1
-      ? `Confirmar que você viu e está ciente do pedido #${faltam[0].idVenda}?`
-      : `Confirmar que você viu e está ciente dos ${faltam.length} pedido(s)?`
-    if (!confirm(msg)) return
-    setSalvando(marca)
+  // Ciência é PEDIDO A PEDIDO. O atalho "dar ciência na rota inteira" foi
+  // REMOVIDO (decisão do dono em 17/08/2026) — não recolocar: um clique
+  // assinava dezenas de pedidos que ninguém tinha olhado, e a ciência existe
+  // justamente para provar que o vendedor viu AQUELE pedido.
+  async function darCiencia(p) {
+    if (salvando || cienciaDoPedido(mapaC, 'vendedor', p.idVenda)) return
+    if (!confirm(`Confirmar que você viu e está ciente do pedido #${p.idVenda}?`)) return
+    setSalvando(`p:${p.idVenda}`)
     try {
       const ip = await pegarIP()
       const quem = { porUid: user.uid, porEmail: user.email, porNome: nome || user.email, ip }
-      for (let i = 0; i < faltam.length; i += 450) {
-        const batch = writeBatch(db)
-        for (const p of faltam.slice(i, i + 450)) {
-          batch.set(doc(collection(db, 'ciencias')), docCiencia({
-            tipo: 'vendedor', vendedor: vendedorNome, rota: p.rota || '', idVenda: p.idVenda, quem,
-          }))
-        }
-        await batch.commit()
-      }
+      await setDoc(doc(collection(db, 'ciencias')), docCiencia({
+        tipo: 'vendedor', vendedor: vendedorNome, rota: p.rota || '', idVenda: p.idVenda, quem,
+      }))
     } catch (e) {
       alert('Não foi possível registrar a ciência: ' + (e.code || e.message))
     } finally {
@@ -145,14 +138,6 @@ export default function MeusPedidos({ pedidos, problemas }) {
                   <span className="chip" style={faltam.length ? null : { color: 'var(--ok)' }}>
                     {faltam.length ? '' : '✓ '}{cientes} de {ps.length} com ciência
                   </span>
-                  {faltam.length > 0 && (
-                    <button className="btn ok" disabled={!!salvando}
-                      onClick={() => darCiencia(ps, rota)}>
-                      {salvando === rota
-                        ? 'Registrando…'
-                        : `✓ Dar ciência ${faltam.length === ps.length ? 'nesta rota' : `nos ${faltam.length} que faltam`}`}
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="cards">
@@ -161,7 +146,7 @@ export default function MeusPedidos({ pedidos, problemas }) {
                     problemas={problemasDoPedido(mapaProb, p.idVenda)}
                     c={cienciaDoPedido(mapaC, 'vendedor', p.idVenda)}
                     salvando={salvando}
-                    onCiencia={() => darCiencia([p], `p:${p.idVenda}`)} />
+                    onCiencia={() => darCiencia(p)} />
                 ))}
               </div>
             </div>

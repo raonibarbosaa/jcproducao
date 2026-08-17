@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  indexaCienciasPorPedido, cienciaDoPedido, semCiencia, docCiencia, fmtDataHora, pegarIP,
+  indexaCienciasPorPedido, cienciaDoPedido, semCiencia, fmtDataHora,
   nomeCliente, previsaoDe, situacaoPrazo, fmtData, fmtMoeda, ORIGEM_NM, MODO_NM, linhaDoItem,
   filtraPedidos, vendedoresDe,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
-import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 
-// Tela do DESIGNER/DONO: acompanha a ciência dos vendedores e dá a própria
-// (conferido). A unidade é o PEDIDO — a faixa da rota mostra quantos de quantos,
-// então dá para ver na hora se entrou pedido novo que ninguém conferiu ainda.
+// Tela do DESIGNER/DONO: acompanha a ciência dos vendedores. É SÓ LEITURA.
+//
+// ⚠️ Dono e designer NÃO dão ciência (decisão do dono em 17/08/2026) — a ciência
+// é a assinatura de quem VENDEU o pedido, e assinada por outra pessoa ela não
+// prova nada. O botão "✓ Conferir" saiu daqui e a regra do Firestore passou a
+// aceitar criação só do perfil vendedor: sem isso, tirar o botão seria só
+// esconder o caminho, não fechá-lo. As conferências ANTIGAS continuam
+// aparecendo — apagar histórico é pior do que mostrar um registro que não se
+// repete mais.
+//
+// A unidade é o PEDIDO, e a faixa da rota mostra quantos de quantos: dá para ver
+// na hora se entrou pedido novo que o vendedor ainda não viu.
 export default function Ciencia({ pedidos }) {
-  const { user, nome } = useAuth()
   const { clientes, vendedores } = useCadastros()
   const [ciencias, setCiencias] = useState([])
-  const [salvando, setSalvando] = useState('')
   const [abertos, setAbertos] = useState({})   // { "vendedor|rota": true }
   const [soPendentes, setSoPendentes] = useState(false)
   const [filtros, setFiltros] = useState({})
@@ -35,9 +41,10 @@ export default function Ciencia({ pedidos }) {
   const categorizados = (pedidos || []).filter((p) => p.status)
   const vendedoresFiltro = vendedoresDe(categorizados)
   const cat = filtraPedidos(categorizados, filtros, clientes)
-  // pendente = falta a ciência do vendedor OU a conferência — é o que dá trabalho
-  const pendente = (p) =>
-    !cienciaDoPedido(mapaC, 'vendedor', p.idVenda) || !cienciaDoPedido(mapaC, 'designer', p.idVenda)
+  // pendente = o vendedor ainda não deu ciência. A conferência do designer saiu
+  // da conta junto com o botão: cobrar uma pendência que ninguém pode mais
+  // resolver deixaria a tela permanentemente vermelha.
+  const pendente = (p) => !cienciaDoPedido(mapaC, 'vendedor', p.idVenda)
 
   const arvore = {}
   for (const p of cat) {
@@ -51,46 +58,18 @@ export default function Ciencia({ pedidos }) {
   const vends = Object.keys(arvore).sort()
   const totalPendentes = cat.filter(pendente).length
 
-  // conferência de um pedido só ou de todos os que faltam na rota (mesmo caminho)
-  async function conferir(vendedor, ps, marca) {
-    const faltam = semCiencia(mapaC, 'designer', ps)
-    if (!faltam.length || salvando) return
-    const msg = faltam.length === 1
-      ? `Confirmar a conferência do pedido #${faltam[0].idVenda}?`
-      : `Confirmar a conferência de ${faltam.length} pedido(s) de ${vendedor}?`
-    if (!confirm(msg)) return
-    setSalvando(marca)
-    try {
-      const ip = await pegarIP()
-      const quem = { porUid: user.uid, porEmail: user.email, porNome: nome || user.email, ip }
-      for (let i = 0; i < faltam.length; i += 450) {
-        const batch = writeBatch(db)
-        for (const p of faltam.slice(i, i + 450)) {
-          batch.set(doc(collection(db, 'ciencias')), docCiencia({
-            tipo: 'designer', vendedor, rota: p.rota || '', idVenda: p.idVenda, quem,
-          }))
-        }
-        await batch.commit()
-      }
-    } catch (e) {
-      alert('Não foi possível registrar: ' + (e.code || e.message))
-    } finally {
-      setSalvando('')
-    }
-  }
-
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Ciência
           <small>
-            conferência pedido a pedido ·{' '}
-            {totalPendentes ? `${totalPendentes} pendente(s)` : 'tudo conferido'}
+            quem assinou cada pedido ·{' '}
+            {totalPendentes ? `${totalPendentes} sem ciência` : 'todos com ciência'}
           </small>
         </h1>
         <div className="spacer" />
         <button className={`btn${soPendentes ? ' primary' : ''}`} onClick={() => setSoPendentes((v) => !v)}>
-          {soPendentes ? '☑' : '☐'} Só pendentes
+          {soPendentes ? '☑' : '☐'} Só sem ciência
         </button>
       </div>
 
@@ -100,7 +79,7 @@ export default function Ciencia({ pedidos }) {
       {vends.length === 0 ? (
         <div className="empty"><div className="big">✍️</div>
           {soPendentes && cat.length
-            ? 'Nenhuma pendência — tudo com ciência e conferido.'
+            ? 'Nenhuma pendência — todos os pedidos com ciência do vendedor.'
             // com filtro na tela, dizer "não há pedido" seria mentira
             : (categorizados.length ? 'Nenhum pedido com esses filtros.' : 'Nenhum pedido categorizado para conferir.')}
         </div>
@@ -123,14 +102,11 @@ export default function Ciencia({ pedidos }) {
                     <span className="rb-count">{ps.length} pedido(s)</span>
                   </div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '2px 2px 4px', alignItems: 'center' }}>
-                    <Progresso titulo="Vendedor" total={ps.length} faltam={faltamV.length} />
-                    <Progresso titulo="Conferido" total={ps.length} faltam={faltamD.length} />
-                    {faltamD.length > 0 && (
-                      <button className="btn ok" disabled={!!salvando} onClick={() => conferir(v, ps, chave)}>
-                        {salvando === chave
-                          ? 'Registrando…'
-                          : `✓ Conferir ${faltamD.length === ps.length ? 'esta rota' : `os ${faltamD.length} que faltam`}`}
-                      </button>
+                    <Progresso titulo="Ciência do vendedor" total={ps.length} faltam={faltamV.length} />
+                    {/* conferências antigas continuam contadas — o registro
+                        existiu, some da conta seria reescrever o passado */}
+                    {faltamD.length < ps.length && (
+                      <Progresso titulo="Conferido (histórico)" total={ps.length} faltam={faltamD.length} />
                     )}
                   </div>
                   {aberto && (
@@ -138,9 +114,7 @@ export default function Ciencia({ pedidos }) {
                       {ps.map((p) => (
                         <CardCiencia key={p.idVenda} p={p} clientes={clientes} vendedores={vendedores}
                           cv={cienciaDoPedido(mapaC, 'vendedor', p.idVenda)}
-                          cd={cienciaDoPedido(mapaC, 'designer', p.idVenda)}
-                          salvando={salvando}
-                          onConferir={() => conferir(v, [p], `p:${p.idVenda}`)} />
+                          cd={cienciaDoPedido(mapaC, 'designer', p.idVenda)} />
                       ))}
                     </div>
                   )}
@@ -163,7 +137,7 @@ function Progresso({ titulo, total, faltam }) {
   )
 }
 
-function CardCiencia({ p, clientes, vendedores, cv, cd, salvando, onConferir }) {
+function CardCiencia({ p, clientes, vendedores, cv, cd }) {
   const previsao = previsaoDe(p, vendedores)
   const atrasado = situacaoPrazo(previsao) === 'atrasado'
   return (
@@ -188,23 +162,33 @@ function CardCiencia({ p, clientes, vendedores, cv, cd, salvando, onConferir }) 
         ))}
       </ul>
       <div className="valor" style={{ marginTop: 8 }}>{fmtMoeda(p.valorTotal)}</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-        <CienciaTag titulo="Vendedor" c={cv} />
-        {cd
-          ? <CienciaTag titulo="Conferido" c={cd} />
-          : <button className="btn ok no-print" disabled={!!salvando} onClick={onConferir}>
-              {salvando === `p:${p.idVenda}` ? 'Registrando…' : '✓ Conferir este pedido'}
-            </button>}
+      <div style={{ marginTop: 8 }}>
+        <CienciaTag titulo="Ciência do vendedor" c={cv} />
+        {cd && <CienciaTag titulo="Conferido (registro antigo)" c={cd} />}
       </div>
     </div>
   )
 }
 
+// Quem assinou, quando e de onde. É a razão de a ciência existir: sem o nome, a
+// hora e o IP, o "✓" não prova nada — e era exatamente o que cabia no chip
+// antigo, que só mostrava o e-mail espremido numa linha.
 function CienciaTag({ titulo, c }) {
-  if (!c) return <span className="chip rota-warn">{titulo}: pendente</span>
+  if (!c) {
+    return (
+      <div className="ci-bloco pendente">
+        <b>{titulo}</b>
+        <span>⏳ ainda sem ciência</span>
+      </div>
+    )
+  }
   return (
-    <span className="chip" style={{ color: 'var(--ok)' }}>
-      ✓ {titulo}: {c.porEmail} · {fmtDataHora(c.quando)}{c.ip ? ` · IP ${c.ip}` : ''}
-    </span>
+    <div className="ci-bloco">
+      <b>✓ {titulo}</b>
+      <span className="ci-quem">{c.porNome || c.porEmail || '—'}</span>
+      {c.porEmail && c.porNome && <span className="ci-mail">{c.porEmail}</span>}
+      <span>🕒 {fmtDataHora(c.quando)}</span>
+      <span>🌐 IP {c.ip || 'não registrado'}</span>
+    </div>
   )
 }

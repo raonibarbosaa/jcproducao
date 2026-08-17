@@ -465,12 +465,45 @@ input, select { font-family: var(--font); }
 .qv-tudo { font-size: 12px; font-weight: 700; color: var(--ok); margin-left: auto; }
 .qv-parcial { font-size: 12px; font-weight: 700; color: var(--text-faint); margin-left: auto; }
 /* pipeline da rota: só as etapas que têm alguma coisa */
+/* CIÊNCIA: quem assinou, quando e de onde — sem isso o "✓" não prova nada */
+.ci-bloco {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline;
+  font-size: 11px; color: var(--text-faint);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border));
+  border-radius: 8px; padding: 6px 9px; margin-top: 6px;
+}
+.ci-bloco b { color: var(--ok); font-size: 11.5px; }
+.ci-bloco .ci-quem { color: var(--text); font-weight: 700; }
+.ci-bloco .ci-mail { font-family: var(--mono); }
+.ci-bloco.pendente { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.ci-bloco.pendente b { color: var(--warn); }
+
+/* ONDE ESTÁ: escolher a etapa (silk, gráfica, montagem…) para o vendedor ver
+   só o que está nela, sem perder a organização por rota */
+.qv-filtro {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin: 0 2px 14px;
+}
+.qv-filtro-lbl { font-size: 12px; color: var(--text-faint); margin-right: 2px; }
+.qv-filtro .chip { cursor: pointer; border-color: var(--border); }
+.qv-filtro .chip:hover { border-color: var(--text-faint); }
+.qv-filtro .chip.sit-on {
+  background: var(--accent); color: #1a1205; border-color: var(--accent); font-weight: 700;
+}
+.qv-filtro .chip.sit-on b { color: #1a1205; }
+
 .qv-pipe { display: flex; flex-wrap: wrap; gap: 6px; }
 .qv-etapa {
   font-size: 11px; font-weight: 700; color: var(--text-faint);
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 20px; padding: 3px 10px; white-space: nowrap;
+  cursor: pointer; font-family: inherit;
 }
+.qv-etapa:hover { border-color: var(--text-faint); }
+.qv-etapa.sel {
+  background: var(--accent); color: #1a1205; border-color: var(--accent);
+}
+.qv-etapa.sel b { color: #1a1205; }
 .qv-etapa b { color: var(--text); font-family: var(--mono); margin-left: 2px; }
 .qv-etapa.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .qv-etapa.ok b { color: var(--ok); }
@@ -493,6 +526,12 @@ input, select { font-family: var(--font); }
   white-space: nowrap; min-width: 96px; text-align: center;
 }
 .qv-item-etapa.ok { color: var(--ok); }
+/* desde quando o item está parado nesta etapa — linha inteira, embaixo */
+.qv-item-desde {
+  grid-column: 1 / -1; font-size: 11px; color: var(--text-faint);
+  padding-top: 1px;
+}
+.qv-item-desde b { color: var(--text-dim); font-family: var(--mono); }
 @media (max-width: 560px) {
   .qv-itens li { grid-template-columns: 1fr auto; }
   .qv-item-etapa { grid-column: 1 / -1; justify-self: start; min-width: 0; }

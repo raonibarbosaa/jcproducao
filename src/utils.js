@@ -486,6 +486,16 @@ export function desdeNaEtapa(p, idx, etapa) {
   return e?.desde?.[etapa] || e?.em || p?.importadoEm || p?.dataVenda || ''
 }
 
+// QUANDO o item entrou nesta etapa — a data e a hora, não só "há 3 dias".
+// ⚠️ Devolve também se o carimbo é EXATO: sem `desde`, o valor vem do fallback
+// (última movimentação → importação → venda) e é uma APROXIMAÇÃO. Mostrar
+// aproximação como hora cravada vira discussão no chão de fábrica ("esse item
+// não chegou 08:12 aqui"), e é o tipo de número que ninguém desconfia.
+export function entradaNaEtapa(p, idx, etapa) {
+  const e = doMapaDoItem(p?.etapas, p, idx)
+  return { iso: desdeNaEtapa(p, idx, etapa), exato: !!e?.desde?.[etapa] }
+}
+
 // Tempo (ms) que o item está/esteve nesta etapa, contando a passagem atual.
 export function tempoNaEtapa(p, idx, etapa, agora) {
   const e = doMapaDoItem(p?.etapas, p, idx)
@@ -847,9 +857,15 @@ export function unificaPedidosVendedor(pedidos, entregues) {
   for (const p of pedidos || []) {
     const u = garante(p.idVenda, p)
     ;(p.itens || []).forEach((it, i) => {
+      const et = etapaDoItem(p, i)
+      // desde quando está parado AQUI: é a pergunta que o vendedor faz ao
+      // cliente ("está no silk desde quando?") e que nenhuma tela dele
+      // respondia — só dava para ver em que etapa estava, não há quanto tempo
+      const ent = entradaNaEtapa(p, i, et)
       u.itens.push({
         produto: it.produto, qtd: it.qtd,
-        linha: linhaDoItem(p, i), etapa: etapaDoItem(p, i), entregue: false,
+        linha: linhaDoItem(p, i), etapa: et, entregue: false,
+        desde: ent.iso, desdeExato: ent.exato,
       })
     })
   }

@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import {
   ETAPAS_VENDEDOR, nomeEtapaVendedor, contaEtapasVendedor, ordemRota,
-  nomeCliente, fmtData, fmtDataHora, fmtMoeda, situacaoPrazo, saiuParaEntrega,
+  nomeCliente, fmtData, fmtDataHora, fmtDuracao, fmtMoeda, situacaoPrazo, saiuParaEntrega,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import SeloLinha from './SeloLinha.jsx'
@@ -17,6 +18,22 @@ import SeloLinha from './SeloLinha.jsx'
 // filtrados — ver unificaPedidosVendedor em utils.
 export default function QuadroVendedor({ pedidos, clientes }) {
   const { vendedores: cadastros } = useCadastros()
+  // ONDE ESTÁ: o vendedor pergunta "o que ainda está no silk?" e antes precisava
+  // varrer a tela lendo a etapa item a item. Aqui ele escolhe a etapa e a tela
+  // mostra só o que está nela — sem trocar de aba nem perder a organização por
+  // rota, que é como ele pensa.
+  const [etapa, setEtapa] = useState('')
+  const alterna = (id) => setEtapa((x) => (x === id ? '' : id))
+  // ⚠️ Os contadores saem SEMPRE do total, nunca da lista já filtrada: tirados
+  // do que está na tela, escolher "Silk" zeraria as outras etapas e não daria
+  // mais para trocar direto para elas.
+  const geral = contaEtapasVendedor(pedidos)
+  const totalGeral = Object.values(geral).reduce((s, n) => s + n, 0)
+  // filtro de ITEM: o pedido fica se tiver algum item na etapa, e dentro do card
+  // só esses itens aparecem (mesma regra do filtro de material da Produção)
+  const soDaEtapa = (lista) => (!etapa ? lista : lista
+    .map((p) => ({ ...p, itens: (p.itens || []).filter((it) => it.etapaVend === etapa) }))
+    .filter((p) => p.itens.length > 0))
 
   // Agrupa ROTA → Data de entrega. A rota vem primeiro porque é assim que o
   // vendedor pensa ("como está minha ROTA 01") — com a data no topo, a mesma rota
@@ -45,9 +62,42 @@ export default function QuadroVendedor({ pedidos, clientes }) {
     return <div className="empty"><div className="big">📦</div>Nenhum pedido para acompanhar com esses filtros.</div>
   }
 
+  // com o filtro ligado, rota que não tem nada naquela etapa sai da tela
+  const visiveis = grupos
+    .map((g) => ({
+      ...g,
+      ciclos: g.ciclos.map((c) => ({ ...c, mostra: soDaEtapa(c.pedidos) }))
+        .filter((c) => c.mostra.length > 0),
+    }))
+    .filter((g) => g.ciclos.length > 0)
+
+  const barra = (
+    <div className="qv-filtro">
+      <span className="qv-filtro-lbl">Onde está:</span>
+      <button className={`chip${etapa ? '' : ' sit-on'}`} onClick={() => setEtapa('')}>
+        Tudo <b>{totalGeral}</b>
+      </button>
+      {ETAPAS_VENDEDOR.filter((e) => geral[e.id]).map((e) => (
+        <button key={e.id} className={`chip${etapa === e.id ? ' sit-on' : ''}`}
+          onClick={() => alterna(e.id)}
+          title={`Ver só os itens em ${e.nome}`}>
+          {e.nome} <b>{geral[e.id]}</b>
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div className="qv">
-      {grupos.map((g) => {
+      {barra}
+      {visiveis.length === 0 && (
+        <div className="empty"><div className="big">🔎</div>
+          Nenhum item em <b>{nomeEtapaVendedor(etapa)}</b> nos pedidos filtrados.
+          <div><button className="btn" style={{ marginTop: 10 }}
+            onClick={() => setEtapa('')}>Ver todas as etapas</button></div>
+        </div>
+      )}
+      {visiveis.map((g) => {
         const contRota = contaEtapasVendedor(g.pedidos)
         const totalRota = Object.values(contRota).reduce((s, n) => s + n, 0)
         const entreguesRota = contRota.entregue || 0
@@ -71,15 +121,20 @@ export default function QuadroVendedor({ pedidos, clientes }) {
                   <div className={`qv-data${atrasada ? ' atrasado' : ''}`}>
                     📅 {c.previsao ? fmtData(c.previsao) : 'sem data de entrega'}
                   </div>
+                  {/* o pipeline conta a viagem INTEIRA mesmo com filtro ligado —
+                      é o mapa de onde as coisas estão, e também o atalho: clicar
+                      escolhe a etapa */}
                   <div className="qv-pipe">
                     {ETAPAS_VENDEDOR.filter((e) => cont[e.id]).map((e) => (
-                      <span key={e.id} className={`qv-etapa${e.id === 'entregue' ? ' ok' : ''}`}>
+                      <button key={e.id} onClick={() => alterna(e.id)}
+                        title={`Ver só os itens em ${e.nome}`}
+                        className={`qv-etapa${e.id === 'entregue' ? ' ok' : ''}${etapa === e.id ? ' sel' : ''}`}>
                         {e.nome} <b>{cont[e.id]}</b>
-                      </span>
+                      </button>
                     ))}
                   </div>
                   <div className="qv-cards">
-                    {c.pedidos
+                    {c.mostra
                       .slice()
                       .sort((a, b) => nomeCliente(a.cliente, clientes).localeCompare(nomeCliente(b.cliente, clientes)))
                       .map((p) => <CardPedido key={p.idVenda} p={p} clientes={clientes} />)}
@@ -126,6 +181,18 @@ function CardPedido({ p, clientes }) {
             <span className={`qv-item-etapa${it.entregue ? ' ok' : ''}`}>
               {it.entregue ? `✓ ${fmtData(it.entregueEm)}` : nomeEtapaVendedor(it.etapaVend)}
             </span>
+            {/* desde quando está aqui. O `~` marca o carimbo aproximado (item que
+                já estava parado antes de o relógio existir) — hora cravada que
+                não é cravada vira discussão. */}
+            {!it.entregue && it.desde && (
+              <span className="qv-item-desde"
+                title={it.desdeExato
+                  ? `Entrou nesta etapa em ${fmtDataHora(it.desde)}`
+                  : `Sem carimbo de entrada: aproximado pela última movimentação do item (${fmtDataHora(it.desde)})`}>
+                ⏱ desde {it.desdeExato ? '' : '~'}{fmtDataHora(it.desde)}
+                <b> · {fmtDuracao(Date.now() - Date.parse(it.desde))}</b>
+              </span>
+            )}
           </li>
         ))}
       </ul>
