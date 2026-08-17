@@ -563,18 +563,177 @@ export function pedidosEmPlanos(planos, exceto) {
   return m
 }
 
+// ---------- A PREVISÃO É DO DIA (antes era de um vendedor + uma rota) ----------
+// O caminhão não sai por vendedor: sai num DIA, e nesse dia leva o que está
+// prometido para aquela data — inclusive pedidos de vendedores diferentes que
+// rodam a mesma região. Amarrada ao vendedor, a previsão obrigava a criar uma por
+// vendedor e nunca mostrava o dia inteiro.
+
+// a data de entrega VIVA do pedido, em 'YYYY-MM-DD'.
+// Partes LOCAIS, não `toISOString()`: em UTC-3 o ISO de uma data manual pode cair
+// no dia anterior, e a viagem inteira mudaria de dia por causa do fuso.
+export function diaDaPrevisao(p) {
+  if (!p?.previsao) return null
+  const d = new Date(p.previsao)
+  if (isNaN(d)) return null
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// a entrega deste pedido é NO dia ou ANTES dele?
+// O atrasado entra de propósito: é justamente quem não pode perder mais um
+// caminhão. ⚠️ Pedido SEM data também entra — sumir do planejamento é pior do que
+// aparecer a mais, mesma regra de `temTrabalhoNaProducao`.
+export function entregaAte(p, dia) {
+  if (!dia) return true
+  const d = diaDaPrevisao(p)
+  if (!d) return true
+  return d <= dia
+}
+
+// Este pedido é do bolo natural desta previsão? FONTE ÚNICA — a lista, o aviso de
+// "veio de fora" e o contador do card têm que responder a mesma coisa.
+// Quem decide o critério é o campo que o plano TEM: previsão nova anda por data,
+// as antigas (vendedor + rota, sem `dataEntrega`) seguem exatamente como eram.
+// Nenhuma migração: o formato velho continua legível, como nas ciências.
+export function doPlano(p, pl) {
+  if (!pl) return false
+  if (pl.dataEntrega) return entregaAte(p, pl.dataEntrega)
+  return (p.vendedor || '') === (pl.vendedor || '')
+    && (p.rota || 'SEM ROTA') === (pl.rota || 'SEM ROTA')
+}
+
+export const planoPorData = (pl) => !!pl?.dataEntrega
+
+// como a previsão se chama na tela, no card e na folha impressa
+export const rotuloPlano = (pl) => (planoPorData(pl)
+  ? `📅 ${fmtData(pl.dataEntrega + 'T00:00:00')}`
+  : `📍 ${pl?.rota || 'SEM ROTA'}${pl?.vendedor ? ` · ${pl.vendedor}` : ''}`)
+
+// Com o dia inteiro na tela, a lista solta vira um paredão. Agrupa por
+// ROTA × VENDEDOR e mostra as CIDADES de cada grupo.
+// ⚠️ NÃO funde rotas de nome igual de vendedores diferentes: a "ROTA 02" da
+// GLAYCE às vezes é a mesma região da do Sérgio e às vezes não (decisão do dono
+// em 17/08/2026). O sistema mostra as cidades lado a lado; juntar na viagem é
+// decisão de quem monta.
+export function agrupaPlanoPorRota(pedidos, cadastros) {
+  const prazo = (a, b) => String(a.previsao || '9999').localeCompare(String(b.previsao || '9999'))
+    || String(a.idVenda).localeCompare(String(b.idVenda))
+  const por = new Map()
+  for (const p of pedidos || []) {
+    const vendedor = p.vendedor || '—'
+    const rota = p.rota || 'SEM ROTA'
+    const chave = `${vendedor}|${rota}`
+    const g = por.get(chave) || { chave, vendedor, rota, cidades: [], pedidos: [] }
+    g.pedidos.push(p)
+    if (p.cidade && !g.cidades.includes(p.cidade)) g.cidades.push(p.cidade)
+    por.set(chave, g)
+  }
+  return [...por.values()]
+    .map((g) => ({ ...g, cidades: g.cidades.sort(), pedidos: g.pedidos.sort(prazo) }))
+    // ⚠️ Aqui a ordem é pelo NOME da rota, não pela posição no cadastro — ao
+    // contrário do resto do sistema. Com vários vendedores na mesma viagem não
+    // existe UMA sequência: cada um roda a sua, e a posição 0 de um não vem
+    // antes da posição 0 do outro. Pelo nome, as rotas homônimas ficam LADO A
+    // LADO — que é exatamente o que deixa comparar as cidades e decidir se a
+    // ROTA 02 dele é a mesma ROTA 02 dela. A posição no cadastro só desempata.
+    .sort((a, b) => a.rota.localeCompare(b.rota, 'pt-BR')
+      || (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+      || a.vendedor.localeCompare(b.vendedor))
+}
+
 // Onde estão os itens deste pedido que AINDA não saíram, agrupados por etapa.
 // É a resposta de "esse pedido está vindo, mas vindo de onde" — sem isso o
 // planejador vê só "não está pronto" e não sabe se falta um dia ou uma semana.
-export function pendenciasDoPedido(p) {
+export const pendenciasDoPedido = (p, itensCad) =>
+  resumePendencias(itensPendentesDoPedido(p, itensCad))
+
+// "N em <etapa>" a partir do detalhe. Fonte ÚNICA do agrupamento: quem filtra o
+// detalhe (por material, por exemplo) resume a MESMA lista que está mostrando —
+// senão a linha do card diria 3 e a lista aberta embaixo dela mostraria 1.
+export function resumePendencias(itens) {
   const por = {}
-  ;(p?.itens || []).forEach((_, i) => {
-    if (qtdEmProducao(p, i) <= 0) return
+  for (const it of itens || []) {
+    ;(por[it.etapa] ??= { etapa: it.etapa, nome: it.nome, itens: 0 }).itens++
+  }
+  return Object.values(por).sort((a, b) => ordemPendencia(a.etapa) - ordemPendencia(b.etapa))
+}
+
+// Item a item: QUAL produto ainda não saiu, quanto falta e em que etapa ele está.
+// `pendenciasDoPedido` é só o resumo disto. Quem vai atrás do serviço precisa do
+// PRODUTO — "1 em Montagem" não diz se é a sacola grande ou a etiqueta, e é o
+// produto que alguém tem que ir buscar no chão de fábrica.
+export function itensPendentesDoPedido(p, itensCad) {
+  const out = []
+  ;(p?.itens || []).forEach((it, i) => {
+    const qtd = qtdEmProducao(p, i)
+    if (qtd <= 0) return
     const et = etapaDoItem(p, i)
     if (!et) return
-    ;(por[et] ??= { etapa: et, nome: nomeEtapaItem(et), itens: 0 }).itens++
+    const mat = materialDoItem(it, itensCad)
+    out.push({
+      idx: i,
+      key: it.key || keyDoItem(p, i),
+      produto: it.produto || '',
+      linha: linhaDoItem(p, i),
+      qtd,
+      etapa: et,
+      nome: nomeEtapaItem(et),
+      material: mat,
+      materialNome: nomeDoMaterial(mat) || SEM_MATERIAL,
+    })
   })
-  return Object.values(por).sort((a, b) => posNoFluxo(a.etapa) - posNoFluxo(b.etapa))
+  return out.sort((a, b) => ordemPendencia(a.etapa) - ordemPendencia(b.etapa))
+}
+
+// Item cujo material o cadastro não conhece continua APARECENDO, num grupo
+// próprio: quem monta papel não monta plástico, mas trabalho que ninguém vê é
+// trabalho que atrasa — é a mesma regra das 3 montagens do quadro.
+export const SEM_MATERIAL = '⚠ Material não cadastrado'
+
+// ordem de leitura das etapas pendentes: as 3 linhas na ordem do fluxo, depois
+// montagem e expedição. `posNoFluxo` devolve 0 para as três linhas (ele responde
+// outra pergunta), e sem o desempate silk/clichê/gráfica saem em ordem aleatória.
+const ordemPendencia = (et) => posNoFluxo(et) * 10 + Math.max(0, MODO_ORDER.indexOf(et))
+
+// As pendências de VÁRIOS pedidos agrupadas por ETAPA e, dentro dela, por
+// MATERIAL — a folha que se leva para o chão de fábrica. Quem cobra serviço anda
+// por SETOR (uma lista por pedido obrigaria a varrer a folha inteira para saber
+// o que é da montagem), e dentro do setor quem faz papel não é quem faz plástico
+// — é a mesma divisão das 3 montagens do quadro.
+export function pendenciasPorEtapa(pedidos, itensCad) {
+  const prazo = (a, b) => String(a.p.previsao || '').localeCompare(String(b.p.previsao || ''))
+    || String(a.p.idVenda).localeCompare(String(b.p.idVenda))
+  const por = new Map()
+  for (const p of pedidos || []) {
+    for (const it of itensPendentesDoPedido(p, itensCad)) {
+      const g = por.get(it.etapa)
+        || { etapa: it.etapa, nome: it.nome, itens: [], mats: new Map() }
+      const linha = { ...it, p }
+      g.itens.push(linha)
+      const mg = g.mats.get(it.material)
+        || { id: it.material, nome: it.materialNome, itens: [] }
+      mg.itens.push(linha)
+      g.mats.set(it.material, mg)
+      por.set(it.etapa, g)
+    }
+  }
+  return [...por.values()]
+    .sort((a, b) => ordemPendencia(a.etapa) - ordemPendencia(b.etapa))
+    .map(({ mats, ...g }) => ({
+      ...g,
+      // dentro do setor/material, a ordem é o PRAZO: é por ele que se prioriza
+      itens: g.itens.sort(prazo),
+      materiais: [...mats.values()]
+        .sort((a, b) => ordemMaterial(a.id) - ordemMaterial(b.id))
+        .map((mg) => ({ ...mg, itens: mg.itens.sort(prazo) })),
+    }))
+}
+
+// ordem dos materiais na folha: a de `MATERIAIS` (fonte única), com o que o
+// cadastro não reconhece no fim — visível, nunca escondido
+const ordemMaterial = (id) => {
+  const i = MATERIAL_IDS.indexOf(id)
+  return i < 0 ? MATERIAL_IDS.length : i
 }
 
 // Situação de um pedido dentro do plano: o que já dá para carregar e o que falta.

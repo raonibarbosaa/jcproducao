@@ -633,10 +633,48 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   - **CARGA** (`cargas`) guarda **volumes**. É o que o motorista conta e a
     conferência marca.
   Misturar faria a conferência cobrar item que não está no caminhão.
-- **`planos/{id}`** = `{numero, status(aberto|encerrado), vendedor, rota,
-  saidaPrevista, pedidos:[idVenda], cargas:[cargaId], criadoEm/Por}`.
-- **A tela é uma prancheta, não um relatório.** Escolhe vendedor + rota e mostra
-  DUAS colunas: "Nesta viagem" × "Disponíveis desta rota". Cada linha diz onde o
+- **`planos/{id}`** = `{numero, status(aberto|encerrado), dataEntrega,
+  saidaPrevista, pedidos:[idVenda], cargas:[cargaId], criadoEm/Por}` (+ `vendedor`
+  e `rota`, hoje só nas previsões antigas).
+
+## A PREVISÃO É DO DIA (17/08/2026) — antes era de um vendedor + uma rota
+> O caminhão não sai por vendedor: sai num DIA, e nesse dia leva o que está
+> prometido para aquela data — inclusive pedidos de vendedores diferentes que
+> rodam a mesma região.
+
+- **Cria-se pela DATA DE ENTREGA.** O formulário perdeu Vendedor e Rota; sobrou
+  Data de entrega (+ saída prevista) e uma linha viva com o tamanho do dia
+  ("34 pedidos até 20/08 · 12 prontos · 4 rotas") antes de criar.
+- **`doPlano(p, pl)` é a fonte ÚNICA de "este pedido é do bolo natural desta
+  viagem"** — substituiu o `daRotaDo` que vivia dentro de `Carga.jsx`. Quem
+  decide o critério é o campo que o plano TEM: com `dataEntrega`, anda por data;
+  sem ele (as previsões antigas), continua vendedor + rota, **sem migração**.
+- **Entrega ATÉ a data, não a data exata** (decisão do dono): o pedido atrasado é
+  justamente quem não pode perder mais um caminhão. ⚠️ **Pedido SEM data também
+  entra** — sumir do planejamento é pior do que aparecer a mais.
+- **`diaDaPrevisao` usa as partes LOCAIS da data**, não `toISOString()`: em UTC-3
+  o ISO cai no dia anterior e a viagem inteira mudaria de dia por causa do fuso.
+- **Vendedor e rota viraram FILTRO e AGRUPAMENTO**, não a chave. Dentro da
+  previsão as duas colunas quebram em faixas **ROTA × VENDEDOR** com as
+  **cidades** do grupo (`agrupaPlanoPorRota`), e a `FiltrosBar` passa a mostrar o
+  seletor de vendedor (continua escondido nas previsões antigas, onde não
+  separaria nada).
+- ⚠️ **Rota de mesmo nome de vendedores diferentes NÃO é fundida** — "às vezes
+  coincide" (decisão do dono em 17/08/2026). O sistema põe as homônimas **lado a
+  lado** com as cidades à vista e quem monta decide. Por isso, e só aqui, a ordem
+  dos grupos é pelo **NOME** da rota: com vários vendedores não existe UMA
+  sequência (a posição 0 de um não vem antes da posição 0 do outro), e o
+  `ordemRota` do cadastro só desempata.
+- **"Prontos sem previsão" agrupa por DATA** (com as rotas do dia em chips) e o
+  botão vira "+ Criar previsão do dia 20/08". Grupo sem data de entrega não cria
+  viagem — o botão explica em vez de sumir.
+- **"pôr todos" confirma acima de 20 pedidos**, e cada faixa de rota tem o seu
+  "+ pôr os N": com o dia inteiro na lista, um clique arrastava 100 pedidos.
+- A segunda aba vira **"🔍 Outras datas"** e o aviso de trazer de fora passa a
+  dizer o que "fora" significa ali ("entrega em 03/09, depois desta viagem").
+- **A tela é uma prancheta, não um relatório.** Escolhe a data (antes era
+  vendedor + rota) e mostra DUAS colunas: "Nesta viagem" × "Disponíveis até
+  &lt;data&gt;". Cada linha diz onde o
   pedido está — ✅ pronto (volumes + peso) ou ⏳ **em que setor** o que falta está
   parado (`pendenciasDoPedido`). Esse segundo dado é o motivo da tela existir:
   sem ele, planejar é chutar. ⚠️ A primeira versão disto foi um painel de
@@ -678,17 +716,42 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   parede de texto. Cada produto mostra o selo da linha, os volumes prontos com
   peso e, quando falta, quanto e em que setor — "3 volumes" não diz se é a sacola
   grande ou a etiqueta, e é o produto que decide o que sobe no caminhão.
+- **Folha de PENDÊNCIAS impressa (`🖨 Pendências`, na previsão aberta):** o que
+  ainda está em produção nos pedidos da tela, para levar ao chão de fábrica e
+  cobrar. **Agrupada por SETOR, não por pedido** — quem cobra anda de posto em
+  posto; por pedido, obrigaria a varrer a folha inteira para saber o que é da
+  montagem. Cada linha: quadradinho de marcar, selo da linha + produto,
+  `#pedido cliente · cidade`, quantidade que falta e o prazo (a ordem dentro do
+  setor é a previsão). Helpers em utils: `itensPendentesDoPedido` (detalhe por
+  item — `pendenciasDoPedido` virou o resumo dele), `pendenciasPorEtapa`,
+  `ordemPendencia` (desempata as 3 linhas, que têm o mesmo `posNoFluxo`).
+  Dentro do setor a folha **quebra por MATERIAL** (`pendenciasPorEtapa` devolve
+  `materiais`, na ordem de `MATERIAIS`): quem faz papel não é quem faz plástico,
+  e a mesma folha vai para postos diferentes. Material que o cadastro não
+  reconhece sai num grupo próprio (`SEM_MATERIAL`), nunca escondido.
+  ⚠️ Imprime **exatamente o que está na tela** (a viagem + a lista da direita
+  como está filtrada) e a folha declara isso no cabeçalho: impressa com filtro
+  ligado ela é PARTE do que existe, e sem o aviso passaria por lista completa.
+- **Filtro de MATERIAL na previsão** (seletor ao lado dos chips de situação,
+  iterando `MATERIAIS`): é filtro de ITEM, igual ao da Lista de Produção —
+  o pedido fica se tiver algum item do material e, dentro do card, só esses
+  itens aparecem (produtos e o resumo `⏳ N em Montagem`). ⚠️ O resumo sai da
+  MESMA lista filtrada (`resumePendencias`, fonte única do agrupamento), senão a
+  linha diria 3 e a lista aberta logo abaixo mostraria 1. **O bloco `✅ pronto ·
+  N volume(s)` NÃO é filtrado** de propósito: é o que sobe no caminhão, e pôr o
+  pedido na viagem leva o pedido INTEIRO — filtrar ali faria a tela prometer uma
+  carga menor do que a que sai.
 - **Filtro por SITUAÇÃO** (`SITUACOES`: Todos · ✅ Prontos · 📦 Na montagem ·
   🏭 Na linha) nas duas listas do plano. "O que já dá para levar" e "o que sai da
   montagem a tempo" são perguntas diferentes, e a lista misturada não responde
   nenhuma. ⚠️ O "pôr todos" usa a lista VISÍVEL — com um filtro ligado, acrescentar
   também os escondidos seria uma ação maior do que a tela mostra.
 - ⚠️ **Os seletores da tela saem de TODOS os pedidos, não dos prontos.** Vendedor
-  sem nada pronto no momento sumia do filtro, e com ele as rotas dele. E as
-  ROTAS do formulário de nova previsão vêm do **cadastro do vendedor**
-  (`rotasDoVendedor`), não dos pedidos: dá para programar a viagem de uma rota
-  cujos pedidos estão todos na produção — que é justamente quando planejar vale
-  a pena. Tirar a lista dos pedidos escondia essas rotas.
+  sem nada pronto no momento sumia do filtro, e com ele as rotas dele. (O
+  formulário de nova previsão não tem mais seletor de rota — nasce pela data —,
+  mas o motivo original vale para os filtros: programar a viagem de uma rota
+  cujos pedidos estão TODOS na produção é justamente quando planejar vale a pena.
+  `rotasDoVendedor` continua alimentando o filtro da lista de previsões.)
 - ⚠️ **Um pedido só pode estar num plano aberto por vez** (`pedidosEmPlanos`) —
   senão duas viagens se planejam contando com a mesma mercadoria. A linha do
   outro plano aparece com o `+` travado e a tag "no plano #N".

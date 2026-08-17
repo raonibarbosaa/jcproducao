@@ -6,12 +6,14 @@ import {
   cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
   CARGA_SEGURA_ITENS,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
-  materialDoItem, totaisPorMaterial, fmtTotais, filtraPedidos, previsaoDe,
+  materialDoItem, MATERIAIS, totaisPorMaterial, fmtTotais, filtraPedidos, previsaoDe,
   vendedoresDe, resumoFiltros,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
-  rotasDoVendedor, pendenciasDoPedido, MODO_ORDER,
+  rotasDoVendedor, pendenciasDoPedido, pendenciasPorEtapa, MODO_ORDER,
+  itensPendentesDoPedido, resumePendencias,
+  doPlano, planoPorData, rotuloPlano, agrupaPlanoPorRota, diaDaPrevisao, entregaAte,
   keyDoItem, linhaDoItem, qtdEmProducao, etapaDoItem, nomeEtapaItem,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -110,24 +112,29 @@ export default function Carga({ pedidos }) {
   const prontosLivres = disponiveis.filter((d) => !emAlgumPlano.has(String(d.p.idVenda)))
   const idsListaFiltrada = new Set(
     filtraPedidos(prontosLivres.map((d) => d.p), filtrosLista, clientes).map((p) => p.idVenda))
+  // Agrupado pela DATA de entrega, que é a unidade da viagem: o dia é que enche
+  // o caminhão, e por vendedor+rota o mesmo dia aparecia repartido em vários
+  // cards sem ninguém ver o tamanho da saída.
   const gruposProntos = Object.values(
     prontosLivres
       .filter((d) => idsListaFiltrada.has(d.p.idVenda))
       .reduce((acc, d) => {
-        const vend = d.p.vendedor || '—'
-        const rota = d.p.rota || 'SEM ROTA'
-        const k = `${vend}|${rota}`
-        ;(acc[k] ??= { chave: k, vendedor: vend, rota, pedidos: [], volumes: [] })
+        const k = diaDaPrevisao(d.p) || 'sem-data'
+        ;(acc[k] ??= { chave: k, dia: diaDaPrevisao(d.p), pedidos: [], volumes: [] })
         acc[k].pedidos.push(d.p)
         acc[k].volumes.push(...d.itens)
         return acc
       }, {})
-  ).map((g) => ({ ...g, peso: pesoDaLista(g.volumes, itensCad) }))
-    .sort((a, b) => (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
-      || a.rota.localeCompare(b.rota))
+  ).map((g) => ({
+    ...g,
+    peso: pesoDaLista(g.volumes, itensCad),
+    // as rotas de dentro do dia continuam à vista: é o que diz se o dia é uma
+    // viagem só ou três
+    rotas: agrupaPlanoPorRota(g.pedidos, cadastros),
+  })).sort((a, b) => String(a.dia || '9999').localeCompare(String(b.dia || '9999')))
   const prontosSemPlano = gruposProntos.reduce((n, g) => n + g.pedidos.length, 0)
-  // já existe previsão aberta para esta rota? então é melhor engordar aquela
-  const planoDaRota = (v, r) => abertos.find((pl) => (pl.vendedor || '—') === v && (pl.rota || 'SEM ROTA') === r)
+  // já existe previsão aberta para este dia? então é melhor engordar aquela
+  const planoDaData = (dia) => abertos.find((pl) => pl.dataEntrega && pl.dataEntrega === dia)
 
   // Rotas do seletor: com um vendedor escolhido, TODAS as cadastradas dele (mais
   // as que aparecem em pedido). Sem isso a rota só existia no filtro depois de
@@ -142,19 +149,15 @@ export default function Carga({ pedidos }) {
           - ordemRota(filtrosLista.vendedor, b, cadastros)) || a.localeCompare(b))
     : undefined
 
-  // Candidatos do plano: TODO pedido do vendedor+rota que ainda tem serviço na
-  // fábrica OU já tem volume livre. É o ponto do planejamento — enxergar o que
-  // está vindo, não só o que já está pronto.
+  // Candidatos do plano: TODO pedido do bolo natural da previsão (entrega até a
+  // data dela; nas antigas, o vendedor+rota) que ainda tem serviço na fábrica OU
+  // já tem volume livre. É o ponto do planejamento — enxergar o que está vindo,
+  // não só o que já está pronto. Quem decide o "bolo natural" é `doPlano`.
   const candidatos = plano
-    ? todos.filter((p) => (p.vendedor || '') === (plano.vendedor || '')
-        && (p.rota || 'SEM ROTA') === (plano.rota || 'SEM ROTA')
+    ? todos.filter((p) => doPlano(p, plano)
         && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
     : []
   const noPlano = new Set((plano?.pedidos || []).map(String))
-  // o pedido é do bolo natural desta previsão (mesmo vendedor E mesma rota)?
-  const daRotaDo = (p, pl) => !!pl
-    && (p.vendedor || '') === (pl.vendedor || '')
-    && (p.rota || 'SEM ROTA') === (pl.rota || 'SEM ROTA')
   const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
   // a busca em outras rotas roda sobre TODOS os pedidos, não sobre os candidatos
   const idsBusca = new Set(filtraPedidos(todos, filtros, clientes).map((p) => p.idVenda))
@@ -181,7 +184,7 @@ export default function Carga({ pedidos }) {
   const deOutrasRotas = plano
     ? todos
         .filter((p) => !noPlano.has(String(p.idVenda))
-          && !daRotaDo(p, plano)
+          && !doPlano(p, plano)
           && idsBusca.has(p.idVenda)
           && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
         .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
@@ -207,19 +210,40 @@ export default function Carga({ pedidos }) {
       // a viagem deixou de ser só daquela rota — o card precisa dizer
       deFora: ids.filter((id) => {
         const p = porIdTodos.get(id)
-        return p && !daRotaDo(p, pl)
+        return p && !doPlano(p, pl)
       }).length,
+      // que rotas/vendedores esta viagem virou — a previsão do dia atravessa
+      // vendedor, e o card precisa dizer para onde o caminhão vai
+      rotas: agrupaPlanoPorRota(ids.map((id) => porIdTodos.get(id)).filter(Boolean), cadastros),
     }
   }
 
-  async function criarPlano({ vendedor, rota, saidaPrevista, pedidos: ids }) {
+  // A previsão por data não tem vendedor nem rota próprios: o filtro passa a
+  // olhar o que está DENTRO dela. Sem isso, escolher um vendedor na barra
+  // escondia todas as previsões novas de uma vez.
+  function casaPlanoFiltro(pl) {
+    const { vendedor, rota } = filtrosLista
+    if (!vendedor && !rota) return true
+    if ((!vendedor || (pl.vendedor || '—') === vendedor)
+      && (!rota || (pl.rota || 'SEM ROTA') === rota)) return true
+    return (pl.pedidos || []).some((id) => {
+      const p = porIdTodos.get(String(id))
+      return p && (!vendedor || (p.vendedor || '—') === vendedor)
+        && (!rota || (p.rota || 'SEM ROTA') === rota)
+    })
+  }
+
+  async function criarPlano({ dataEntrega, vendedor, rota, saidaPrevista, pedidos: ids }) {
     setSalvando('plano')
     try {
       const ref = doc(collection(db, 'planos'))
       await setDoc(ref, {
         numero: proximoNumeroPlano(planos),
         status: STATUS_PLANO.ABERTO,
-        vendedor, rota, saidaPrevista: saidaPrevista || '',
+        // a previsão nova anda por DATA; vendedor/rota ficam vazios e existem só
+        // para as previsões antigas continuarem legíveis
+        dataEntrega: dataEntrega || '',
+        vendedor: vendedor || '', rota: rota || '', saidaPrevista: saidaPrevista || '',
         pedidos: (ids || []).map(String), cargas: [],
         criadoEm: new Date().toISOString(), criadoPor: nome || '',
       })
@@ -238,16 +262,22 @@ export default function Carga({ pedidos }) {
       alert(`O pedido #${p.idVenda} já está no plano #${outro.numero}. Tire de lá primeiro.`)
       return
     }
-    // trazer pedido de fora é EXCEÇÃO: a viagem deixa de ser só daquela rota, e
-    // ninguém pode descobrir isso na hora de carregar
-    if (!dentroAgora && !daRotaDo(p, plano)) {
+    // trazer pedido de fora é EXCEÇÃO: a viagem deixa de ser o que o título dela
+    // diz, e ninguém pode descobrir isso na hora de carregar. Na previsão por
+    // DATA, "de fora" é o pedido de outro dia — antecipar entrega é decisão.
+    if (!dentroAgora && !doPlano(p, plano)) {
       const outroVend = (p.vendedor || '') !== (plano.vendedor || '')
-      const ok = confirm(outroVend
-        ? `⚠ O pedido #${p.idVenda} é de OUTRO VENDEDOR.\n\n`
-          + `Ele é de ${p.vendedor || '—'} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n`
-          + `e vai entrar na viagem de ${plano.vendedor || '—'} · ${plano.rota}.\n\nConfirmar?`
-        : `O pedido #${p.idVenda} é da ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'}), `
-          + `não da ${plano.rota}.\n\nO caminhão vai precisar passar lá. Confirmar?`)
+      const ok = confirm(planoPorData(plano)
+        ? `O pedido #${p.idVenda} tem entrega em ${fmtData(p.previsao)}, `
+          + `depois desta viagem (até ${fmtData(plano.dataEntrega + 'T00:00:00')}).\n\n`
+          + `${p.cliente || ''} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n\n`
+          + `Antecipar e levar nesta viagem?`
+        : outroVend
+          ? `⚠ O pedido #${p.idVenda} é de OUTRO VENDEDOR.\n\n`
+            + `Ele é de ${p.vendedor || '—'} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n`
+            + `e vai entrar na viagem de ${plano.vendedor || '—'} · ${plano.rota}.\n\nConfirmar?`
+          : `O pedido #${p.idVenda} é da ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'}), `
+            + `não da ${plano.rota}.\n\nO caminhão vai precisar passar lá. Confirmar?`)
       if (!ok) return
     }
     const ids = (plano.pedidos || []).map(String)
@@ -278,7 +308,7 @@ export default function Carga({ pedidos }) {
 
   async function encerrarPlano() {
     if (!plano) return
-    if (!confirm(`Encerrar o plano #${plano.numero} (${plano.rota})?\n\n` +
+    if (!confirm(`Encerrar o plano #${plano.numero} (${rotuloPlano(plano)})?\n\n` +
       `Ele sai da lista de planos abertos. Os pedidos que sobraram voltam a ficar livres.`)) return
     await updateDoc(doc(db, 'planos', plano.id), {
       status: STATUS_PLANO.ENCERRADO, encerradoEm: new Date().toISOString(), encerradoPor: nome || '',
@@ -499,7 +529,7 @@ export default function Carga({ pedidos }) {
         ? <>
             <PlanoAberto
               plano={plano} dentro={dentro} fora={fora} todos={todos}
-              deOutrasRotas={deOutrasRotas} daRotaDo={daRotaDo}
+              deOutrasRotas={deOutrasRotas}
               livresPorPedido={livresPorPedido} noutroPlano={noutroPlano}
               itensCad={itensCad} clientes={clientes} cadastros={cadastros}
               totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
@@ -511,12 +541,12 @@ export default function Carga({ pedidos }) {
               onAlternaTodos={alternaTodos} onLiberar={liberarPlano}
               onEncerrar={encerrarPlano} onDevolver={devolverParaExpedicao} />
           </>
-        : <ListaPlanos planos={abertos.filter((pl) =>
-              (!filtrosLista.vendedor || (pl.vendedor || '—') === filtrosLista.vendedor)
-              && (!filtrosLista.rota || (pl.rota || 'SEM ROTA') === filtrosLista.rota))} resumo={resumoPlano} todos={todos} cadastros={cadastros}
+        : <ListaPlanos planos={abertos.filter(casaPlanoFiltro)}
+            resumo={resumoPlano} todos={todos} cadastros={cadastros}
             salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano}
             gruposProntos={gruposProntos} prontosSemPlano={prontosSemPlano}
-            planoDaRota={planoDaRota} onJuntar={juntarNoPlano} clientes={clientes}
+            planoDaData={planoDaData} onJuntar={juntarNoPlano} clientes={clientes}
+            livresPorPedido={livresPorPedido}
             filtros={filtrosLista} setFiltros={setFiltrosLista}
             baseFiltro={prontosLivres.map((d) => d.p)} totalPlanos={abertos.length}
             baseSeletores={todos} rotasFiltro={rotasFiltro} />)}
@@ -585,32 +615,29 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
 // programar: não dava para reservar lugar para o pedido que ainda está no silk,
 // nem para olhar a rota inteira antes do dia.
 function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar,
-                       gruposProntos, prontosSemPlano, planoDaRota, onJuntar, clientes,
+                       gruposProntos, prontosSemPlano, planoDaData, onJuntar, clientes,
+                       livresPorPedido,
                        filtros, setFiltros, baseFiltro, totalPlanos, baseSeletores, rotasFiltro }) {
   const [novo, setNovo] = useState(false)
-  const [vendedor, setVendedor] = useState('')
-  const [rota, setRota] = useState('')
-  const [data, setData] = useState('')
+  const [dataEntrega, setDataEntrega] = useState('')
+  const [saida, setSaida] = useState('')
 
-  // vendedores: os do CADASTRO mais os que aparecem em pedido (nome que ainda
-  // não foi cadastrado não pode ficar sem previsão possível)
-  const vendedores = [...new Set([
-    ...(cadastros || []).map((v) => v.nome).filter(Boolean),
-    ...todos.map((p) => p.vendedor).filter(Boolean),
-  ])].sort()
-  // rotas: as CADASTRADAS do vendedor (é possível programar rota cujos pedidos
-  // estão todos na produção), mais qualquer rota que apareça em pedido dele
-  const rotas = [...new Set([
-    ...rotasDoVendedor(vendedor, cadastros),
-    ...todos.filter((p) => p.vendedor === vendedor).map((p) => p.rota || 'SEM ROTA'),
-  ])].filter(Boolean)
-    .sort((a, b) => (ordemRota(vendedor, a, cadastros) - ordemRota(vendedor, b, cadastros))
-      || a.localeCompare(b))
+  // O que a data escolhida pega, ANTES de criar: é o tamanho do dia, e sem ele
+  // a pessoa só descobre o que pediu depois que a previsão existe.
+  const previa = dataEntrega
+    ? todos.filter((p) => entregaAte(p, dataEntrega)
+        && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
+    : []
+  const previaProntos = previa.filter((p) => livresPorPedido.has(String(p.idVenda))).length
+  const previaRotas = agrupaPlanoPorRota(previa, cadastros).length
 
   function criar() {
-    if (!vendedor || !rota) { alert('Escolha o vendedor e a rota da viagem.'); return }
-    onCriar({ vendedor, rota, saidaPrevista: data })
-    setNovo(false); setVendedor(''); setRota(''); setData('')
+    if (!dataEntrega) { alert('Escolha a data de entrega da viagem.'); return }
+    if (planoDaData(dataEntrega)
+      && !confirm(`Já existe uma previsão para ${fmtData(dataEntrega + 'T00:00:00')} `
+        + `(#${planoDaData(dataEntrega).numero}).\n\nCriar outra assim mesmo?`)) return
+    onCriar({ dataEntrega, saidaPrevista: saida })
+    setNovo(false); setDataEntrega(''); setSaida('')
   }
 
   return (
@@ -620,30 +647,28 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
           <h3 style={{ marginBottom: 12 }}>Nova previsão de entrega</h3>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div className="field">
-              <label>Vendedor</label>
-              <select className="filtro-input" value={vendedor}
-                onChange={(e) => { setVendedor(e.target.value); setRota('') }}>
-                <option value="">escolha…</option>
-                {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Rota</label>
-              <select className="filtro-input" value={rota} onChange={(e) => setRota(e.target.value)}
-                disabled={!vendedor}>
-                <option value="">{vendedor ? 'escolha…' : 'escolha o vendedor'}</option>
-                {rotas.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
+              <label>Data de entrega</label>
+              <input type="date" className="filtro-input filtro-date" value={dataEntrega}
+                onChange={(e) => setDataEntrega(e.target.value)} />
             </div>
             <div className="field">
               <label>Saída prevista (opcional)</label>
-              <input type="date" className="filtro-input filtro-date" value={data}
-                onChange={(e) => setData(e.target.value)} />
+              <input type="date" className="filtro-input filtro-date" value={saida}
+                onChange={(e) => setSaida(e.target.value)} />
             </div>
             <button className="btn ok" disabled={!!salvando} onClick={criar}>
               {salvando === 'plano' ? 'Criando…' : '✓ Criar previsão'}
             </button>
             <button className="btn" onClick={() => setNovo(false)}>Cancelar</button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 10 }}>
+            {dataEntrega
+              ? <>A viagem pega <b>{previa.length}</b> pedido(s) com entrega até{' '}
+                  {fmtData(dataEntrega + 'T00:00:00')} · <b>{previaProntos}</b> pronto(s) ·{' '}
+                  <b>{previaRotas}</b> rota(s). Os atrasados entram — são os que não podem
+                  perder mais um caminhão.</>
+              : 'A previsão é do DIA: escolha a data de entrega e a viagem leva tudo que vence '
+                + 'até ela, de todos os vendedores. Vendedor e rota são filtros lá dentro.'}
           </div>
         </div>
       ) : (
@@ -674,22 +699,35 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
         <div className="empty"><div className="big">📋</div>
           {totalPlanos > 0
             ? `Nenhuma das ${totalPlanos} previsão(ões) abertas bate com esses filtros.`
-            : <>Nenhuma previsão aberta. Crie uma para montar a viagem de uma rota — dá para
+            : <>Nenhuma previsão aberta. Crie uma para montar a viagem de um DIA — dá para
                 pôr pedidos que ainda estão na produção, não só os que já ficaram prontos.</>}
         </div>
       ) : (
         <div className="cards">
-          {planos.slice().sort((a, b) => (a.saidaPrevista || '9999').localeCompare(b.saidaPrevista || '9999')
+          {/* ordem = o dia da viagem; a saída prevista só desempata o legado */}
+          {planos.slice().sort((a, b) =>
+            (a.dataEntrega || a.saidaPrevista || '9999').localeCompare(b.dataEntrega || b.saidaPrevista || '9999')
             || (Number(a.numero) || 0) - (Number(b.numero) || 0)).map((pl) => {
             const r = resumo(pl)
             return (
               <div key={pl.id} className="card em_dia plano-card">
                 <div className="card-top">
-                  <div className="cliente">📍 {pl.rota}</div>
+                  <div className="cliente">{rotuloPlano(pl)}</div>
                   <div className="idv">#{pl.numero}</div>
                 </div>
                 <div className="meta-row">
-                  <span className="chip">👤 {pl.vendedor || '—'}</span>
+                  {/* a previsão do dia atravessa vendedor: o card diz para onde
+                      o caminhão vai, senão só a data não conta nada */}
+                  {planoPorData(pl)
+                    ? (r.rotas.length === 0
+                        ? <span className="chip">vazia — abra e escolha os pedidos</span>
+                        : <>
+                            {r.rotas.slice(0, 2).map((g) => (
+                              <span key={g.chave} className="chip">📍 {g.rota} · {g.vendedor}</span>
+                            ))}
+                            {r.rotas.length > 2 && <span className="chip">+{r.rotas.length - 2} rota(s)</span>}
+                          </>)
+                    : <span className="chip">👤 {pl.vendedor || '—'}</span>}
                   {pl.saidaPrevista && <span className="chip">🚚 saída {fmtData(pl.saidaPrevista + 'T00:00:00')}</span>}
                 </div>
                 <div className="pl-est ok" style={{ marginTop: 8 }}>
@@ -702,7 +740,9 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
                   <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
                 )}
                 {r.deFora > 0 && (
-                  <div className="pl-est falta">⚠ {r.deFora} de outras rotas</div>
+                  <div className="pl-est falta">
+                    ⚠ {r.deFora} {planoPorData(pl) ? 'de outra data' : 'de outras rotas'}
+                  </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
@@ -723,14 +763,23 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
           </div>
           <div className="cards">
             {gruposProntos.map((g) => {
-              const jaTem = planoDaRota(g.vendedor, g.rota)
+              const jaTem = g.dia ? planoDaData(g.dia) : null
               return (
                 <div key={g.chave} className="card em_dia">
                   <div className="card-top">
-                    <div className="cliente">📍 {g.rota}</div>
+                    <div className="cliente">
+                      📅 {g.dia ? fmtData(g.dia + 'T00:00:00') : 'sem data de entrega'}
+                    </div>
                     <div className="idv">{g.pedidos.length}</div>
                   </div>
-                  <div className="meta-row"><span className="chip">👤 {g.vendedor}</span></div>
+                  {/* as rotas de dentro do dia: é o que diz se o dia é uma
+                      viagem só ou três */}
+                  <div className="meta-row">
+                    {g.rotas.slice(0, 3).map((r) => (
+                      <span key={r.chave} className="chip">📍 {r.rota} · {r.vendedor}</span>
+                    ))}
+                    {g.rotas.length > 3 && <span className="chip">+{g.rotas.length - 3}</span>}
+                  </div>
                   <div className="pl-est ok" style={{ marginTop: 6 }}>
                     📦 {g.volumes.length} volume(s) · {fmtPeso(g.peso)}
                   </div>
@@ -747,12 +796,18 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
                       </span></li>
                     )}
                   </ul>
-                  <button className="btn ok sug-btn" disabled={!!salvando}
+                  <button className="btn ok sug-btn" disabled={!!salvando || !g.dia}
+                    title={g.dia ? '' : 'Sem data de entrega não dá para montar a viagem do dia — '
+                      + 'defina a data no pedido (Produção ou Rota)'}
                     onClick={() => jaTem
                       ? onJuntar(jaTem, g)
-                      : onCriar({ vendedor: g.vendedor, rota: g.rota, saidaPrevista: '',
+                      : onCriar({ dataEntrega: g.dia, saidaPrevista: '',
                                   pedidos: g.pedidos.map((p) => p.idVenda) })}>
-                    {jaTem ? `+ Pôr na previsão #${jaTem.numero}` : '+ Criar previsão com estes'}
+                    {jaTem
+                      ? `+ Pôr na previsão #${jaTem.numero}`
+                      : g.dia
+                        ? `+ Criar previsão do dia ${fmtData(g.dia + 'T00:00:00')}`
+                        : 'sem data — defina a entrega no pedido'}
                   </button>
                 </div>
               )
@@ -786,7 +841,7 @@ const SITUACOES = [
 // Duas listas: o que está NESTA viagem e o que ainda dá para pôr. Todo pedido
 // diz onde está — pronto (com volumes e peso) ou em que setor da fábrica. Esse
 // segundo dado é o motivo da tela existir: sem ele o planejamento é um chute.
-function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
+function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
                        livresPorPedido, noutroPlano, itensCad, clientes,
                        cadastros, totais, peso, capacidadeKg, prontos, volumes,
                        motorista, setMotorista, motoristas, salvando, temCargaAberta,
@@ -794,6 +849,9 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
                        onLiberar, onEncerrar, onDevolver }) {
   const [outras, setOutras] = useState(false)
   const [situacao, setSituacao] = useState('todos')
+  // quem monta papel não é quem monta plástico — na hora de cobrar o serviço, a
+  // lista misturada obriga cada setor a garimpar o que é dele
+  const [material, setMaterial] = useState('')
 
   // Onde o pedido está: pronto para carregar, ou parado em que parte da fábrica.
   // Planejar é decidir por prazo — "o que já dá para levar" e "o que sai da
@@ -808,34 +866,92 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
     if (situacao === 'linha') return pend.some((x) => MODO_ORDER.includes(x.etapa))
     return true
   }
-  const foraV = fora.filter(casaSituacao)
-  const outrasV = deOutrasRotas.filter(casaSituacao)
+  // material é filtro de ITEM: o pedido fica se tiver algum item do material, e
+  // dentro do card só esses itens aparecem (mesma regra da Lista de Produção)
+  const casaMaterial = (p) => !material
+    || (p.itens || []).some((it) => materialDoItem(it, itensCad) === material)
+  const casaTudo = (p) => casaSituacao(p) && casaMaterial(p)
+  const foraV = fora.filter(casaTudo)
+  const outrasV = deOutrasRotas.filter(casaTudo)
   const estoura = capacidadeKg > 0 && peso.kg > capacidadeKg
-  const forasteiros = dentro.filter((p) => !daRotaDo(p, plano)).length
+  const forasteiros = dentro.filter((p) => !doPlano(p, plano)).length
+
+  // O que a folha de pendências cobre: exatamente o que está na TELA — a viagem
+  // mais a lista da direita como ela está filtrada. Imprimir mais do que se vê
+  // faria a folha e a tela discordarem, e é a folha que vai para a fábrica.
+  const visivel = outras ? outrasV : foraV
+  const jaDentro = new Set(dentro.map((p) => String(p.idVenda)))
+  const paraImprimir = [...dentro, ...visivel.filter((p) => !jaDentro.has(String(p.idVenda)))]
+  const porData = planoPorData(plano)
+
+  // Com o DIA inteiro na tela, a lista solta vira um paredão e ninguém enxerga
+  // a viagem. Agrupa por ROTA × VENDEDOR, com as CIDADES à vista — a "ROTA 02"
+  // da GLAYCE às vezes é a mesma região da do Sérgio e às vezes não, e é quem
+  // monta que decide. Na previsão antiga (uma rota só) não há o que agrupar.
+  const renderLista = (lista, linha, comBotao) => (porData
+    ? agrupaPlanoPorRota(lista, cadastros).map((g) => (
+        <div key={g.chave} className="pg-bloco">
+          <div className="pg-rota">
+            <span className="pg-nm">📍 {g.rota} · {g.vendedor}</span>
+            <span className="pg-n">{g.pedidos.length}</span>
+            {comBotao && (
+              <button className="mini-btn" disabled={!!salvando}
+                onClick={() => onAlternaTodos(true, g.pedidos)}>+ pôr os {g.pedidos.length}</button>
+            )}
+          </div>
+          {g.cidades.length > 0 && <div className="pg-cidades">{g.cidades.join(' · ')}</div>}
+          {g.pedidos.map(linha)}
+        </div>
+      ))
+    : lista.map(linha))
+
+  // com o dia inteiro na lista, um clique pode arrastar 100 pedidos
+  const porTodos = () => {
+    if (foraV.length > 20
+      && !confirm(`Pôr TODOS os ${foraV.length} pedidos visíveis nesta viagem?`)) return
+    onAlternaTodos(true, foraV)
+  }
+
+  const legenda = [
+    `${dentro.length} nesta viagem`,
+    `${visivel.length} ${outras
+      ? 'da busca em todo o sistema'
+      : porData ? `disponível(is) até ${fmtData(plano.dataEntrega + 'T00:00:00')}` : 'disponível(is) desta rota'}`,
+    situacao !== 'todos' && `situação: ${SITUACOES.find((x) => x.id === situacao)?.nm}`,
+    material && `só ${MATERIAIS.find((x) => x.id === material)?.nome}`,
+    resumoFiltros(filtros),
+  ].filter(Boolean).join(' · ')
   return (
     <>
-      <div className="plano-head">
+      <div className="plano-head no-print">
         <button className="btn" onClick={onVoltar}>← Previsões</button>
         <div>
-          <div className="ph-titulo">📍 {plano.rota} <small>#{plano.numero}</small></div>
+          <div className="ph-titulo">{rotuloPlano(plano)} <small>#{plano.numero}</small></div>
           <div className="ph-sub">
-            {plano.vendedor || '—'}
+            {porData
+              ? `entrega até ${fmtData(plano.dataEntrega + 'T00:00:00')} · todos os vendedores`
+              : (plano.vendedor || '—')}
             {plano.saidaPrevista && ` · saída prevista ${fmtData(plano.saidaPrevista + 'T00:00:00')}`}
           </div>
         </div>
         <div className="spacer" />
+        <button className="btn" onClick={() => window.print()}
+          title="Folha com o que ainda está em produção, agrupado por setor">
+          🖨 Pendências
+        </button>
         <button className="btn" onClick={onEncerrar} title="Tira esta previsão da lista de abertas">
           Encerrar previsão
         </button>
       </div>
 
-      <div className="plano-cols">
+      <div className="plano-cols no-print">
         {/* ---- nesta viagem ---- */}
         <div className="plano-col">
           <div className="pc-head">
             🚚 Nesta viagem <span className="pc-n">{dentro.length}</span>
             {forasteiros > 0 && (
-              <span className="chip rota-warn" title="Pedidos que não são desta rota">
+              <span className="chip rota-warn"
+                title={porData ? 'Pedidos com entrega em outra data' : 'Pedidos que não são desta rota'}>
                 +{forasteiros} de fora
               </span>
             )}
@@ -846,10 +962,10 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
           </div>
           {dentro.length === 0
             ? <div className="pc-vazio">Nada na previsão ainda. Marque ao lado o que vai nesta viagem.</div>
-            : dentro.map((p) => (
+            : renderLista(dentro, (p) => (
                 <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
-                  livres={livresPorPedido.get(String(p.idVenda))} dentro
-                  deFora={!daRotaDo(p, plano)}
+                  livres={livresPorPedido.get(String(p.idVenda))} dentro material={material}
+                  deFora={!doPlano(p, plano)} porData={porData}
                   salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
               ))}
         </div>
@@ -857,42 +973,57 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
         {/* ---- o resto da rota, e a exceção: buscar fora dela ---- */}
         <div className="plano-col">
           <div className="pc-head">
-            {outras ? '🔍 Buscar em outras rotas' : '📋 Disponíveis desta rota'}
+            {outras
+              ? '🔍 Buscar em todo o sistema'
+              : porData
+                ? `📋 Disponíveis até ${fmtData(plano.dataEntrega + 'T00:00:00')}`
+                : '📋 Disponíveis desta rota'}
             <span className="pc-n">{outras ? outrasV.length : foraV.length}</span>
             {!outras && foraV.length > 0 && (
               <button className="mini-btn" style={{ marginLeft: 'auto' }}
-                onClick={() => onAlternaTodos(true, foraV)}>pôr todos</button>
+                onClick={porTodos}>pôr todos</button>
             )}
           </div>
           <div className="pc-modos">
             <button className={`btn${outras ? '' : ' primary'}`} onClick={() => setOutras(false)}>
-              Desta rota
+              {porData ? 'Da viagem' : 'Desta rota'}
             </button>
             <button className={`btn${outras ? ' primary' : ''}`} onClick={() => setOutras(true)}
-              title="Trazer um pedido de outra rota ou de outro vendedor para esta viagem">
-              🔍 Outras rotas
+              title={porData
+                ? 'Trazer um pedido de outra data para esta viagem'
+                : 'Trazer um pedido de outra rota ou de outro vendedor para esta viagem'}>
+              {porData ? '🔍 Outras datas' : '🔍 Outras rotas'}
             </button>
           </div>
 
-          {/* na busca livre o seletor de vendedor faz falta; na fila da rota, não */}
-          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor={!outras}
-            pedidos={outras ? todos : undefined} />
+          {/* Na previsão do DIA o seletor de vendedor é essencial: a lista tem
+              todos eles. Na previsão antiga (um vendedor só) ele não separaria
+              nada — e por isso continua escondido lá. */}
+          <FiltrosBar filtros={filtros} setFiltros={setFiltros} semVendedor={!outras && !porData}
+            pedidos={outras || porData ? todos : undefined} />
 
           <div className="pc-sit">
             {SITUACOES.map((x) => (
               <button key={x.id} className={`chip${situacao === x.id ? ' sit-on' : ''}`}
                 onClick={() => setSituacao(x.id)} title={x.dica}>{x.nm}</button>
             ))}
+            <select className="btn" value={material} onChange={(e) => setMaterial(e.target.value)}
+              title="Filtrar por material — vale para a lista e para a folha de pendências">
+              <option value="">Todos os materiais</option>
+              {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
+            </select>
           </div>
 
           {outras ? (
             outrasV.length === 0
-              ? <div className="pc-vazio">Nenhum pedido de fora desta rota bate com essa busca.</div>
+              ? <div className="pc-vazio">
+                  Nenhum pedido de fora {porData ? 'desta data' : 'desta rota'} bate com essa busca.
+                </div>
               : <>
                   {outrasV.slice(0, LIMITE_BUSCA).map((p) => (
                     <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
-                      livres={livresPorPedido.get(String(p.idVenda))}
-                      noutro={noutroPlano.get(String(p.idVenda))} deFora
+                      livres={livresPorPedido.get(String(p.idVenda))} material={material}
+                      noutro={noutroPlano.get(String(p.idVenda))} deFora porData={porData}
                       salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
                   ))}
                   {/* corte VISÍVEL: lista truncada sem aviso passa a impressão de
@@ -908,15 +1039,17 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
             foraV.length === 0
               ? <div className="pc-vazio">
                   {fora.length > 0
-                    ? `Nenhum dos ${fora.length} pedido(s) desta rota está nessa situação.`
-                    : 'Nenhum pedido sobrando nesta rota.'}
+                    ? `Nenhum dos ${fora.length} pedido(s) ${porData ? 'desta data' : 'desta rota'} está nessa situação.`
+                    : porData
+                      ? 'Nenhum pedido sobrando para esta data — tudo que vence até ela já está na viagem.'
+                      : 'Nenhum pedido sobrando nesta rota.'}
                 </div>
-              : foraV.map((p) => (
+              : renderLista(foraV, (p) => (
                   <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
-                    livres={livresPorPedido.get(String(p.idVenda))}
-                    noutro={noutroPlano.get(String(p.idVenda))}
+                    livres={livresPorPedido.get(String(p.idVenda))} material={material}
+                    noutro={noutroPlano.get(String(p.idVenda))} porData={porData}
                     salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
-                ))
+                ), true)
           )}
         </div>
       </div>
@@ -943,12 +1076,81 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas, daRotaDo,
           </button>
         </div>
       )}
+
+      <ImpressaoPendencias plano={plano} pedidos={paraImprimir} itensCad={itensCad}
+        clientes={clientes} legenda={legenda} material={material} />
     </>
   )
 }
 
+// ---------- folha de PENDÊNCIAS (o que falta para a viagem sair) ----------
+// Não é romaneio: aqui nada está pronto. É o papel que se leva para o chão de
+// fábrica para cobrar o serviço, e por isso vem agrupado por SETOR e não por
+// pedido — quem cobra anda de posto em posto. Dentro do setor, quebra por
+// MATERIAL: quem faz papel não é quem faz plástico. Cada linha tem quadradinho
+// para marcar, o produto (com o selo da linha), o pedido/cliente e o prazo.
+function ImpressaoPendencias({ plano, pedidos, clientes, itensCad, legenda, material }) {
+  const grupos = pendenciasPorEtapa(pedidos, itensCad)
+    .map((g) => {
+      if (!material) return g
+      const materiais = g.materiais.filter((m) => m.id === material)
+      return { ...g, materiais, itens: materiais.flatMap((m) => m.itens) }
+    })
+    .filter((g) => g.itens.length > 0)
+  const nItens = grupos.reduce((s, g) => s + g.itens.length, 0)
+  return (
+    <div className="print-only">
+      <div className="pr-head">
+        <h1>JC Sacolas · Pendências de produção · {rotuloPlano(plano)} #{plano.numero}</h1>
+        <div className="meta">
+          {fmtDataHora(new Date().toISOString())}<br />
+          {planoPorData(plano)
+            ? `entrega até ${fmtData(plano.dataEntrega + 'T00:00:00')}`
+            : (plano.vendedor || '—')}
+          {plano.saidaPrevista && ` · saída ${fmtData(plano.saidaPrevista + 'T00:00:00')}`}<br />
+          {nItens} item(ns) em {grupos.length} setor(es)
+        </div>
+      </div>
+      {/* a folha diz de onde saiu: impressa com filtro ligado, ela é PARTE do
+          que existe, e sem esse aviso passa por lista completa */}
+      <div className="pr-rota">{legenda}</div>
+      {grupos.length === 0 ? (
+        <div className="pr-obs">Nenhum item em produção nesta lista — está tudo pronto.</div>
+      ) : grupos.map((g) => (
+        <div key={g.etapa} className="pr-block">
+          <div className="pr-vend">{g.nome} — {g.itens.length} item(ns)</div>
+          {g.materiais.map((mg) => (
+            <div key={mg.id || 'sem'} className="pr-mat-bloco">
+              {/* o material aparece SEMPRE, mesmo quando só tem um: a folha vai
+                  para postos diferentes, e cada um precisa achar a parte dele */}
+              <div className="pr-mat">{mg.nome} · {mg.itens.length} item(ns)</div>
+              <table className="pr-itens"><tbody>
+                {mg.itens.map((it, i) => (
+                  <tr key={`${it.p.idVenda}-${it.key}-${i}`}>
+                    <td className="chk"><span className="box" /></td>
+                    <td>
+                      <SeloLinha linha={it.linha} />{it.produto}
+                      {/* a folha do dia atravessa vendedores: sem a rota, quem
+                          cobra não sabe de qual viagem aquele item é */}
+                      <span className="ref"> · #{it.p.idVenda} {nomeCliente(it.p.cliente, clientes)}
+                        {it.p.cidade ? ` · ${it.p.cidade}` : ''}
+                        {planoPorData(plano) ? ` · ${it.p.rota || 'SEM ROTA'}` : ''}</span>
+                    </td>
+                    <td className="q">{fmtQtd(it.qtd)}</td>
+                    <td className="q">{fmtData(it.p.previsao)}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // uma linha de pedido no planejamento: diz se está pronto ou onde está na fábrica
-function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, salvando, onAlterna, onDevolver }) {
+function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, porData, material, salvando, onAlterna, onDevolver }) {
   // Clicar no pedido abre os PRODUTOS. Fechado por padrão: a lista precisa caber
   // na tela para escolher a viagem; aberta em todos, viraria uma parede de texto.
   // Mas na hora de decidir o que sobe no caminhão, o que importa é o produto —
@@ -956,7 +1158,15 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
   const [aberto, setAberto] = useState(false)
   const s = situacaoNoPlano(p, livres, itensCad)
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
-  const nItens = (p.itens || []).length
+  // com filtro de material, o card mostra SÓ os itens desse material — e o
+  // resumo "⏳ N em Montagem" sai da mesma lista filtrada, senão a linha diria 3
+  // e a lista aberta logo abaixo mostraria 1
+  const doMaterial = (it) => !material || materialDoItem(it, itensCad) === material
+  const itens = (p.itens || []).map((it, i) => ({ it, i })).filter(({ it }) => doMaterial(it))
+  const pendencias = material
+    ? resumePendencias(itensPendentesDoPedido(p, itensCad).filter((x) => x.material === material))
+    : s.pendencias
+  const nItens = itens.length
   return (
     <div className={`pl-linha${s.pronto ? ' pronto' : ''}`}>
       <button className={`btn${dentro ? '' : ' ok'} pl-acao`} disabled={!!salvando || (!dentro && !!noutro)}
@@ -974,7 +1184,11 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
           {/* de onde ele veio: sem isto a viagem muda de itinerário e só se
               descobre na hora de carregar */}
           {deFora && (
-            <span className="chip rota-warn">⚠ {p.rota || 'SEM ROTA'} · {p.vendedor || '—'}</span>
+            <span className="chip rota-warn">
+              ⚠ {porData
+                ? `outra data · ${p.rota || 'SEM ROTA'}`
+                : `${p.rota || 'SEM ROTA'} · ${p.vendedor || '—'}`}
+            </span>
           )}
           {noutro && !dentro && <span className="chip rota-warn">no plano #{noutro.numero}</span>}
         </div>
@@ -989,9 +1203,9 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
           </div>
         )}
         {/* onde o resto está: é o que diz se falta um dia ou uma semana */}
-        {s.pendencias.length > 0 && (
+        {pendencias.length > 0 && (
           <div className="pl-est falta">
-            ⏳ {s.pendencias.map((x) => `${x.itens} em ${x.nome}`).join(' · ')}
+            ⏳ {pendencias.map((x) => `${x.itens} em ${x.nome}`).join(' · ')}
           </div>
         )}
         {!aberto && nItens > 0 && (
@@ -1001,7 +1215,7 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, sal
         )}
         {aberto && (
           <ul className="pl-itens">
-            {(p.itens || []).map((it, i) => {
+            {itens.map(({ it, i }) => {
               const chave = it.key || keyDoItem(p, i)
               const vols = (livres || []).filter((v) => v.itemKey === chave)
               const falta = qtdEmProducao(p, i)
