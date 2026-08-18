@@ -859,6 +859,19 @@ input, select { font-family: var(--font); }
   background: rgba(229,72,77,.08); border: 1px solid var(--danger); color: var(--text);
 }
 
+/* rodapé de erro no card do quadro do vendedor: o que já foi avisado + o botão
+   de avisar. Fica embaixo dos itens porque o aviso é do PEDIDO, não do item. */
+.qv-card-erro {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.qv-erro-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(229,72,77,.10); border: 1px solid var(--danger); color: var(--text);
+}
+.qv-erro-chip span { color: var(--text-faint); }
+.qv-card-erro .mini-btn { margin-left: auto; }
+
 /* ---------- PLANEJAMENTO DE ENTREGA (aba Entregas) ---------- */
 /* A carga nasce de um plano. Aqui a viagem é montada ANTES de a mercadoria
    existir, então cada linha precisa dizer não só "pronto/não pronto", mas em que

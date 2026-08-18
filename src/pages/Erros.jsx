@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { doc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  nomeCampoErro, nomeCliente, fmtData, fmtDataHora, fmtQtd, arredondaQtd,
+  nomeCampoErro, ehErroEntrega, nomeCliente, fmtData, fmtDataHora, fmtQtd, arredondaQtd,
   keyDoItem, filtraPedidos, vendedoresDe, previsaoDe,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -11,6 +11,12 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 
 // SOLUÇÃO DE ERROS — o vendedor lançou errado no Posseidon, o papel que chegou na
 // fábrica tem a informação certa, e quem produz reportou a diferença.
+//
+// "Já foi entregue" vem do outro lado: é o VENDEDOR avisando que a mercadoria já
+// está com o cliente e o pedido continua na produção. Não tem correção
+// automática de propósito — dar a entrega abre a cobrança, então ela é feita à
+// mão na aba Rota (ou Entregas) por quem confere o que saiu, e aqui só se fecha
+// o aviso depois.
 //
 // Corrigir a QUANTIDADE grava em `pedidos/{id}.correcoes`, que o import não
 // conhece: o Posseidon pode reimportar o valor errado quantas vezes quiser que a
@@ -125,10 +131,21 @@ export default function Erros({ pedidos, problemas }) {
 
             {x.produto && <div style={{ fontWeight: 700, marginTop: 8 }}>{x.produto}</div>}
 
-            <div className="erro-comp">
-              <div><span>No sistema</span><b>{x.noSistema || '—'}</b></div>
-              <div className="certo"><span>No papel</span><b>{x.noPapel || '—'}</b></div>
-            </div>
+            {ehErroEntrega(x.campo) ? (
+              <div className="erro-comp">
+                <div><span>No sistema</span><b>em produção</b></div>
+                <div className="certo"><span>Entregue em</span>
+                  <b>{x.entregueEm ? fmtData(`${x.entregueEm}T00:00:00`) : '—'}</b></div>
+                {x.entreguePor && (
+                  <div><span>Quem entregou</span><b style={{ fontSize: 13 }}>{x.entreguePor}</b></div>
+                )}
+              </div>
+            ) : (
+              <div className="erro-comp">
+                <div><span>No sistema</span><b>{x.noSistema || '—'}</b></div>
+                <div className="certo"><span>No papel</span><b>{x.noPapel || '—'}</b></div>
+              </div>
+            )}
             {x.obs && <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 6 }}>{x.obs}</div>}
 
             <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>
@@ -137,6 +154,12 @@ export default function Erros({ pedidos, problemas }) {
 
             {aberto ? (
               <div className="erro-acoes no-print">
+                {ehErroEntrega(x.campo) && (
+                  <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                    Confira e dê a entrega na aba <b>Rota</b> — a baixa não sai daqui,
+                    porque é ela que abre a cobrança. Depois feche este aviso abaixo.
+                  </div>
+                )}
                 {x.campo === 'quantidade' && x.itemKey && p && (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input className="filtro-input" style={{ width: 130 }} inputMode="decimal"

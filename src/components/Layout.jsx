@@ -46,6 +46,9 @@ export default function Layout({ abas, contadores, children }) {
               {aba === 'producao' && contadores.atrasados > 0 && (
                 <span className="badge alert">{contadores.atrasados}</span>
               )}
+              {aba === 'erros' && contadores.errosAbertos > 0 && (
+                <span className="badge alert">{contadores.errosAbertos}</span>
+              )}
             </NavLink>
           ))}
         </nav>

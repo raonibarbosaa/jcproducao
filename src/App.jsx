@@ -100,7 +100,11 @@ export default function App() {
   // contadores
   const semDef = pedidos.filter((p) => !p.status).length
   const atrasados = pedidos.filter((p) => situacaoPrazo(p.previsaoManual || p.previsao) === 'atrasado').length
-  const contadores = { semDef, atrasados, total: pedidos.length }
+  // erro reportado que ninguém vê não serve para nada — e desde que o VENDEDOR
+  // também reporta ("já foi entregue"), quem resolve não passa mais na aba por
+  // acaso: o número é o que o chama até lá.
+  const errosAbertos = problemas.filter((x) => x.status === 'aberto').length
+  const contadores = { semDef, atrasados, errosAbertos, total: pedidos.length }
 
   const primeira = abas[0]
 

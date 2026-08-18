@@ -1708,13 +1708,22 @@ export async function pegarIP() {
 // A correção NÃO pode morar em `itens`: todo import sobrescreve aquele array e o
 // erro voltaria calado. Fica em `pedidos/{id}.correcoes`, que o import não conhece
 // (ele grava com merge e sem esse campo), e é aplicada na LEITURA.
+//
+// "Já foi entregue" é o erro que o VENDEDOR reporta: ele sabe que a mercadoria
+// chegou ao cliente (levou ele mesmo, o cliente retirou, saiu fora do romaneio)
+// e o sistema continua mostrando o pedido na produção. Não é um valor que não
+// bate — é um pedido inteiro que não deveria estar ali. Por isso ele não usa os
+// campos "no sistema × no papel", e sim QUANDO e COM QUEM saiu: é com isso que o
+// escritório acha a entrega e dá a baixa.
 export const CAMPOS_ERRO = [
   { id: 'quantidade', nm: 'Quantidade', corrige: true },
   { id: 'produto', nm: 'Produto/medida', corrige: false },
   { id: 'cliente', nm: 'Cliente ou entrega', corrige: false },
+  { id: 'entregue', nm: '📦 Já foi entregue', corrige: false, entrega: true },
   { id: 'outro', nm: 'Outro', corrige: false },
 ]
 export const nomeCampoErro = (id) => CAMPOS_ERRO.find((c) => c.id === id)?.nm || id
+export const ehErroEntrega = (id) => !!CAMPOS_ERRO.find((c) => c.id === id)?.entrega
 
 // aplica as correções sobre os itens do pedido. Chamado UMA vez, quando o App
 // carrega os pedidos — daí para baixo toda tela já vê o valor certo.
@@ -1736,9 +1745,12 @@ export function aplicaCorrecoes(p) {
 
 export const temCorrecao = (p, idx) => !!p?.itens?.[idx]?._qtdOriginal
 
-// documento de um erro reportado
-export function docProblema({ p, idx, campo, noSistema, noPapel, obs, quem }) {
-  return {
+// documento de um erro reportado.
+// ⚠️ `itemKey` vazio = o erro é do PEDIDO INTEIRO, e `problemaDoItem` o mostra em
+// todos os itens de propósito — é o caso do "já foi entregue", que o vendedor
+// reporta sem escolher produto.
+export function docProblema({ p, idx, campo, noSistema, noPapel, obs, entregueEm, entreguePor, quem }) {
+  const d = {
     idVenda: p?.idVenda || '',
     cliente: p?.cliente || '',
     vendedor: p?.vendedor || '',
@@ -1753,6 +1765,11 @@ export function docProblema({ p, idx, campo, noSistema, noPapel, obs, quem }) {
     ...quem,
     quando: new Date().toISOString(),
   }
+  // só o aviso de entrega carrega estes dois — campo vazio em todo doc é ruído
+  // que depois ninguém sabe se significa "não sei" ou "não se aplica"
+  return ehErroEntrega(d.campo)
+    ? { ...d, entregueEm: String(entregueEm || '').trim(), entreguePor: String(entreguePor || '').trim() }
+    : d
 }
 
 // problemas ABERTOS indexados por pedido — é o que acende o ⚠ nos cards

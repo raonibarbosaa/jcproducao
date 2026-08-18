@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   ETAPAS_VENDEDOR, nomeEtapaVendedor, contaEtapasVendedor, ordemRota,
   nomeCliente, fmtData, fmtDataHora, fmtDuracao, fmtMoeda, situacaoPrazo, saiuParaEntrega,
+  problemasDoPedido, nomeCampoErro, ehErroEntrega,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import SeloLinha from './SeloLinha.jsx'
@@ -11,12 +12,14 @@ import SeloLinha from './SeloLinha.jsx'
 // cliente" — então cada bloco é uma rota, com o pipeline inteiro resumido numa
 // linha e os pedidos embaixo, cada item com a etapa onde está.
 //
-// É SÓ LEITURA, e a segurança não depende disso: o App consulta os pedidos com
+// Não move NADA na produção — a única escrita que sai daqui é o aviso de erro
+// (`onReportar`), e mesmo ele só registra: quem dá a entrega continua sendo o
+// escritório. A segurança não depende disso: o App consulta os pedidos com
 // where('vendedor','==') e a regra do Firestore impõe o mesmo no servidor.
 //
 // Recebe os pedidos JÁ UNIFICADOS (pedidos vivos + remessas entregues) e já
 // filtrados — ver unificaPedidosVendedor em utils.
-export default function QuadroVendedor({ pedidos, clientes }) {
+export default function QuadroVendedor({ pedidos, clientes, problemas, onReportar }) {
   const { vendedores: cadastros } = useCadastros()
   // ONDE ESTÁ: o vendedor pergunta "o que ainda está no silk?" e antes precisava
   // varrer a tela lendo a etapa item a item. Aqui ele escolhe a etapa e a tela
@@ -137,7 +140,11 @@ export default function QuadroVendedor({ pedidos, clientes }) {
                     {c.mostra
                       .slice()
                       .sort((a, b) => nomeCliente(a.cliente, clientes).localeCompare(nomeCliente(b.cliente, clientes)))
-                      .map((p) => <CardPedido key={p.idVenda} p={p} clientes={clientes} />)}
+                      .map((p) => (
+                        <CardPedido key={p.idVenda} p={p} clientes={clientes}
+                          problemas={problemasDoPedido(problemas, p.idVenda)}
+                          onReportar={onReportar} />
+                      ))}
                   </div>
                 </div>
               )
@@ -149,9 +156,13 @@ export default function QuadroVendedor({ pedidos, clientes }) {
   )
 }
 
-function CardPedido({ p, clientes }) {
+function CardPedido({ p, clientes, problemas, onReportar }) {
   const entregues = (p.itens || []).filter((it) => it.entregue)
   const parcial = entregues.length > 0 && entregues.length < (p.itens || []).length
+  // só faz sentido avisar "já foi entregue" enquanto o sistema acha que não foi;
+  // com tudo entregue o botão cobraria uma baixa que já existe
+  const naProducao = (p.itens || []).some((it) => !it.entregue)
+  const jaAvisou = (problemas || []).some((x) => ehErroEntrega(x.campo))
   // uma remessa entregue guarda a baixa financeira; mostra a da última
   const ultima = entregues[entregues.length - 1]
   return (
@@ -196,6 +207,34 @@ function CardPedido({ p, clientes }) {
           </li>
         ))}
       </ul>
+
+      {/* AVISO DE ERRO — o vendedor vê aqui um pedido "na montagem" que ele sabe
+          que já está com o cliente. Sem isto ele só podia telefonar, e o pedido
+          ficava semanas ocupando o quadro (é o buraco que a Conciliação existe
+          para tapar depois). O que ele manda é um aviso: a baixa segue com o
+          escritório. */}
+      {(problemas?.length > 0 || (onReportar && naProducao)) && (
+        <div className="qv-card-erro no-print">
+          {(problemas || []).map((x, n) => (
+            <div key={n} className="qv-erro-chip" title={x.obs || ''}>
+              ⚠ {nomeCampoErro(x.campo)}
+              {ehErroEntrega(x.campo) && x.entregueEm
+                ? ` em ${fmtData(`${x.entregueEm}T00:00:00`)}`
+                : ''}
+              {' · '}<span>aguardando o escritório</span>
+            </div>
+          ))}
+          {onReportar && naProducao && (
+            <button className="mini-btn alerta" disabled={jaAvisou}
+              title={jaAvisou
+                ? 'Você já avisou que este pedido foi entregue — o escritório ainda não deu a baixa'
+                : 'Reportar erro neste pedido: já foi entregue, quantidade errada, produto trocado…'}
+              onClick={() => onReportar(p)}>
+              {jaAvisou ? '⚠ já avisado' : '⚠ Já foi entregue'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

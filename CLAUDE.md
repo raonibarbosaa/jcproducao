@@ -549,6 +549,46 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   andado e voltado fazia o item **sumir do quadro** (o painel da linha velha cobrava a
   linha nova; o da nova cobrava a etapa nova).
 
+## "JÁ FOI ENTREGUE" — o vendedor reporta erro (18/08/2026)
+> O pedido que já chegou ao cliente e continua ocupando o quadro. Quem descobre
+> é o VENDEDOR — o cliente liga para ele, não para a fábrica —, e até aqui ele
+> só podia telefonar. É o mesmo buraco que a Conciliação tapa DEPOIS, no atacado.
+
+- **Reusa a coleção `problemas`** (o "reportar erro" da fábrica), com um tipo
+  novo em `CAMPOS_ERRO`: `entregue`, marcado com `entrega: true` e lido por
+  `ehErroEntrega`. Coleção nova exigiria rule nova, aba nova e uma segunda fila
+  de pendências para o escritório vigiar.
+- **Os campos MUDAM com o tipo:** "no sistema × no papel" não descreve uma
+  entrega que aconteceu fora do sistema. Vira `entregueEm` + `entreguePor`, e
+  `docProblema` só grava esses dois **quando o tipo é `entregue`** — campo vazio
+  em todo doc ninguém sabe depois se quer dizer "não sei" ou "não se aplica".
+- ⚠️ **A data NÃO vem preenchida com hoje.** Um clique gravaria uma data que
+  ninguém conferiu, e é justamente por ela que o escritório vai procurar a
+  entrega (mesmo motivo do atalho removido no fechamento da montagem). Quem não
+  lembra o dia põe o mais próximo e explica na observação — é obrigatória.
+- **É AVISO, não baixa.** Não move etapa, não cria `entregues`, não mexe em
+  volume. A entrega segue com dono/designer/financeiro na aba **Rota**, e é ela
+  que abre a cobrança: vendedor dando baixa sozinho fecharia o financeiro sem
+  ninguém conferir o que saiu. A tela de **Erros** diz isso na ação e o modal
+  avisa antes de enviar.
+- **Onde fica:** botão no card do quadro **▦ Acompanhar** (`QuadroVendedor`, que
+  deixou de ser só leitura para isto e só para isto) e no card de **☰ Meus
+  pedidos**. `campoInicial="entregue"` abre o modal já no tipo certo — os outros
+  tipos continuam ali para quem enxergar outra coisa.
+- **Só aparece enquanto o sistema acha que não foi entregue** (`naProducao` = tem
+  item não entregue) e vira "⚠ já avisado" (desabilitado) depois — cobrar de novo
+  uma baixa já pedida só gera aviso repetido na fila do escritório.
+- **Vai como erro do PEDIDO INTEIRO** (`itemKey: ''`), e `problemaDoItem` mostra
+  esse aviso em TODOS os itens de propósito: ele reporta olhando o pedido, não o
+  produto.
+- **Badge de `erros` no menu** (`contadores.errosAbertos`): aviso que ninguém vê
+  não serve para nada, e quem resolve não passa na aba por acaso.
+- No card do vendedor o texto deixou de ser "a fábrica reportou" — metade dos
+  avisos agora é dele mesmo, e cada linha diz de quem é e quando.
+- **Rules: nada a publicar.** `problemas` já é `create: if temPerfil()` e o
+  vendedor já lê os dos próprios pedidos (`resource.data.vendedor`).
+- Testes em `tests/problemas.test.mjs`.
+
 ## Conciliação com a planilha de entregas (MIGRAÇÃO — pode sair depois de usada)
 Aba **Conciliação** (`Conciliacao.jsx`), só do dono. O sistema entrou no ar com pedidos
 que já tinham sido entregues na vida real e ficaram parados na produção; a planilha

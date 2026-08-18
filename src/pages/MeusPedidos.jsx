@@ -6,10 +6,11 @@ import {
   nomeCliente, MODO_NM, linhaDoItem, pegarIP,
   indexaCienciasPorPedido, cienciaDoPedido, docCiencia, fmtDataHora,
   unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
-  indexaProblemas, problemasDoPedido, nomeCampoErro,
+  indexaProblemas, problemasDoPedido, nomeCampoErro, ehErroEntrega, docProblema,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import QuadroVendedor from '../components/QuadroVendedor.jsx'
+import ReportarErro from '../components/ReportarErro.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
@@ -21,7 +22,7 @@ export default function MeusPedidos({ pedidos, problemas }) {
   // sem cadastro de Itens: as três montagens viram uma só na visão do vendedor,
   // então o material do item deixou de importar aqui
   const { vendedores, clientes } = useCadastros()
-  const { user, vendedorNome, nome } = useAuth()
+  const { user, vendedorNome, nome, perfil } = useAuth()
   const [ciencias, setCiencias] = useState([])
   const [entregues, setEntregues] = useState([])
   const [vista, setVista] = useState('lista')   // 'lista' (ciência) | 'quadro' (acompanhar)
@@ -30,6 +31,8 @@ export default function MeusPedidos({ pedidos, problemas }) {
   // a lista abre na FILA: o que ele ainda não assinou
   const [soSemCiencia, setSoSemCiencia] = useState(true)
   const [salvando, setSalvando] = useState('')
+  // pedido que ele está reportando ("já foi entregue" e os outros erros)
+  const [reportando, setReportando] = useState(null)
 
   useEffect(() => {
     if (!vendedorNome) return
@@ -50,7 +53,8 @@ export default function MeusPedidos({ pedidos, problemas }) {
   }, [vendedorNome])
 
   const mapaC = indexaCienciasPorPedido(ciencias)
-  // erros que a fábrica reportou nos pedidos dele — é ele quem corrige no Posseidon
+  // erros reportados nos pedidos dele: os da fábrica (que ele corrige no
+  // Posseidon) e os que ele mesmo mandou — inclusive o "já foi entregue"
   const mapaProb = indexaProblemas(problemas)
 
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
@@ -114,8 +118,47 @@ export default function MeusPedidos({ pedidos, problemas }) {
     }
   }
 
+  // AVISO DE ERRO DO VENDEDOR — o caso que motivou isto é o pedido que já chegou
+  // ao cliente e continua na produção (levado por ele, retirado no balcão, saído
+  // fora do romaneio). Ele é quem descobre, e antes só podia telefonar.
+  //
+  // É um AVISO, não uma baixa: não move etapa nem cria entrega — quem dá a
+  // entrega continua sendo o escritório, na aba Rota. Vendedor dando baixa
+  // sozinho abriria a cobrança sem ninguém conferir o que saiu.
+  //
+  // Vai como erro do PEDIDO INTEIRO (idx null): ele reporta olhando o pedido,
+  // não o produto, e escolher item a item só criaria chance de errar o alvo.
+  async function reportarErro(dados) {
+    if (salvando || !reportando) return
+    setSalvando('reportar')
+    try {
+      const ip = await pegarIP()
+      const quem = {
+        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+        perfil: perfil || '', ip,
+      }
+      await setDoc(doc(collection(db, 'problemas')), docProblema({
+        p: reportando, idx: null, ...dados, quem,
+      }))
+      setReportando(null)
+    } catch (e) {
+      alert('Não foi possível reportar: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   return (
     <>
+      {reportando && (
+        <ReportarErro
+          p={reportando} idx={null} clientes={clientes}
+          campoInicial="entregue"
+          salvando={salvando === 'reportar'}
+          onCancelar={() => setReportando(null)}
+          onEnviar={reportarErro}
+        />
+      )}
       <div className="toolbar no-print">
         <h1 className="page-title">Meus Pedidos
           <small>
@@ -152,7 +195,8 @@ export default function MeusPedidos({ pedidos, problemas }) {
               {doQuadro.length} de {unificados.length} pedido(s) · {resumoFiltros(filtros)}
             </div>
           )}
-          <QuadroVendedor pedidos={doQuadro} clientes={clientes} />
+          <QuadroVendedor pedidos={doQuadro} clientes={clientes} problemas={mapaProb}
+            onReportar={(p) => setReportando(p)} />
         </div>
       )}
 
@@ -208,6 +252,7 @@ export default function MeusPedidos({ pedidos, problemas }) {
                     problemas={problemasDoPedido(mapaProb, p.idVenda)}
                     c={cienciaDoPedido(mapaC, 'vendedor', p.idVenda)}
                     salvando={salvando}
+                    onReportar={() => setReportando(p)}
                     onCiencia={() => darCiencia(p)} />
                 ))}
               </div>
@@ -219,7 +264,7 @@ export default function MeusPedidos({ pedidos, problemas }) {
   )
 }
 
-function CardMeu({ p, clientes, c, salvando, onCiencia, problemas }) {
+function CardMeu({ p, clientes, c, salvando, onCiencia, onReportar, problemas }) {
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   return (
     <div className={`card ${atrasado ? 'atrasado' : 'em_dia'}`}>
@@ -234,18 +279,28 @@ function CardMeu({ p, clientes, c, salvando, onCiencia, problemas }) {
           ? <span className="chip atrasado">Atrasado · {fmtData(p.previsao)}</span>
           : <span className="chip">{fmtData(p.previsao)}</span>}
       </div>
+      {/* ⚠️ O texto não diz mais "a fábrica reportou": desde que o vendedor também
+          reporta, metade dos avisos aqui é dele mesmo, e cada linha diz de quem é. */}
       {problemas?.length > 0 && (
         <div className="erro-aviso">
-          ⚠ {problemas.length === 1 ? 'A fábrica reportou um erro' : `A fábrica reportou ${problemas.length} erros`} neste pedido:
+          ⚠ {problemas.length === 1 ? 'Um erro reportado' : `${problemas.length} erros reportados`} neste pedido:
           {problemas.map((x, n) => (
             <div key={n} style={{ marginTop: 4 }}>
               <b>{nomeCampoErro(x.campo)}</b>{x.produto ? ` · ${x.produto}` : ''}
-              <br />no sistema: {x.noSistema || '—'} · <b>no papel: {x.noPapel || '—'}</b>
+              {ehErroEntrega(x.campo)
+                ? <><br />entregue em <b>{fmtData(`${x.entregueEm}T00:00:00`)}</b>
+                    {x.entreguePor ? ` · ${x.entreguePor}` : ''} — esperando a baixa no sistema</>
+                : <><br />no sistema: {x.noSistema || '—'} · <b>no papel: {x.noPapel || '—'}</b></>}
+              <div style={{ color: 'var(--text-faint)' }}>
+                por {x.porNome || x.porEmail || '—'} · {fmtDataHora(x.quando)}
+              </div>
             </div>
           ))}
-          <div style={{ marginTop: 5, color: 'var(--text-faint)' }}>
-            Corrija no Posseidon para não repetir na próxima importação.
-          </div>
+          {problemas.some((x) => !ehErroEntrega(x.campo)) && (
+            <div style={{ marginTop: 5, color: 'var(--text-faint)' }}>
+              Corrija no Posseidon para não repetir na próxima importação.
+            </div>
+          )}
         </div>
       )}
       <ul className="itens">
@@ -267,6 +322,13 @@ function CardMeu({ p, clientes, c, salvando, onCiencia, problemas }) {
               onClick={onCiencia}>
               {salvando === `p:${p.idVenda}` ? 'Registrando…' : '✓ Dar ciência neste pedido'}
             </button>}
+        {/* pedido que está nesta lista está na produção — se ele já chegou ao
+            cliente, é aqui que o vendedor avisa */}
+        <button className="mini-btn alerta" style={{ marginTop: 6, width: '100%', padding: '7px 9px', fontSize: 13 }}
+          disabled={!!salvando} onClick={onReportar}
+          title="Reportar erro neste pedido: já foi entregue, quantidade errada, produto trocado…">
+          ⚠ Já foi entregue / reportar erro
+        </button>
       </div>
     </div>
   )
