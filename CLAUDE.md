@@ -873,6 +873,28 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   monta a viagem é quem planeja. ⚠️ Publicar as rules ANTES do build: sem elas a
   aba Planejamento abre e o onSnapshot morre com permission-denied.
 
+## BUSCA POR NOME PARECIDO (18/08/2026)
+> "Por nome de cliente só abre se estiver idêntico" (relatado pelo dono). O
+> filtro já ignorava acento e maiúscula, mas casava por SUBSTRING exata.
+
+- **`casaBusca(termo, ...textos)` (utils) é a fonte única** — usada por
+  `filtraPedidos` (cliente), Auditoria, Cadastros › Clientes e Cadastros › Itens.
+  Cada PALAVRA digitada precisa aparecer, em qualquer ordem, colada ou separada,
+  com até um erro de digitação: `BEACHWEAR`→`LUX BEACH WEAR`, `MODAS ATUAL`→
+  `ATUAL MODAS`, `JESICA`→`JESSICA CLOSET`.
+- **É E, não OU:** digitar mais palavras tem que ESTREITAR — senão a lista cresce
+  justo quando a pessoa tenta ser específica.
+- **Erro de digitação só a partir de 4 letras** (`cabeEmErros`, Levenshtein com
+  corte): abaixo disso a tolerância vira coringa — "ANA" casaria com "ANO",
+  "UVA", "AVA".
+- ⚠️ **NÃO confundir com `casaCliente` (Conciliação), que continua NÃO sendo
+  fuzzy.** A diferença não é de rigor, é de consequência: a busca só desenha
+  candidatos e QUEM DECIDE É A PESSOA; o `casaCliente` marca pedido como entregue
+  sozinho, e nome parecido por acaso daria baixa no pedido de outro cliente
+  (`SAF FUNERARIA` × `ATUAL MODAS`, mesmo número, caso real).
+- **O número do pedido continua substring exata** — dígito não tem "parecido".
+- Testes em `tests/busca.test.mjs`.
+
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
   da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava

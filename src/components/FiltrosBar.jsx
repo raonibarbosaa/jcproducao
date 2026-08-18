@@ -42,12 +42,16 @@ export default function FiltrosBar({ filtros, setFiltros, vendedores, semVendedo
 
   return (
     <div className="filtros no-print">
+      {/* a busca acha nome PARECIDO (palavras em qualquer ordem, com erro de
+          digitação) — o title conta isso, senão ninguém tenta escrever pela
+          metade */}
       <input
         className="filtro-input"
-        placeholder="🔎 Cliente"
+        placeholder="🔎 Cliente ou apelido"
+        title="Acha nome parecido: pode digitar só um pedaço, fora de ordem ou com erro de digitação"
         value={filtros.cliente || ''}
         onChange={(e) => set('cliente', e.target.value)}
-        style={{ minWidth: 170 }}
+        style={{ minWidth: 190 }}
       />
       <input
         className="filtro-input"

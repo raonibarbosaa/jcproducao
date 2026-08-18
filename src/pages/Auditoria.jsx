@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot, orderBy, query, limit } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  nomeEtapaItem, nomeCliente, normaliza, nomeDoMaterial, montagemDoMaterial,
+  nomeEtapaItem, nomeCliente, casaBusca, nomeDoMaterial, montagemDoMaterial,
   MONTAGENS, PAINEIS_QUADRO,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -63,12 +63,9 @@ export default function Auditoria() {
     }
     if (de && (r.quando || '') < de) return false
     if (ate && (r.quando || '') > `${ate}T23:59:59`) return false
-    if (busca) {
-      const alvo = normaliza([
-        r.idVenda, r.cliente, nomeCliente(r.cliente, clientes), r.produto, r.porNome, r.porEmail,
-      ].join(' '))
-      if (!alvo.includes(normaliza(busca))) return false
-    }
+    if (busca && !casaBusca(busca,
+      r.idVenda, r.cliente, nomeCliente(r.cliente, clientes), r.produto, r.porNome, r.porEmail,
+    )) return false
     return true
   })
 

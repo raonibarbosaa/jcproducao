@@ -2164,24 +2164,76 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   return `Você tem ${nPed} ${nPed === 1 ? 'pedido' : 'pedidos'} para entregar${escopo}.`
 }
 
+// ---------- BUSCA POR NOME PARECIDO ----------
+// O filtro de cliente casava por SUBSTRING exata: quem digitava "LUX BEACHWEAR"
+// não achava "LUX BEACH WEAR", "MODAS ATUAL" não achava "ATUAL MODAS" e uma
+// letra trocada ("JESICA CLOSET") não achava nada. Na prática só abria com o
+// nome escrito igual — e quem procura não sabe como a razão social foi
+// cadastrada no Posseidon.
+//
+// ⚠️ Aqui PODE ser tolerante porque quem decide é a PESSOA: a busca só desenha
+// candidatos na tela. É o oposto de `casaCliente` (Conciliação), que não é fuzzy
+// de propósito — lá o casamento marca pedido como entregue sozinho, e nome
+// parecido por acaso daria baixa no pedido de outro cliente.
+const paraBusca = (t) => normaliza(t).replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+
+// Levenshtein com corte: não interessa a distância, só se cabe em `max` erros.
+// Sai fora assim que a linha inteira passa do limite — sem isso, uma busca solta
+// roda a matriz completa contra cada palavra de cada pedido, a cada tecla.
+export function cabeEmErros(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return false
+  let ant = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    const linha = [i]
+    let melhor = i
+    for (let j = 1; j <= b.length; j++) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1
+      linha[j] = Math.min(ant[j] + 1, linha[j - 1] + 1, ant[j - 1] + custo)
+      if (linha[j] < melhor) melhor = linha[j]
+    }
+    if (melhor > max) return false
+    ant = linha
+  }
+  return ant[b.length] <= max
+}
+
+// O texto casa com o que foi digitado? Cada PALAVRA digitada precisa aparecer —
+// em qualquer ordem, colada ou separada, com até um erro de digitação. É E, não
+// OU: digitar mais palavras tem que estreitar a busca, senão a lista cresce
+// conforme a pessoa tenta ser mais específica.
+export function casaBusca(termo, ...textos) {
+  const q = paraBusca(termo)
+  if (!q) return true
+  const junto = textos.map(paraBusca).filter(Boolean).join(' ')
+  if (!junto) return false
+  const colado = junto.replace(/ /g, '')
+  const palavras = junto.split(' ')
+  return q.split(' ').every((tk) => {
+    if (junto.includes(tk)) return true            // pedaço do nome, como antes
+    if (colado.includes(tk)) return true           // "BEACHWEAR" acha "BEACH WEAR"
+    // erro de digitação. Só a partir de 4 letras: abaixo disso a tolerância
+    // acha qualquer coisa ("ANA" casaria com "ANO", "UVA", "AVA").
+    if (tk.length < 4) return false
+    return palavras.some((w) => cabeEmErros(w, tk, tk.length >= 8 ? 2 : 1))
+  })
+}
+
 // ---------- filtro compartilhado (Rota e Produção) ----------
 // f = { cliente, pedido, vendedor, dataIni, dataFim }
 // datas filtram pela PREVISÃO de entrega. Pedido sem previsão não entra
 // quando há filtro de data ativo. clientes = de/para (casa pelos dois nomes).
 export function filtraPedidos(lista, f, clientes) {
   if (!f) return lista
-  const cli = normaliza(f.cliente || '')
+  const cli = String(f.cliente || '').trim()
   const ped = normaliza(f.pedido || '')
   const vend = f.vendedor || ''
   const rota = f.rota || ''
   const ini = f.dataIni ? new Date(f.dataIni + 'T00:00:00') : null
   const fim = f.dataFim ? new Date(f.dataFim + 'T23:59:59') : null
   return lista.filter((p) => {
-    if (cli) {
-      const razao = normaliza(p.cliente)
-      const exib = normaliza(nomeCliente(p.cliente, clientes))
-      if (!razao.includes(cli) && !exib.includes(cli)) return false
-    }
+    // casa pela razão social E pelo apelido: a pessoa procura pelo nome que ela
+    // conhece, que muitas vezes não é o que veio na planilha
+    if (cli && !casaBusca(cli, p.cliente, nomeCliente(p.cliente, clientes))) return false
     if (ped && !normaliza(p.idVenda).includes(ped)) return false
     if (vend && (p.vendedor || '—') !== vend) return false
     if (rota && (p.rota || 'SEM ROTA') !== rota) return false

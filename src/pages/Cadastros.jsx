@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { SEED_VENDEDORES, normaliza, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO } from '../utils.js'
+import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -411,11 +411,9 @@ function AbaClientes() {
 
   const filtrados = clientes
     .map((c, i) => ({ c, i }))
-    .filter(({ c }) =>
-      !busca ||
-      normaliza(c.razao).includes(normaliza(busca)) ||
-      normaliza(c.nome).includes(normaliza(busca))
-    )
+    // mesma busca tolerante das outras telas: casa razão social e apelido,
+    // em qualquer ordem e com erro de digitação
+    .filter(({ c }) => casaBusca(busca, c.razao, c.nome))
 
   return (
     <>
@@ -573,7 +571,7 @@ function AbaItens() {
   const filtrados = itens
     .map((it, i) => ({ it, i }))
     .filter(({ it }) => !soSemUnidade || !it.unidade)
-    .filter(({ it }) => !busca || normaliza(it.produto).includes(normaliza(busca)))
+    .filter(({ it }) => casaBusca(busca, it.produto))
 
   return (
     <>
