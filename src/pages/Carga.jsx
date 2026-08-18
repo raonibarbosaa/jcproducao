@@ -12,6 +12,7 @@ import {
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, planosFechados, pedidosEmPlanos, situacaoNoPlano,
   nomeStatusPlano, fechamentoDoPlano, rotuloCarga, agrupaRomaneioPorRota,
+  itensSeguradosDoPlano, itemSegurado, volumesQueVao, sobrouNoPedido, chaveItemPlano,
   rotasDoVendedor, pendenciasDoPedido, pendenciasPorEtapa, MODO_ORDER,
   itensPendentesDoPedido, resumePendencias,
   doPlano, planoPorData, rotuloPlano, agrupaPlanoPorRota, diaDaPrevisao, entregaAte,
@@ -191,9 +192,21 @@ export default function Carga({ pedidos }) {
         .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
     : []
 
-  // o que sai AGORA se liberar: só os volumes prontos dos pedidos do plano
-  const volumesDoPlano = dentro.flatMap((p) => livresPorPedido.get(String(p.idVenda)) || [])
-  const prontosDoPlano = dentro.filter((p) => livresPorPedido.has(String(p.idVenda)))
+  // o que sai AGORA se liberar: os volumes prontos dos pedidos do plano MENOS os
+  // itens segurados. Peso e totais saem daqui — contar o segurado faria o peso
+  // mentir para cima, e é assim que o caminhão passa do limite.
+  const segurados = itensSeguradosDoPlano(plano)
+  const volumesDoPlano = dentro.flatMap((p) =>
+    volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados))
+  const prontosDoPlano = dentro.filter((p) =>
+    volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados).length > 0)
+  // quantos pedidos saem pela METADE (algo fica: na produção ou segurado)
+  const parciaisDoPlano = prontosDoPlano.filter((p) =>
+    sobrouNoPedido(p, livresPorPedido.get(String(p.idVenda)), segurados))
+  const nSegurados = dentro.reduce((n, p) => {
+    const livres = livresPorPedido.get(String(p.idVenda)) || []
+    return n + (livres.length - volumesQueVao(livres, p.idVenda, segurados).length)
+  }, 0)
   const pesoPlano = pesoDaLista(volumesDoPlano, itensCad)
   const totaisPlano = totaisPorMaterial(
     volumesDoPlano.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)
@@ -202,10 +215,16 @@ export default function Carga({ pedidos }) {
   const porIdTodos = new Map(todos.map((p) => [String(p.idVenda), p]))
   const resumoPlano = (pl) => {
     const ids = (pl.pedidos || []).map(String)
-    const vols = ids.flatMap((id) => livresPorPedido.get(id) || [])
+    const seg = itensSeguradosDoPlano(pl)
+    // o card da lista promete o que vai sair: desconta o segurado, igual ao rodapé
+    const vols = ids.flatMap((id) => volumesQueVao(livresPorPedido.get(id), id, seg))
     return {
       total: ids.length,
-      prontos: ids.filter((id) => livresPorPedido.has(id)).length,
+      prontos: ids.filter((id) => volumesQueVao(livresPorPedido.get(id), id, seg).length > 0).length,
+      segurados: ids.reduce((n, id) => {
+        const livres = livresPorPedido.get(id) || []
+        return n + (livres.length - volumesQueVao(livres, id, seg).length)
+      }, 0),
       volumes: vols.length,
       peso: pesoDaLista(vols, itensCad),
       // a viagem deixou de ser só daquela rota — o card precisa dizer
@@ -324,6 +343,22 @@ export default function Carga({ pedidos }) {
     }
   }
 
+  // SEGURAR / SOLTAR um item pronto. Fica gravado na previsão (`itensFora`) e não
+  // no estado da tela: outra pessoa precisa ver a mesma viagem, e a decisão de
+  // segurar às vezes é tomada num dia e a carga sai no outro.
+  async function alternaItemFora(p, itemKey) {
+    if (!plano || salvando) return
+    const chave = chaveItemPlano(p.idVenda, itemKey)
+    const atual = (plano.itensFora || []).map(String)
+    const novo = atual.includes(chave) ? atual.filter((x) => x !== chave) : [...atual, chave]
+    setSalvando(`seg:${chave}`)
+    try {
+      await updateDoc(doc(db, 'planos', plano.id), { itensFora: novo })
+    } catch (e) {
+      alert('Não foi possível segurar o item: ' + (e.code || e.message))
+    } finally { setSalvando('') }
+  }
+
   // EXCLUIR NÃO APAGA. O documento fica com status `excluida`, e é isso que
   // impede o número de voltar a ser usado: `proximoNumeroPlano` é maior+1 sobre
   // o que existe, então apagar a #15 fazia a próxima nascer #15 de novo.
@@ -392,8 +427,18 @@ export default function Carga({ pedidos }) {
       return
     }
     const ficam = dentro.length - prontosDoPlano.length
+    const nomesParciais = parciaisDoPlano
+      .map((p) => `#${p.idVenda} ${nomeCliente(p.cliente, clientes)}`)
     if (!confirm(
       `Liberar ${prontosDoPlano.length} pedido(s) · ${volumesDoPlano.length} volume(s) para entrega?\n\n` +
+      // quem libera precisa saber que está mandando meio pedido — senão quem
+      // descobre é o cliente
+      (nomesParciais.length
+        ? `⚠ ${nomesParciais.length} sai(em) PARCIAL, com o resto ficando para a próxima viagem:\n`
+          + nomesParciais.slice(0, 8).map((n) => `   · ${n}`).join('\n')
+          + (nomesParciais.length > 8 ? `\n   · … e mais ${nomesParciais.length - 8}` : '')
+          + '\n\n'
+        : '') +
       (ficam ? `${ficam} pedido(s) continuam no plano, esperando ficar prontos.` : 'O plano fica sem pendências.'))) return
     setSalvando('liberar')
     try {
@@ -415,12 +460,23 @@ export default function Carga({ pedidos }) {
         criadaEm: new Date().toISOString(),
         criadaPor: nome || '',
       })
-      // os liberados saem da previsão: o que eles tinham de pronto virou carga
-      const restam = (plano.pedidos || []).map(String)
-        .filter((id) => !prontosDoPlano.some((p) => String(p.idVenda) === id))
+      // ⚠️ O pedido só SAI da previsão quando não sobra nada dele. Antes ele saía
+      // inteiro assim que mandava qualquer coisa, levando junto os itens que
+      // continuavam na linha — e a pessoa tinha que reincluir o pedido na viagem
+      // a cada entrega parcial, que é justamente o fluxo normal agora.
+      const restam = (plano.pedidos || []).map(String).filter((id) => {
+        const p = dentro.find((x) => String(x.idVenda) === id)
+        if (!p) return true                       // não estava na tela: não mexe
+        if (!prontosDoPlano.some((x) => String(x.idVenda) === id)) return true   // nada saiu
+        return sobrouNoPedido(p, livresPorPedido.get(id), segurados)
+      })
+      // limpa o que foi segurado de quem saiu de cena (senão a lista só cresce)
+      const seguradosRestantes = (plano.itensFora || [])
+        .filter((c) => restam.includes(String(c).split('|')[0]))
       const agora = new Date().toISOString()
       await updateDoc(doc(db, 'planos', plano.id), {
         pedidos: restam,
+        itensFora: seguradosRestantes,
         cargas: [...(plano.cargas || []), ref.id],
         liberadoEm: agora, liberadoPor: nome || '',
         // soltou tudo: a previsão cumpriu o papel e sai da lista sozinha. Aberta
@@ -580,6 +636,8 @@ export default function Carga({ pedidos }) {
               itensCad={itensCad} clientes={clientes} cadastros={cadastros}
               totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
               prontos={prontosDoPlano.length} volumes={volumesDoPlano.length}
+              parciais={parciaisDoPlano.length} nSegurados={nSegurados}
+              segurados={segurados} onSegurar={alternaItemFora}
               motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
               salvando={salvando} temCargaAberta={!!aberta}
               filtros={filtros} setFiltros={setFiltros}
@@ -783,6 +841,9 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
                 {r.volumes > 0 && (
                   <div className="pl-est">📦 {r.volumes} volume(s) · {fmtPeso(r.peso)}</div>
                 )}
+                {r.segurados > 0 && (
+                  <div className="pl-est falta">⏸ {r.segurados} volume(s) segurado(s) p/ a próxima</div>
+                )}
                 {r.total > r.prontos && (
                   <div className="pl-est falta">⏳ {r.total - r.prontos} ainda na produção</div>
                 )}
@@ -894,6 +955,7 @@ const SITUACOES = [
 function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
                        livresPorPedido, noutroPlano, itensCad, clientes,
                        cadastros, totais, peso, capacidadeKg, prontos, volumes,
+                       parciais, nSegurados, segurados, onSegurar,
                        motorista, setMotorista, motoristas, salvando, temCargaAberta,
                        filtros, setFiltros, onVoltar, onAlterna, onAlternaTodos,
                        onLiberar, onEncerrar, onDevolver }) {
@@ -1016,6 +1078,7 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
                 <LinhaPlano key={p.idVenda} p={p} clientes={clientes} itensCad={itensCad}
                   livres={livresPorPedido.get(String(p.idVenda))} dentro material={material}
                   deFora={!doPlano(p, plano)} porData={porData}
+                  segurados={segurados} onSegurar={onSegurar}
                   salvando={salvando} onAlterna={() => onAlterna(p)} onDevolver={onDevolver} />
               ))}
         </div>
@@ -1113,6 +1176,9 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
           <span>
             <b>{prontos}</b> de {dentro.length} pronto(s) · <b>{volumes}</b> volume(s)
             {volumes > 0 && ` · ${fmtTotais(totais)}`}
+            {/* sai meio pedido? quem libera tem que ver isso ANTES de clicar */}
+            {parciais > 0 && <b className="peso-estoura">{' · '}{parciais} sai(em) PARCIAL</b>}
+            {nSegurados > 0 && <span>{' · '}⏸ {nSegurados} volume(s) segurado(s)</span>}
             <b className={estoura ? 'peso-estoura' : ''}>
               {' · '}{fmtPeso(peso)}{capacidadeKg > 0 && ` de ${fmtQtd(capacidadeKg)} kg`}
             </b>
@@ -1204,13 +1270,17 @@ function ImpressaoPendencias({ plano, pedidos, clientes, itensCad, legenda, mate
 }
 
 // uma linha de pedido no planejamento: diz se está pronto ou onde está na fábrica
-function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, porData, material, salvando, onAlterna, onDevolver }) {
+function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, porData, material,
+                     segurados, onSegurar, salvando, onAlterna, onDevolver }) {
   // Clicar no pedido abre os PRODUTOS. Fechado por padrão: a lista precisa caber
   // na tela para escolher a viagem; aberta em todos, viraria uma parede de texto.
   // Mas na hora de decidir o que sobe no caminhão, o que importa é o produto —
   // "3 volumes" não diz se é a sacola grande ou a etiqueta.
   const [aberto, setAberto] = useState(false)
-  const s = situacaoNoPlano(p, livres, itensCad)
+  const s = situacaoNoPlano(p, livres, itensCad, segurados)
+  // segurar só faz sentido em pedido que ESTÁ na viagem: guardar item de pedido
+  // que nem entrou não quer dizer nada
+  const podeSegurar = !!dentro && !!onSegurar
   const atrasado = situacaoPrazo(p.previsao) === 'atrasado'
   // com filtro de material, o card mostra SÓ os itens desse material — e o
   // resumo "⏳ N em Montagem" sai da mesma lista filtrada, senão a linha diria 3
@@ -1245,10 +1315,22 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, por
             </span>
           )}
           {noutro && !dentro && <span className="chip rota-warn">no plano #{noutro.numero}</span>}
+          {/* fechado, o card precisa dizer que tem coisa segurada — senão só se
+              descobre abrindo pedido por pedido */}
+          {s.segurados > 0 && (
+            <span className="chip rota-warn" title="Volumes prontos que você mandou ficar para a próxima viagem">
+              ⏸ {s.segurados} volume(s) segurado(s)
+            </span>
+          )}
         </div>
         {s.pronto && (
-          <div className="pl-est ok">
-            ✅ pronto · {s.volumes} volume(s) · {fmtPeso(s.peso)}
+          <div className={`pl-est ${s.parcial ? 'parcial' : 'ok'}`}>
+            {/* ⚠️ dizer "✅ pronto" porque existe 1 volume esconde que 2 itens
+                continuam na linha, e quem libera descobre pelo cliente */}
+            {s.parcial
+              ? `◑ parcial · ${s.itensProntos} de ${s.itensTotal} itens prontos · `
+              : '✅ pronto · '}
+            {s.volumes} volume(s) · {fmtPeso(s.peso)}
             {dentro && (
               <button className="mini-btn" style={{ marginLeft: 8 }} disabled={!!salvando}
                 title="Volta para a coluna Expedição do quadro"
@@ -1273,14 +1355,29 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, por
               const chave = it.key || keyDoItem(p, i)
               const vols = (livres || []).filter((v) => v.itemKey === chave)
               const falta = qtdEmProducao(p, i)
+              const fora = itemSegurado(segurados, p.idVenda, chave)
+              // o marcador só existe em item PRONTO: o que está na produção já
+              // não ia, marcar não mudaria nada e só criaria dúvida
+              const marcavel = podeSegurar && vols.length > 0
               return (
-                <li key={i}>
+                <li key={i} className={fora ? 'pli-fora' : ''}>
                   <div className="pli-nome">
+                    {marcavel && (
+                      <input type="checkbox" className="card-check" checked={!fora}
+                        disabled={!!salvando}
+                        title={fora
+                          ? 'Segurado: fica para a próxima viagem'
+                          : 'Vai nesta viagem — desmarque para segurar'}
+                        onChange={() => onSegurar(p, chave)} />
+                    )}
                     <SeloLinha linha={linhaDoItem(p, i)} />{it.produto}
                   </div>
                   <div className="pli-est">
                     {vols.length > 0 && (
-                      <span className="ok">✅ {vols.length} vol · {fmtPeso(pesoDaLista(vols, itensCad))}</span>
+                      <span className={fora ? 'falta' : 'ok'}>
+                        {fora ? '⏸ ' : '✅ '}{vols.length} vol · {fmtPeso(pesoDaLista(vols, itensCad))}
+                        {fora && ' · fica p/ a próxima'}
+                      </span>
                     )}
                     {falta > 0 && (
                       <span className="falta">⏳ {fmtQtd(falta)} em {nomeEtapaItem(etapaDoItem(p, i)) || '—'}</span>

@@ -975,6 +975,12 @@ mark.hl {
 .pl-est { font-size: 12px; margin-top: 4px; color: var(--text-dim); }
 .pl-est.ok { color: var(--ok); }
 .pl-est.falta { color: var(--warn); }
+/* ◑ PARCIAL: sai uma parte e fica outra. Nem verde (que leria "pronto, pode ir")
+   nem vermelho (não é erro) — é o estado normal da entrega parcial. */
+.pl-est.parcial { color: var(--accent); }
+/* item segurado: continua legível, mas não parece mais que vai subir no caminhão */
+.pli-fora { opacity: .62; }
+.pli-fora .pli-nome { text-decoration: line-through; text-decoration-thickness: 1px; }
 
 /* o peso estourou a capacidade do caminhão */
 .peso-estoura { color: var(--danger); }

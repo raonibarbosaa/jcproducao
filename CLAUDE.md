@@ -729,6 +729,40 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   saidaPrevista, pedidos:[idVenda], cargas:[cargaId], criadoEm/Por}` (+ `vendedor`
   e `rota`, hoje só nas previsões antigas).
 
+## ENTREGA PARCIAL DELIBERADA — segurar item pronto (18/08/2026)
+> A carga já saía parcial SOZINHA: `itensParaCarga` só devolve o que está em
+> `expedido`, então pedido com 1 de 3 itens prontos já ia com 1. Faltava o
+> VOLANTE (dizer "essa sacola vai, a etiqueta espera") e a tela dizer a verdade.
+
+- **Onde mora:** `planos/{id}.itensFora: ["5001|SACOLA PAPEL P02#1"]` —
+  `chaveItemPlano(idVenda, keyDoItem)`. Campo ausente = nada segurado, então toda
+  previsão que já existe continua igual. ⚠️ A chave usa `keyDoItem`, não a
+  POSIÇÃO: o import sobrescreve `itens`, e segurar a sacola grande viraria segurar
+  a etiqueta no dia seguinte.
+- **Gravado na previsão, não no estado da tela** (decisão do dono): outra pessoa
+  precisa ver a mesma viagem, e segurar às vezes é decidido num dia e a carga sai
+  no outro.
+- **Padrão é TUDO MARCADO** — segurar é a exceção, feita a dedo. Nada marcado
+  transformaria toda liberação simples em vários cliques, e um esquecimento
+  deixaria mercadoria pronta para trás.
+- **Por ITEM, não por volume** (decisão do dono): a linha é o produto, que é como
+  o pedido é falado. Os volumes daquele produto vão juntos.
+- ⚠️ **O pedido só SAI da previsão quando não sobra NADA dele** (`sobrouNoPedido`
+  = tem saldo na produção OU tem item segurado). Antes ele saía inteiro assim que
+  mandava qualquer coisa, **levando junto os itens que continuavam na linha** — e
+  a pessoa tinha que reincluir o pedido na viagem a cada entrega parcial, que é
+  justamente o fluxo normal agora.
+- **A tela parou de mentir:** `situacaoNoPlano` ganhou `parcial`, `segurados`,
+  `itensProntos`/`itensTotal`. O chip vira `◑ parcial · 1 de 3 itens prontos` em
+  vez de `✅ pronto` (que dizia isso porque existia UM volume). O rodapé conta
+  `N sai(em) PARCIAL` e a confirmação de liberar NOMEIA quem sai pela metade —
+  senão quem descobre é o cliente.
+- **Peso e totais descontam o segurado**: contar o que fica faria o peso mentir
+  para cima, e é assim que o caminhão passa do limite.
+- `itensFora` é limpo na liberação (some quem saiu da previsão), senão a lista só
+  cresce. **Rules: nada a publicar** — é update em `planos`.
+- Testes em `tests/parcial.test.mjs`.
+
 ## CICLO DE VIDA DA PREVISÃO (18/08/2026)
 > `aberta → 🚚 virou viagem | ✓ encerrada | 🗑 excluída`. A previsão **nunca mais
 > é apagada** — excluir é mudar de status.

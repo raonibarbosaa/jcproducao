@@ -833,15 +833,52 @@ const ordemMaterial = (id) => {
 // Situação de um pedido dentro do plano: o que já dá para carregar e o que falta.
 // `livres` são os volumes ainda não comprometidos com outra carga (quem calcula
 // isso é a tela, que conhece as cargas abertas).
-export function situacaoNoPlano(p, livres, itensCad) {
+// ---------- SEGURAR ITEM PRONTO (entrega parcial deliberada) ----------
+// A carga já saía parcial SOZINHA: `itensParaCarga` só devolve o que está em
+// `expedido`, então pedido com 1 de 3 itens prontos ia com 1. O que faltava era
+// o volante — dizer "essa sacola vai, a etiqueta espera" — e a tela avisar que
+// o pedido está saindo pela metade.
+//
+// A escolha mora em `planos/{id}.itensFora: ["5001|SACOLA PAPEL P02#1"]`.
+// Campo ausente = nada segurado, então toda previsão que já existe continua
+// funcionando igual. A chave usa `keyDoItem`, que sobrevive ao reimport — a
+// POSIÇÃO no array não sobreviveria, e segurar a sacola grande viraria segurar a
+// etiqueta no dia seguinte.
+export const chaveItemPlano = (idVenda, itemKey) => `${idVenda}|${itemKey}`
+export const itensSeguradosDoPlano = (pl) => new Set((pl?.itensFora || []).map(String))
+export const itemSegurado = (segurados, idVenda, itemKey) =>
+  !!segurados?.has(chaveItemPlano(idVenda, itemKey))
+
+// o que REALMENTE sobe no caminhão: o que está pronto menos o que foi segurado
+export const volumesQueVao = (livres, idVenda, segurados) =>
+  (livres || []).filter((v) => !itemSegurado(segurados, idVenda, v.itemKey))
+
+export function situacaoNoPlano(p, livres, itensCad, segurados) {
   const vols = livres || []
+  const vao = volumesQueVao(vols, p?.idVenda, segurados)
+  const pendencias = pendenciasDoPedido(p)
   return {
-    volumes: vols.length,
-    peso: pesoDaLista(vols, itensCad),
-    pendencias: pendenciasDoPedido(p),
-    pronto: vols.length > 0,
+    volumes: vao.length,
+    peso: pesoDaLista(vao, itensCad),
+    pendencias,
+    pronto: vao.length > 0,
+    // ◑ PARCIAL = tem coisa saindo E tem coisa ficando. Dizer só "✅ pronto"
+    // porque existe 1 volume esconde que 2 itens continuam na linha — e quem
+    // libera descobre pelo cliente.
+    parcial: vao.length > 0 && (pendencias.length > 0 || vao.length < vols.length),
+    segurados: vols.length - vao.length,
+    itensProntos: new Set(vols.map((v) => v.itemKey)).size,
+    itensTotal: (p?.itens || []).length,
   }
 }
+
+// O pedido só SAI da previsão quando não sobra nada dele: nem item segurado, nem
+// saldo na produção. Antes ele saía inteiro assim que mandava qualquer coisa,
+// levando junto os itens que continuavam na linha — e a pessoa tinha que
+// reincluir o pedido na viagem a cada entrega parcial.
+export const sobrouNoPedido = (p, livres, segurados) =>
+  temTrabalhoNaProducao(p)
+  || (livres || []).length > volumesQueVao(livres, p?.idVenda, segurados).length
 
 // há quantos dias inteiros isso aconteceu (null quando não há data)
 export function diasDesde(iso) {
