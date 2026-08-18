@@ -665,6 +665,13 @@ input, select { font-family: var(--font); }
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
 
+  /* UM BLOCO POR ROTA no romaneio. Não força folha nova: com duas rotas
+     pequenas, gastar duas folhas irrita mais do que ajuda — o que não pode é a
+     faixa da rota ficar sozinha no pé da página (break-after: avoid, acima). */
+  .pr-bloco { break-inside: auto; margin-bottom: 10px; }
+  .pr-bloco + .pr-bloco { border-top: 2px solid #000; padding-top: 8px; }
+  .pr-cidades { font-size: 10px; font-weight: 600; color: #333; margin-top: 2px; }
+
   /* bloco de pedido / parada */
   .pr-ped {
     border: 1px solid #999; border-radius: 4px; padding: 5px 8px; margin-bottom: 6px;

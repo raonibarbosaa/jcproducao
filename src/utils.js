@@ -415,6 +415,31 @@ export const cargaConferida = (carga) => {
 
 // pedidos distintos e rotas de uma carga (para o cabeçalho e o romaneio)
 export const pedidosDaCarga = (carga) => [...new Set((carga?.itens || []).map((i) => i.idVenda))]
+// ---------- ROMANEIO SEPARADO POR ROTA ----------
+// A previsão é do DIA, então quase toda viagem leva 2+ rotas. Numa lista corrida
+// o motorista separa as rotas de cabeça — e é ele quem decide a sequência das
+// cidades, mas não deveria ter que descobrir quais paradas são da mesma rota.
+// Ordem das rotas = a posição no cadastro do vendedor (a sequência real em que
+// ele roda), com o nome só desempatando: rota de mesmo nome de vendedores
+// diferentes NÃO é a mesma rota (decisão do dono em 17/08/2026).
+export function agrupaRomaneioPorRota(grupos, cadastros) {
+  const por = new Map()
+  for (const g of grupos || []) {
+    const rota = g.p?.rota || 'SEM ROTA'
+    const vendedor = g.p?.vendedor || ''
+    const chave = `${vendedor}|${rota}`
+    const bloco = por.get(chave) || { chave, rota, vendedor, paradas: [], volumes: 0, cidades: [] }
+    bloco.paradas.push(g)
+    bloco.volumes += (g.itens || []).length
+    const cid = g.p?.cidade
+    if (cid && !bloco.cidades.includes(cid)) bloco.cidades.push(cid)
+    por.set(chave, bloco)
+  }
+  return [...por.values()].sort((a, b) =>
+    (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+    || a.rota.localeCompare(b.rota))
+}
+
 export function agrupaCargaPorPedido(carga, pedidos) {
   const porId = new Map((pedidos || []).map((p) => [String(p.idVenda), p]))
   const mapa = {}
@@ -560,13 +585,66 @@ export const diasDe = (ms) => (ms == null ? null : Math.floor(ms / MS_DIA))
 // O plano NÃO se encerra ao liberar: ele solta o que ficou pronto, mantém o
 // resto e continua acompanhando a rota até alguém encerrar. Uma rota rende
 // várias viagens, e é isso que a tela precisa refletir.
-export const STATUS_PLANO = { ABERTO: 'aberto', ENCERRADO: 'encerrado' }
+// A previsão NUNCA é apagada: excluir é mudar de status.
+// ⚠️ É o que faz o NÚMERO parar de se repetir. `proximoNumeroPlano` é
+// `maior + 1` sobre os documentos que existem — apagando a #15 (a mais alta), a
+// previsão seguinte nascia #15 de novo, e o histórico passava a ter duas viagens
+// diferentes com o mesmo número. Ninguém desconfia de um número que existe.
+// 'encerrado' é o status ANTIGO e continua sendo lido (zero migração).
+export const STATUS_PLANO = {
+  ABERTO: 'aberto',
+  CONCRETIZADA: 'concretizada',   // virou viagem: soltou tudo que tinha
+  ENCERRADA: 'encerrada',         // fechada na mão, com ou sem sobra
+  EXCLUIDA: 'excluida',
+  // ⚠️ o valor ANTIGO fica aqui de propósito. Tirar a chave não daria erro em
+  // lugar nenhum: `STATUS_PLANO.ENCERRADO` passaria a valer `undefined`, e
+  // previsão com status indefinido é lida como ABERTA — ela voltaria a prender
+  // os pedidos, calada. Quem normaliza na leitura é `statusDoPlano`.
+  ENCERRADO: 'encerrado',
+}
 
 export const proximoNumeroPlano = (planos) =>
   (planos || []).reduce((m, p) => Math.max(m, Number(p.numero) || 0), 0) + 1
 
-export const planosAbertos = (planos) =>
-  (planos || []).filter((p) => (p.status || STATUS_PLANO.ABERTO) === STATUS_PLANO.ABERTO)
+export const statusDoPlano = (pl) => {
+  const s = pl?.status || STATUS_PLANO.ABERTO
+  return s === 'encerrado' ? STATUS_PLANO.ENCERRADA : s      // legado
+}
+export const planoEstaAberto = (pl) => statusDoPlano(pl) === STATUS_PLANO.ABERTO
+
+export const planosAbertos = (planos) => (planos || []).filter(planoEstaAberto)
+
+// o que já saiu de cena — é o histórico das previsões
+export const planosFechados = (planos) => (planos || []).filter((p) => !planoEstaAberto(p))
+
+export const NOME_STATUS_PLANO = {
+  [STATUS_PLANO.ABERTO]: 'aberta',
+  [STATUS_PLANO.CONCRETIZADA]: '🚚 virou viagem',
+  [STATUS_PLANO.ENCERRADA]: '✓ encerrada',
+  [STATUS_PLANO.EXCLUIDA]: '🗑 excluída',
+}
+export const nomeStatusPlano = (pl) => NOME_STATUS_PLANO[statusDoPlano(pl)] || statusDoPlano(pl)
+
+// quem fechou a previsão e quando — o histórico existe para responder isso
+export function fechamentoDoPlano(pl) {
+  const s = statusDoPlano(pl)
+  if (s === STATUS_PLANO.EXCLUIDA) return { por: pl.excluidaPor || '', em: pl.excluidaEm || '' }
+  if (s === STATUS_PLANO.CONCRETIZADA) return { por: pl.concretizadaPor || pl.liberadoPor || '', em: pl.concretizadaEm || pl.liberadoEm || '' }
+  // 'encerradoEm/Por' é o nome antigo do campo, de quando só existia encerrar
+  return { por: pl.encerradaPor || pl.encerradoPor || '', em: pl.encerradaEm || pl.encerradoEm || '' }
+}
+
+// ---------- O NÚMERO QUE O MOTORISTA LÊ ----------
+// A viagem herda o número da PREVISÃO que a gerou: um número só acompanha do
+// planejamento até o caminhão. Uma previsão que libera duas vezes (parte ficou
+// pronta depois) vira #15-1 e #15-2 — some o `-1` quando foi viagem única.
+// Carga antiga, nascida antes da previsão existir, mantém o número próprio: o
+// papel já impresso não se renumera.
+export function rotuloCarga(c) {
+  if (!c) return ''
+  if (!c.planoNumero) return `#${c.numero ?? '?'}`
+  return c.viagem > 1 ? `#${c.planoNumero}-${c.viagem}` : `#${c.planoNumero}`
+}
 
 // Um pedido só pode estar num plano aberto por vez — senão duas viagens contam
 // com a mesma mercadoria e as duas se planejam errado.

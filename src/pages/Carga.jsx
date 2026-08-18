@@ -10,7 +10,8 @@ import {
   vendedoresDe, resumoFiltros,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
-  STATUS_PLANO, proximoNumeroPlano, planosAbertos, pedidosEmPlanos, situacaoNoPlano,
+  STATUS_PLANO, proximoNumeroPlano, planosAbertos, planosFechados, pedidosEmPlanos, situacaoNoPlano,
+  nomeStatusPlano, fechamentoDoPlano, rotuloCarga, agrupaRomaneioPorRota,
   rotasDoVendedor, pendenciasDoPedido, pendenciasPorEtapa, MODO_ORDER,
   itensPendentesDoPedido, resumePendencias,
   doPlano, planoPorData, rotuloPlano, agrupaPlanoPorRota, diaDaPrevisao, entregaAte,
@@ -306,20 +307,46 @@ export default function Carga({ pedidos }) {
     setPlanoId(pl.id)
   }
 
+  // Encerrar na mão: continua existindo para quando SOBRA pedido e mesmo assim
+  // se quer fechar. Quem soltou tudo é encerrado sozinho pelo `liberarPlano`.
   async function encerrarPlano() {
     if (!plano) return
-    if (!confirm(`Encerrar o plano #${plano.numero} (${rotuloPlano(plano)})?\n\n` +
-      `Ele sai da lista de planos abertos. Os pedidos que sobraram voltam a ficar livres.`)) return
-    await updateDoc(doc(db, 'planos', plano.id), {
-      status: STATUS_PLANO.ENCERRADO, encerradoEm: new Date().toISOString(), encerradoPor: nome || '',
-    })
-    setPlanoId('')
+    if (!confirm(`Encerrar a previsão #${plano.numero} (${rotuloPlano(plano)})?\n\n` +
+      `Ela sai da lista de abertas e vai para o histórico. Os pedidos que sobraram voltam a ficar livres.`)) return
+    try {
+      await updateDoc(doc(db, 'planos', plano.id), {
+        status: (plano.cargas || []).length ? STATUS_PLANO.CONCRETIZADA : STATUS_PLANO.ENCERRADA,
+        encerradaEm: new Date().toISOString(), encerradaPor: nome || '',
+      })
+      setPlanoId('')
+    } catch (e) {
+      alert('Não foi possível encerrar: ' + (e.code || e.message))
+    }
   }
 
-  async function apagarPlano(pl) {
-    if (!confirm(`Apagar o plano #${pl.numero}? Nada acontece com os pedidos.`)) return
-    await deleteDoc(doc(db, 'planos', pl.id))
-    if (planoId === pl.id) setPlanoId('')
+  // EXCLUIR NÃO APAGA. O documento fica com status `excluida`, e é isso que
+  // impede o número de voltar a ser usado: `proximoNumeroPlano` é maior+1 sobre
+  // o que existe, então apagar a #15 fazia a próxima nascer #15 de novo.
+  // Os pedidos voltam a ficar livres sozinhos — a reserva (`pedidosEmPlanos`) só
+  // olha previsão ABERTA, e esta deixou de ser.
+  async function excluirPlano(pl) {
+    const n = (pl.pedidos || []).length
+    const viagens = (pl.cargas || []).length
+    if (!confirm(
+      `Excluir a previsão #${pl.numero}?\n\n`
+      + (n ? `${n} pedido(s) voltam a ficar livres para entrar em outra viagem.\n` : '')
+      + (viagens ? `As ${viagens} viagem(ns) que ela já gerou NÃO são desfeitas.\n` : '')
+      + `O número ${pl.numero} fica registrado no histórico como excluído.`)) return
+    setSalvando(`del:${pl.id}`)
+    try {
+      await updateDoc(doc(db, 'planos', pl.id), {
+        status: STATUS_PLANO.EXCLUIDA,
+        excluidaEm: new Date().toISOString(), excluidaPor: nome || '',
+      })
+      if (planoId === pl.id) setPlanoId('')
+    } catch (e) {
+      alert('Não foi possível excluir a previsão: ' + (e.code || e.message))
+    } finally { setSalvando('') }
   }
 
   // Devolve o pedido de "expedido" para a EXPEDIÇÃO: ele volta a aparecer na
@@ -371,6 +398,11 @@ export default function Carga({ pedidos }) {
     setSalvando('liberar')
     try {
       const ref = doc(collection(db, 'cargas'))
+      // A viagem HERDA o número da previsão: um número só do planejamento até o
+      // caminhão. Uma previsão que libera duas vezes vira #15 e #15-2 (`viagem`
+      // é a ordem da liberação). `numero` continua sendo gravado para o histórico
+      // das cargas antigas, que nasceram antes de existir previsão.
+      const viagem = (plano.cargas || []).length + 1
       await setDoc(ref, {
         numero: proximoNumeroCarga(cargas),
         status: STATUS_CARGA.MONTANDO,
@@ -378,18 +410,27 @@ export default function Carga({ pedidos }) {
         itens: volumesDoPlano,
         pedidos: prontosDoPlano.map((p) => p.idVenda),
         rotas: [...new Set(prontosDoPlano.map((p) => p.rota || 'SEM ROTA'))],
-        planoId: plano.id, planoNumero: plano.numero || 0,
+        planoId: plano.id, planoNumero: plano.numero || 0, viagem,
+        dataEntrega: plano.dataEntrega || '',
         criadaEm: new Date().toISOString(),
         criadaPor: nome || '',
       })
       // os liberados saem da previsão: o que eles tinham de pronto virou carga
       const restam = (plano.pedidos || []).map(String)
         .filter((id) => !prontosDoPlano.some((p) => String(p.idVenda) === id))
+      const agora = new Date().toISOString()
       await updateDoc(doc(db, 'planos', plano.id), {
         pedidos: restam,
         cargas: [...(plano.cargas || []), ref.id],
-        liberadoEm: new Date().toISOString(), liberadoPor: nome || '',
+        liberadoEm: agora, liberadoPor: nome || '',
+        // soltou tudo: a previsão cumpriu o papel e sai da lista sozinha. Aberta
+        // com zero pedido ela só ocupava a tela — e escondia as que têm serviço.
+        ...(restam.length ? {} : {
+          status: STATUS_PLANO.CONCRETIZADA,
+          concretizadaEm: agora, concretizadaPor: nome || '',
+        }),
       })
+      if (!restam.length) setPlanoId('')
       setMotorista(''); setAba('montar')
     } catch (e) {
       alert('Não foi possível liberar: ' + (e.code || e.message))
@@ -498,6 +539,10 @@ export default function Carga({ pedidos }) {
   const historico = cargas
     .filter((c) => c.status !== STATUS_CARGA.MONTANDO)
     .sort((a, b) => (b.criadaEm || '').localeCompare(a.criadaEm || ''))
+  // previsões que saíram de cena: viraram viagem, foram encerradas ou excluídas.
+  // Antes o documento era apagado e não sobrava rastro de nenhuma das três.
+  const planosFeitos = planosFechados(planos)
+    .sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0))
 
   return (
     <>
@@ -520,7 +565,8 @@ export default function Carga({ pedidos }) {
             📦 Carga atual
           </button>
           <button className={`btn${aba === 'historico' ? ' primary' : ''}`} onClick={() => setAba('historico')}>
-            ☰ Histórico {historico.length > 0 && `(${historico.length})`}
+            ☰ Histórico {historico.length + planosFeitos.length > 0
+              && `(${historico.length + planosFeitos.length})`}
           </button>
         </div>
       </div>
@@ -543,7 +589,7 @@ export default function Carga({ pedidos }) {
           </>
         : <ListaPlanos planos={abertos.filter(casaPlanoFiltro)}
             resumo={resumoPlano} todos={todos} cadastros={cadastros}
-            salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onApagar={apagarPlano}
+            salvando={salvando} onAbrir={setPlanoId} onCriar={criarPlano} onExcluir={excluirPlano}
             gruposProntos={gruposProntos} prontosSemPlano={prontosSemPlano}
             planoDaData={planoDaData} onJuntar={juntarNoPlano} clientes={clientes}
             livresPorPedido={livresPorPedido}
@@ -553,8 +599,9 @@ export default function Carga({ pedidos }) {
 
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
+            cadastros={cadastros}
             salvando={salvando} onConferir={conferir} onConferirTudo={conferirTudo}
-            onSaida={marcarSaida} onCancelar={cancelarCarga} />
+            onSaida={marcarSaida} onCancelar={cancelarCarga} onTirar={tirarDaCarga} />
         : <div className="empty"><div className="big">📦</div>
             Nenhuma carga em montagem. A carga nasce de um plano — vá em
             <b> 📋 Planejamento</b>, monte a previsão da viagem e clique em
@@ -562,7 +609,7 @@ export default function Carga({ pedidos }) {
           </div>)}
 
       {aba === 'historico' && (
-        <Historico cargas={historico} podeDesfazer={podeDesfazer}
+        <Historico cargas={historico} planos={planosFeitos} podeDesfazer={podeDesfazer}
           salvando={salvando} onRetornar={retornarParaExpedicao} />
       )}
     </>
@@ -614,7 +661,7 @@ function CapacidadeCaminhao({ valor, podeEditar }) {
 // lista solta — servia para "carregar o que está pronto agora", mas não para
 // programar: não dava para reservar lugar para o pedido que ainda está no silk,
 // nem para olhar a rota inteira antes do dia.
-function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onApagar,
+function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCriar, onExcluir,
                        gruposProntos, prontosSemPlano, planoDaData, onJuntar, clientes,
                        livresPorPedido,
                        filtros, setFiltros, baseFiltro, totalPlanos, baseSeletores, rotasFiltro }) {
@@ -747,7 +794,10 @@ function ListaPlanos({ planos, resumo, todos, cadastros, salvando, onAbrir, onCr
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button className="btn ok" style={{ flex: 1, justifyContent: 'center' }}
                     onClick={() => onAbrir(pl.id)}>Abrir</button>
-                  <button className="btn" onClick={() => onApagar(pl)} title="Apagar a previsão (não mexe nos pedidos)">🗑</button>
+                  <button className="btn" disabled={!!salvando} onClick={() => onExcluir(pl)}
+                    title="Excluir a previsão: os pedidos ficam livres e o número fica no histórico">
+                    {salvando === `del:${pl.id}` ? '…' : '🗑'}
+                  </button>
                 </div>
               </div>
             )
@@ -1257,7 +1307,7 @@ function LinhaPlano({ p, clientes, itensCad, livres, dentro, noutro, deFora, por
 
 
 // ---------- conferir e marcar a saída ----------
-function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir, onConferirTudo, onSaida, onCancelar, onTirar }) {
+function Conferencia({ carga, pedidos, clientes, cadastros, itensCad, salvando, onConferir, onConferirTudo, onSaida, onCancelar, onTirar }) {
   const { total, conferidos } = progressoConferencia(carga)
   const grupos = agrupaCargaPorPedido(carga, pedidos)
   const pronto = cargaConferida(carga)
@@ -1266,7 +1316,12 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
     <>
       <div className={`card ${pronto ? 'em_dia' : ''} no-print`} style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0 }}>Carga #{carga.numero}</h3>
+          <h3 style={{ margin: 0 }}>Rota de entrega {rotuloCarga(carga)}</h3>
+          {carga.planoNumero > 0 && (
+            <span className="chip" title="A previsão que gerou esta viagem">
+              📋 previsão #{carga.planoNumero}{carga.viagem > 1 ? ` · ${carga.viagem}ª viagem` : ''}
+            </span>
+          )}
           {carga.motorista && <span className="chip">🚚 {carga.motorista}</span>}
           <span className="chip">{(carga.rotas || []).join(' · ') || '—'}</span>
           <span className={`chip${pronto ? '' : ' rota-warn'}`} style={pronto ? { color: 'var(--ok)' } : null}>
@@ -1321,50 +1376,64 @@ function Conferencia({ carga, pedidos, clientes, itensCad, salvando, onConferir,
         ))}
       </div>
 
-      <RomaneioCarga carga={carga} grupos={grupos} clientes={clientes} />
+      <RomaneioCarga carga={carga} grupos={grupos} clientes={clientes} cadastros={cadastros} />
     </>
   )
 }
 
 // ---------- romaneio impresso da carga ----------
-function RomaneioCarga({ carga, grupos, clientes }) {
+// Um BLOCO POR ROTA. A previsão é do DIA, então quase toda viagem leva mais de
+// uma rota, e numa lista corrida o motorista tinha que separar de cabeça quais
+// paradas eram da mesma. A SEQUÊNCIA das cidades continua não existindo: quem
+// decide a ordem na estrada é ele (decisão do dono).
+function RomaneioCarga({ carga, grupos, clientes, cadastros }) {
+  const blocos = agrupaRomaneioPorRota(grupos, cadastros)
   return (
     <div className="print-only">
       <div className="pr-head">
-        <h1>JC Sacolas · Romaneio de Entrega · Carga #{carga.numero}</h1>
+        <h1>JC Sacolas · Romaneio de Entrega · Rota {rotuloCarga(carga)}</h1>
         <div className="meta">
-          {fmtData(carga.criadaEm)}<br />
+          {carga.dataEntrega
+            ? `entrega ${fmtData(carga.dataEntrega + 'T00:00:00')}`
+            : fmtData(carga.criadaEm)}<br />
           {carga.motorista ? `🚚 ${carga.motorista} · ` : ''}
           {pedidosDaCarga(carga).length} entrega(s) · {(carga.itens || []).length} volume(s)
+          {carga.planoNumero > 0 && <><br />previsão #{carga.planoNumero}</>}
         </div>
       </div>
-      <div className="pr-rota forte">
-        {(carga.rotas || []).join(' · ') || 'SEM ROTA'} · {(carga.itens || []).length} volume(s)
-      </div>
-      {grupos.map((g) => (
-        <div key={g.idVenda} className="pr-ped parada">
-          <div className="top">
-            <span className="box" />
-            <span className="nm">{g.p ? nomeCliente(g.p.cliente, clientes) : `#${g.idVenda}`}</span>
-            <span className="cid">— {g.p?.cidade || '—'}</span>
-            <span className="ent">{g.p ? fmtData(g.p.previsao) : ''}</span>
+      {blocos.map((b) => (
+        <div key={b.chave} className="pr-bloco">
+          <div className="pr-rota forte">
+            {b.rota}{b.vendedor ? ` · ${b.vendedor}` : ''}
+            {' — '}{b.paradas.length} parada(s) · {b.volumes} volume(s)
+            {b.cidades.length > 0 && <div className="pr-cidades">{b.cidades.join(' · ')}</div>}
           </div>
-          <table className="pr-itens"><tbody>
-            {g.itens.map((it) => (
-              <tr key={chaveCarga(it)}>
-                <td>
-                  <SeloLinha linha={it.linha} />{it.produto}
-                  {it.volumeN > 0 && <span className="ref"> · vol. {it.volumeN}</span>}
-                  <span className="ref"> #{g.idVenda}</span>
-                </td>
-                <td className="q">{fmtQtd(it.qtd)}</td>
-              </tr>
-            ))}
-          </tbody></table>
-          {/* produção parcial: o romaneio precisa dizer que sai só uma parte */}
-          {g.itens.some((it) => it.qtdItem > it.qtd) && (
-            <div className="pr-parcial">⚠ ENTREGA PARCIAL — parte do pedido segue em produção</div>
-          )}
+          {b.paradas.map((g) => (
+            <div key={g.idVenda} className="pr-ped parada">
+              <div className="top">
+                <span className="box" />
+                <span className="nm">{g.p ? nomeCliente(g.p.cliente, clientes) : `#${g.idVenda}`}</span>
+                <span className="cid">— {g.p?.cidade || '—'}</span>
+                <span className="ent">{g.p ? fmtData(g.p.previsao) : ''}</span>
+              </div>
+              <table className="pr-itens"><tbody>
+                {g.itens.map((it) => (
+                  <tr key={chaveCarga(it)}>
+                    <td>
+                      <SeloLinha linha={it.linha} />{it.produto}
+                      {it.volumeN > 0 && <span className="ref"> · vol. {it.volumeN}</span>}
+                      <span className="ref"> #{g.idVenda}</span>
+                    </td>
+                    <td className="q">{fmtQtd(it.qtd)}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+              {/* produção parcial: o romaneio precisa dizer que sai só uma parte */}
+              {g.itens.some((it) => it.qtdItem > it.qtd) && (
+                <div className="pr-parcial">⚠ ENTREGA PARCIAL — parte do pedido segue em produção</div>
+              )}
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -1372,17 +1441,19 @@ function RomaneioCarga({ carga, grupos, clientes }) {
 }
 
 // ---------- histórico das viagens ----------
-function Historico({ cargas, podeDesfazer, salvando, onRetornar }) {
-  if (!cargas.length) {
-    return <div className="empty"><div className="big">🚚</div>Nenhuma carga registrada ainda.</div>
+function Historico({ cargas, planos, podeDesfazer, salvando, onRetornar }) {
+  if (!cargas.length && !planos?.length) {
+    return <div className="empty"><div className="big">🚚</div>Nenhuma viagem nem previsão no histórico ainda.</div>
   }
   const rotulo = { saiu: '🚚 saiu', cancelada: '↩ retornada', concluida: '✓ concluída' }
   return (
+    <>
+    {cargas.length > 0 && (
     <div className="card em_dia" style={{ overflowX: 'auto' }}>
       <table className="rel-tab">
         <thead>
           <tr>
-            <th>Carga</th><th>Saída</th><th>Motorista</th><th>Rotas</th>
+            <th>Viagem</th><th>Saída</th><th>Motorista</th><th>Rotas</th>
             <th className="q">Pedidos</th><th className="q">Volumes</th><th>Status</th>
             {podeDesfazer && <th></th>}
           </tr>
@@ -1390,7 +1461,7 @@ function Historico({ cargas, podeDesfazer, salvando, onRetornar }) {
         <tbody>
           {cargas.map((c) => (
             <tr key={c.id}>
-              <td>#{c.numero}</td>
+              <td>{rotuloCarga(c)}</td>
               <td>{c.saiuEm ? fmtDataHora(c.saiuEm) : '—'}</td>
               <td>{c.motorista || '—'}</td>
               <td>{(c.rotas || []).join(' · ')}</td>
@@ -1418,5 +1489,46 @@ function Historico({ cargas, podeDesfazer, salvando, onRetornar }) {
         </tbody>
       </table>
     </div>
+    )}
+
+    {/* PREVISÕES — o rastro que não existia. Antes, excluir apagava o documento:
+        sumia quem planejou, quantos pedidos tinha e, pior, o NÚMERO voltava a ser
+        usado pela previsão seguinte. */}
+    {planos?.length > 0 && (
+      <div className="card em_dia" style={{ overflowX: 'auto', marginTop: 16 }}>
+        <div className="sug-titulo" style={{ margin: '0 2px 10px' }}>📋 Previsões encerradas</div>
+        <table className="rel-tab">
+          <thead>
+            <tr>
+              <th>Previsão</th><th>Entrega</th><th className="q">Pedidos</th>
+              <th className="q">Viagens</th><th>Situação</th><th>Fechada por</th>
+            </tr>
+          </thead>
+          <tbody>
+            {planos.map((pl) => {
+              const f = fechamentoDoPlano(pl)
+              return (
+                <tr key={pl.id}>
+                  <td>#{pl.numero}</td>
+                  <td>{pl.dataEntrega
+                    ? fmtData(pl.dataEntrega + 'T00:00:00')
+                    : (pl.rota ? `${pl.rota} · ${pl.vendedor || ''}` : '—')}</td>
+                  {/* o que sobrou nela quando fechou: excluída com pedido dentro
+                      é justamente o caso em que eles voltaram a ficar livres */}
+                  <td className="q">{(pl.pedidos || []).length}</td>
+                  <td className="q">{(pl.cargas || []).length}</td>
+                  <td>{nomeStatusPlano(pl)}</td>
+                  <td>
+                    {f.por || '—'}
+                    {f.em && <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{fmtDataHora(f.em)}</div>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+    </>
   )
 }

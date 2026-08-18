@@ -729,6 +729,42 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   saidaPrevista, pedidos:[idVenda], cargas:[cargaId], criadoEm/Por}` (+ `vendedor`
   e `rota`, hoje só nas previsões antigas).
 
+## CICLO DE VIDA DA PREVISÃO (18/08/2026)
+> `aberta → 🚚 virou viagem | ✓ encerrada | 🗑 excluída`. A previsão **nunca mais
+> é apagada** — excluir é mudar de status.
+
+- ⚠️ **É o soft delete que impede o NÚMERO de se repetir.** `proximoNumeroPlano`
+  é `maior + 1` sobre os documentos que existem: apagando a #15 (a mais alta), a
+  previsão seguinte nascia **#15 de novo** e o histórico ficava com duas viagens
+  diferentes com o mesmo número. Ninguém desconfia de um número que existe.
+- **Os pedidos voltam a ficar livres sozinhos:** a reserva (`pedidosEmPlanos`) só
+  olha previsão ABERTA. Excluir não mexe na etapa dos pedidos nem desfaz as
+  viagens que a previsão já gerou — aquilo aconteceu.
+- **Status:** `STATUS_PLANO` = aberto · concretizada · encerrada · excluida.
+  ⚠️ A chave legada `ENCERRADO: 'encerrado'` **fica no objeto de propósito**:
+  tirá-la não daria erro, `STATUS_PLANO.ENCERRADO` viraria `undefined`, e status
+  indefinido é lido como ABERTA — a previsão voltaria a prender os pedidos,
+  calada. `statusDoPlano` normaliza o valor antigo na leitura.
+- **Liberar tudo ENCERRA a previsão sozinha** (decisão do dono em 18/08/2026):
+  aberta com zero pedido ela só ocupava a tela e escondia as que têm serviço. O
+  "Encerrar" manual continua, para quando SOBRA pedido e mesmo assim se fecha.
+- **A viagem HERDA o número da previsão** (`rotuloCarga`): `#15`, e `#15-2` na
+  segunda liberação da mesma previsão (`viagem` = ordem da liberação). Carga
+  antiga, nascida antes de existir previsão, mantém o número próprio — papel já
+  impresso não se renumera.
+- **Histórico:** a aba ganhou a tabela **Previsões encerradas** (nº · data ·
+  pedidos que sobraram · viagens geradas · situação · quem fechou e quando),
+  via `planosFechados` e `fechamentoDoPlano`. Antes não existia rastro nenhum:
+  encerrar já sumia com o plano da tela para sempre.
+- **Romaneio = UM BLOCO POR ROTA** (`agrupaRomaneioPorRota`): com a previsão
+  sendo do DIA, quase toda viagem leva 2+ rotas, e na lista corrida o motorista
+  separava de cabeça. Não força folha nova (duas rotas pequenas gastariam duas
+  folhas). A **sequência das cidades continua não existindo** — quem decide na
+  estrada é ele.
+- Testes em `tests/plano.historico.test.mjs`.
+- 🐛 De brinde: `onTirar` nunca era passado para `<Conferencia>`, então o
+  "↩ tirar da carga" quebrava ao clicar (a armadilha das props não passadas).
+
 ## A PREVISÃO É DO DIA (17/08/2026) — antes era de um vendedor + uma rota
 > O caminhão não sai por vendedor: sai num DIA, e nesse dia leva o que está
 > prometido para aquela data — inclusive pedidos de vendedores diferentes que
