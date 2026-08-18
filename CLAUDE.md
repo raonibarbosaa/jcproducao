@@ -895,6 +895,41 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - **O número do pedido continua substring exata** — dígito não tem "parecido".
 - Testes em `tests/busca.test.mjs`.
 
+## CANCELAR ENTREGA — dois bugs somados (18/08/2026)
+> "Ao clicar em cancelar entrega ele não some da lista" (dono). Eram DOIS
+> problemas, e o primeiro explica também cards trocados na tela.
+
+- **O `id` do DOCUMENTO tem que ganhar do campo `id` gravado dentro dele.**
+  `doDoc(d)` (utils) é a leitura correta; `{ id: d.id, ...d.data() }` — a ordem
+  intuitiva — faz o contrário. A remessa em `entregues` nascia de um `...pedido`
+  que já carregava o `id` do doc de `pedidos`, então `p.id` virava `5001` num
+  documento chamado `5001-1`: o cancelamento apagava `entregues/5001`, que não
+  existe, e **o Firestore não reclama de apagar o que não há** — a quantidade
+  voltava para o pedido e o registro ficava na tela (cancelar duas vezes
+  devolveria a quantidade duas vezes). Duas remessas do mesmo pedido também
+  ficavam com a **mesma `key`** no React, que aí desenha card trocado.
+  A Conciliação já tirava o `id` (`// é do snapshot, não do documento`); a
+  **Rota** não — por isso só travava o que ela gravou. Corrigido nos dois lados:
+  a Rota parou de gravar e a leitura passou a mandar. Teste: `tests/doc-id.test.mjs`.
+- **A tela não tinha `try/catch`:** qualquer falha morria no console e o clique
+  parecia não valer. É o que escondeu o bug acima por semanas.
+- **Cancelar devolve para a EXPEDIÇÃO** (decisão do dono em 18/08/2026), não para
+  `expedido`: em `expedido` o pedido reaparece na Rota como pronto para sair de
+  novo, sem ninguém ter conferido o que voltou no caminhão. O botão "Retornar
+  para Expedição" (que só aparecia em pedido de gráfica) foi **fundido** no
+  "Cancelar entrega" — mesmo destino, era a mesma ação com dois nomes.
+- ⚠️ **Devolver item embalado é por VOLUME, não por quantidade.** `devolve()`
+  aplica `mapaEtapasMovendoVolumes` no que tem volume e `mapaEtapasComQtd` no
+  resto (pedido misto é normal). Só por quantidade era **no-op silencioso**:
+  `mapaEtapasComQtd` PRESERVA a entrada que tem volumes, então a entrega sumia do
+  histórico e o item continuava marcado como entregue.
+- **Pedido que já tinha sido apagado é recriado a partir das `etapas` guardadas
+  na própria remessa** (o retrato de ANTES da entrega) — é o que traz os volumes
+  de volta. Sem esse retrato (remessas antigas/da conciliação), cai na
+  reconstrução por quantidade.
+- ⚠️ **Nenhum item casando = ERRO, não gravação.** Gravar o mapa nesse caso
+  apagaria as etapas do pedido inteiro.
+
 ## ENTREGUES — o pedido procurado fica DESTACADO (18/08/2026)
 - O dono digitou `5111` na busca e ainda assim usou o **⌘F do navegador** para
   achar o card. A tela filtrava certo e não dizia QUAL era o pedido.

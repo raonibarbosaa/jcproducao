@@ -6,7 +6,7 @@ import {
   nomeCliente, MODO_NM, linhaDoItem, pegarIP,
   indexaCienciasPorPedido, cienciaDoPedido, docCiencia, fmtDataHora,
   unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
-  indexaProblemas, problemasDoPedido, nomeCampoErro, ehErroEntrega, docProblema,
+  indexaProblemas, problemasDoPedido, nomeCampoErro, ehErroEntrega, docProblema, doDoc,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import QuadroVendedor from '../components/QuadroVendedor.jsx'
@@ -47,7 +47,7 @@ export default function MeusPedidos({ pedidos, problemas }) {
   useEffect(() => {
     if (!vendedorNome) return
     const q = query(collection(db, 'entregues'), where('vendedor', '==', vendedorNome))
-    const unsub = onSnapshot(q, (snap) => setEntregues(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    const unsub = onSnapshot(q, (snap) => setEntregues(snap.docs.map(doDoc)),
       (e) => console.error('Erro ao ler entregas:', e))
     return unsub
   }, [vendedorNome])

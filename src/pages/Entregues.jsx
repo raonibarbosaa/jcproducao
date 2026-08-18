@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens, linhaDoItem,
-  mapaEtapasComQtd, arredondaQtd, casaBusca, normaliza } from '../utils.js'
+import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, keyDoItem, valorDosItens, linhaDoItem,
+  mapaEtapasComQtd, mapaEtapasMovendoVolumes, temVolumes, volumesNaEtapa,
+  arredondaQtd, casaBusca, normaliza, doDoc } from '../utils.js'
 import SeloLinha from '../components/SeloLinha.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -13,14 +14,22 @@ export default function Entregues() {
   const { perfil, nome } = useAuth()
   const podeCancelar = perfil === 'dono' || perfil === 'designer'
   const podeBaixa = perfil === 'dono' || perfil === 'financeiro'   // baixa financeira
-  const podeRetornar = perfil === 'dono' || perfil === 'designer' || perfil === 'financeiro' // não foi entregue
   const [busca, setBusca] = useState('')
   const [motoristaFiltro, setMotoristaFiltro] = useState('')
   const [soPendentes, setSoPendentes] = useState(false)
+  const [salvando, setSalvando] = useState('')
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'entregues'), (snap) => {
-      setItens(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      // ⚠️ `id` DEPOIS do spread, e não antes. O doc da remessa nasce de um
+      // `...pedido` que já carrega o campo `id` (o id do doc em `pedidos`), então
+      // com `{id: d.id, ...d.data()}` o campo gravado SOBRESCREVIA o id do
+      // documento: `p.id` virava "5001" quando o doc é "5001-1". Cancelar a
+      // entrega apagava `entregues/5001`, que não existe — o Firestore não
+      // reclama de apagar o que não há, então a quantidade voltava para o pedido
+      // e o card CONTINUAVA na tela. E duas remessas do mesmo pedido ficavam com
+      // a mesma `key` no React, que aí desenha card trocado.
+      setItens(snap.docs.map(doDoc))
     })
     return unsub
   }, [])
@@ -29,34 +38,65 @@ export default function Entregues() {
   const motoristasNasEntregas = [...new Set(itens.map((p) => p.motorista).filter(Boolean))].sort()
 
   // Devolve os itens desta REMESSA para o pedido e apaga o registro da entrega.
-  // Se o pedido ainda existe (entrega parcial: o resto ficou em produção), os itens
-  // voltam para dentro dele; se não existe mais, o pedido é recriado só com eles.
-  // `destino` é a etapa em que os itens voltam: 'expedido' (pronto, cai na Rota)
-  // ou 'expedicao' (volta pro quadro de produção).
-  // Desfaz a remessa devolvendo a QUANTIDADE entregue para `destino`.
-  // Com produção parcial o item nunca saiu de `itens` — o que mudou foi a
-  // distribuição —, então devolver é mover `entregue → destino` de volta.
+  // `destino` é a etapa em que eles voltam — hoje sempre 'expedicao': a
+  // mercadoria está de novo na mão da fábrica, e é de lá que ela entra numa
+  // carga nova.
+  //
+  // ⚠️ Item embalado anda por VOLUME, não por quantidade solta. Devolver tudo
+  // por quantidade era no-op silencioso nesses itens: `mapaEtapasComQtd`
+  // PRESERVA a entrada que tem volumes (para não apagar o que a balança pesou),
+  // então o registro da entrega sumia e o item continuava marcado como entregue.
+  function devolve(base, voltando, de, destino) {
+    const movs = []
+    voltando.forEach((it, n) => {
+      const k = it.key || keyDoItem({ itens: voltando }, n)
+      const idx = (base.itens || []).findIndex((x, i) => (x.key || keyDoItem(base, i)) === k)
+      if (idx >= 0) movs.push({ idx, de, para: destino, qtd: arredondaQtd(it.qtd) })
+    })
+    // Sem casar nenhum item, gravar o mapa apagaria as etapas do pedido inteiro.
+    // Melhor parar e dizer — que é o oposto do que esta tela fazia.
+    if (!movs.length) throw new Error('Nao achei os itens desta remessa dentro do pedido - nada foi alterado.')
+    // pedido misto (um item embalado, outro nao) e normal: aplica os dois, cada
+    // um congelando o que nao e dele
+    const comVol = movs
+      .filter((m) => temVolumes(base, m.idx))
+      .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(base, m.idx, de), para: destino }))
+      .filter((m) => m.ids.length)
+    const semVol = movs.filter((m) => !temVolumes(base, m.idx))
+    let etapas = base.etapas
+    if (comVol.length) etapas = mapaEtapasMovendoVolumes(base, comVol, nome)
+    if (semVol.length) etapas = mapaEtapasComQtd({ ...base, etapas }, semVol, nome)
+    return etapas
+  }
+
   async function devolverAoPedido(p, destino) {
     const { id, entregueEm, motorista, pago, pagoPor, pagoEm,
             remessa, parcial, itensPendentes, ...pedido } = p
     const voltando = pedido.itens || []            // itens DESTA remessa (qtd = o que saiu)
     const agora = new Date().toISOString()
-    const ref = doc(db, 'pedidos', p.idVenda)
+    const ref = doc(db, 'pedidos', String(p.idVenda))
     const atual = await getDoc(ref)
 
     if (atual.exists()) {
-      const dados = atual.data()
-      const movs = []
-      voltando.forEach((it, n) => {
-        const k = it.key || keyDoItem({ itens: voltando }, n)
-        const idx = (dados.itens || []).findIndex((x, i) => (x.key || keyDoItem(dados, i)) === k)
-        if (idx >= 0) movs.push({ idx, de: 'entregue', para: destino, qtd: arredondaQtd(it.qtd) })
+      // entrega parcial: o resto ficou em producao, entao o pedido existe e o
+      // que volta e a quantidade que esta como `entregue`
+      await updateDoc(ref, { etapas: devolve(atual.data(), voltando, 'entregue', destino) })
+    } else if (pedido.etapas) {
+      // O pedido saiu inteiro e foi apagado de `pedidos`. As `etapas` guardadas
+      // na remessa sao o retrato de ANTES da entrega - recriar a partir delas
+      // traz de volta os VOLUMES (o que a montagem pesou), que a reconstrucao
+      // por quantidade perderia calada.
+      const itens = voltando.map((it) => ({ ...it, qtd: arredondaQtd(it.qtdItem ?? it.qtd) }))
+      const antes = { ...pedido, itens }
+      await setDoc(ref, {
+        ...antes,
+        etapas: devolve(antes, voltando, 'expedido', destino),
+        remessas: remessa ? remessa - 1 : 0,
       })
-      await updateDoc(ref, { etapas: mapaEtapasComQtd(dados, movs, nome) })
     } else {
-      // O pedido já tinha saído inteiro. Recria com as quantidades ORIGINAIS do
-      // item; o que não veio nesta remessa foi entregue em outra, então continua
-      // como `entregue` — senão essas quantidades reapareceriam na produção.
+      // remessa antiga (ou da conciliacao), sem retrato das etapas: reconstroi
+      // por quantidade. O que nao veio nesta remessa foi entregue em outra e
+      // continua `entregue` - senao reapareceria na producao.
       const itens = voltando.map((it) => ({ ...it, qtd: arredondaQtd(it.qtdItem ?? it.qtd) }))
       const etapas = {}
       itens.forEach((it, i) => {
@@ -75,16 +115,28 @@ export default function Entregues() {
     await deleteDoc(doc(db, 'entregues', p.id))
   }
 
-  // desfaz a entrega: devolve o pedido ao fluxo (volta pra Rota) e sai do histórico
+  // CANCELAR A ENTREGA = a mercadoria esta de volta com a fabrica, entao ela
+  // volta para a EXPEDICAO (a coluna do quadro), nao para `expedido`. Em
+  // `expedido` ela apareceria na Rota como pronta para sair de novo, sem
+  // ninguem ter conferido o que voltou no caminhao.
+  //
+  // O botao "Retornar para Expedicao" (que so aparecia em pedido de grafica)
+  // foi fundido aqui: com o mesmo destino, eram a mesma acao com dois nomes.
   async function cancelarEntrega(p) {
-    if (!confirm(`Cancelar a entrega do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${p.remessa ? ` (remessa ${p.remessa})` : ''}? ${p.itens?.length || 0} item(ns) voltam para a lista de rota.`)) return
-    await devolverAoPedido(p, 'expedido')
-  }
-
-  // não foi entregue: devolve o pedido para a EXPEDIÇÃO (volta ao quadro de produção)
-  async function retornarExpedicao(p) {
-    if (!confirm(`O pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)} NÃO foi entregue? ${p.itens?.length || 0} item(ns) voltam para a Expedição no quadro de produção.`)) return
-    await devolverAoPedido(p, 'expedicao')
+    if (!confirm(
+      `Cancelar a entrega do pedido #${p.idVenda} - ${nomeCliente(p.cliente, clientes)}`
+      + `${p.remessa > 1 ? ` (remessa ${p.remessa})` : ''}?\n\n`
+      + `${p.itens?.length || 0} item(ns) voltam para a EXPEDICAO, no quadro de producao, `
+      + `e este registro sai do historico de entregas.`)) return
+    setSalvando(p.id)
+    try {
+      await devolverAoPedido(p, 'expedicao')
+    } catch (e) {
+      // ⚠️ Antes esta funcao nao tinha try/catch: qualquer falha morria no
+      // console e a tela ficava igual, como se o clique nao tivesse valido.
+      console.error('Erro ao cancelar entrega:', e)
+      alert('Nao foi possivel cancelar a entrega: ' + (e.code || e.message))
+    } finally { setSalvando('') }
   }
 
   // baixa financeira: confirma o pagamento e fecha a remessa
@@ -233,21 +285,18 @@ export default function Entregues() {
                   ? fmtMoeda(valorRemessa(p))
                   : <>{fmtMoeda(p.valorTotal)} {p.parcial && <small style={{ color: 'var(--text-faint)', fontWeight: 400 }}>total do pedido</small>}</>}
               </div>
-              {(podeCancelar || podeBaixa || podeRetornar) && (
+              {(podeCancelar || podeBaixa) && (
                 <div className="modo-btns" style={{ marginTop: 10 }}>
                   {podeBaixa && (
                     p.pago
                       ? <button className="modo-btn" onClick={() => desfazerBaixa(p)}>↩ desfazer baixa</button>
                       : <button className="modo-btn" onClick={() => darBaixa(p)} style={{ color: 'var(--ok)', borderColor: 'var(--ok)' }}>💰 Dar baixa (pago)</button>
                   )}
-                  {podeRetornar && ehGrafica(p) && (
-                    <button className="modo-btn" onClick={() => retornarExpedicao(p)} style={{ color: 'var(--warn)', borderColor: 'var(--warn)' }}>
-                      ↩ Retornar para Expedição
-                    </button>
-                  )}
                   {podeCancelar && (
-                    <button className="modo-btn" onClick={() => cancelarEntrega(p)} style={{ color: 'var(--danger)' }}>
-                      ↩ Cancelar entrega
+                    <button className="modo-btn" disabled={!!salvando}
+                      onClick={() => cancelarEntrega(p)} style={{ color: 'var(--danger)' }}
+                      title="A entrega nao aconteceu: os itens voltam para a Expedicao no quadro de producao">
+                      {salvando === p.id ? 'Devolvendo…' : '↩ Cancelar entrega (volta p/ Expedição)'}
                     </button>
                   )}
                 </div>

@@ -2164,6 +2164,17 @@ export function responderPergunta(textoBruto, pedidos, vendedores = [], clientes
   return `Você tem ${nPed} ${nPed === 1 ? 'pedido' : 'pedidos'} para entregar${escopo}.`
 }
 
+// ---------- LER UM DOC DO FIRESTORE ----------
+// ⚠️ O id do DOCUMENTO tem que ganhar do campo `id` que porventura esteja gravado
+// DENTRO dele. O `{ id: d.id, ...d.data() }` (a ordem intuitiva) faz o contrário,
+// e foi um bug caro: a remessa em `entregues` nasce de um `...pedido` que já
+// carrega o `id` do doc de `pedidos`, então `p.id` virava "5001" num documento
+// chamado "5001-1". Cancelar a entrega apagava `entregues/5001` — que não existe,
+// e o Firestore não reclama de apagar o que não há: a quantidade voltava para o
+// pedido e o card ficava na tela. Duas remessas do mesmo pedido também ficavam
+// com a mesma `key` no React, que então desenha card trocado.
+export const doDoc = (d) => ({ ...d.data(), id: d.id })
+
 // ---------- BUSCA POR NOME PARECIDO ----------
 // O filtro de cliente casava por SUBSTRING exata: quem digitava "LUX BEACHWEAR"
 // não achava "LUX BEACH WEAR", "MODAS ATUAL" não achava "ATUAL MODAS" e uma

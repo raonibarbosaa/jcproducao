@@ -77,7 +77,9 @@ export default function Rota({ pedidos }) {
     const depois = { ...base, etapas }
     const acabou = pedidoTodoEntregue(depois)
     const n = (p.remessas || 0) + 1
-    const { _todos, _idxs, _pendentes, ...pedido } = p
+    // `id` fica de fora: é o id do doc de `pedidos`, e gravado aqui dentro ele
+    // sobrescrevia o id do doc da remessa na leitura (ver `doDoc` em utils)
+    const { _todos, _idxs, _pendentes, id, ...pedido } = p
     await setDoc(doc(db, 'entregues', `${p.idVenda}-${n}`), {
       ...pedido,
       idVenda: p.idVenda,          // campo (o id do doc agora tem sufixo de remessa)
