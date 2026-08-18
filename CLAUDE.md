@@ -895,6 +895,22 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - **O número do pedido continua substring exata** — dígito não tem "parecido".
 - Testes em `tests/busca.test.mjs`.
 
+## ENTREGUES — o pedido procurado fica DESTACADO (18/08/2026)
+- O dono digitou `5111` na busca e ainda assim usou o **⌘F do navegador** para
+  achar o card. A tela filtrava certo e não dizia QUAL era o pedido.
+- **Só destaca quando o termo é NÚMERO e casa com o id inteiro** (`.card-alvo`,
+  moldura âmbar + `scrollIntoView`): buscar "MODAS" não tem alvo, tem resultado,
+  e pintar todos os cards de destaque não destaca nada.
+- O trecho digitado sai marcado no nome e no número (`<mark class="hl">`,
+  componente `Realce`) — o recorte é feito no texto ORIGINAL pelas posições do
+  texto normalizado, senão o cliente apareceria sem acento na tela.
+- ⚠️ **Alvo escondido por OUTRO filtro** (só pendentes, motorista) não pode dizer
+  "não existe": a linha avisa que o pedido está entregue, mas fora dos filtros —
+  senão a pessoa vai procurá-lo em outra tela enquanto ele está atrás de um
+  checkbox.
+- A busca da tela passou a usar `casaBusca` (nome parecido); o **número continua
+  por pedaço exato**, então 5111 nunca traz 5118.
+
 ## Navegação / usabilidade
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
   da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava

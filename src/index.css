@@ -859,6 +859,19 @@ input, select { font-family: var(--font); }
   background: rgba(229,72,77,.08); border: 1px solid var(--danger); color: var(--text);
 }
 
+/* O PEDIDO PROCURADO — digitou o número na busca, este é o card. Precisa ser
+   visível de canto de olho num paredão de cards: moldura inteira em âmbar (os
+   outros usam só a borda esquerda) e o número marcado como o ⌘F do navegador. */
+.card.card-alvo {
+  border-color: var(--accent); border-left-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(240,180,41,.18);
+}
+mark.hl {
+  background: rgba(240,180,41,.30); color: inherit;
+  border-radius: 3px; padding: 0 2px;
+}
+@media print { mark.hl { background: none; text-decoration: underline; } }
+
 /* aviso de "já foi entregue" no card do quadro da fábrica: o pedido que o
    vendedor diz que já saiu e continua na fila. Vermelho e por extenso — este é
    o aviso que evita produzir (e carregar) duas vezes. */

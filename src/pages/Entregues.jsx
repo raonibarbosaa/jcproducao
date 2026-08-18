@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, ehGrafica, keyDoItem, valorDosItens, linhaDoItem,
-  mapaEtapasComQtd, arredondaQtd } from '../utils.js'
+  mapaEtapasComQtd, arredondaQtd, casaBusca, normaliza } from '../utils.js'
 import SeloLinha from '../components/SeloLinha.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -100,13 +100,14 @@ export default function Entregues() {
     })
   }
 
+  // número do pedido é dígito: casa por pedaço exato (5111 não pode trazer 5118).
+  // O resto vai pela busca tolerante das outras telas (nome parecido, apelido).
+  const termo = busca.trim()
   const lista = itens
     .filter((p) =>
-      !busca ||
-      nomeCliente(p.cliente, clientes).toLowerCase().includes(busca.toLowerCase()) ||
-      p.cliente?.toLowerCase().includes(busca.toLowerCase()) ||
-      String(p.idVenda).includes(busca) ||
-      p.cidade?.toLowerCase().includes(busca.toLowerCase())
+      !termo ||
+      String(p.idVenda).includes(termo) ||
+      casaBusca(termo, p.cliente, nomeCliente(p.cliente, clientes), p.cidade)
     )
     .filter((p) => {
       if (!motoristaFiltro) return true
@@ -127,6 +128,30 @@ export default function Entregues() {
     if (!jaContado.has(p.idVenda)) { jaContado.add(p.idVenda); totalMes += Number(p.valorTotal) || 0 }
   }
   const nPendentes = itens.filter((p) => !p.pago).length
+
+  // O PEDIDO PROCURADO — digitou o número, é ELE que a pessoa quer ver. A lista
+  // já vem filtrada, mas com entrega parcial o mesmo número vira várias remessas
+  // e o cliente certo pode estar no meio de homônimos: sem marcar qual é, sobra
+  // procurar com o ⌘F do navegador (foi o que o dono acabou fazendo).
+  // Só marca quando o termo é NÚMERO e casa com o id inteiro — "MODAS" não tem
+  // alvo, tem resultado, e pintar tudo de destaque não destaca nada.
+  const ehNumero = /^\d+$/.test(termo)
+  const alvo = ehNumero ? String(Number(termo)) : ''
+  const ehAlvo = (p) => !!alvo && String(p.idVenda) === alvo
+  const nAlvo = lista.filter(ehAlvo).length
+  const idxAlvo = lista.findIndex(ehAlvo)
+  // ⚠️ o alvo pode existir e estar escondido por OUTRO filtro (só pendentes,
+  // motorista). Dizer "não existe" nesse caso manda a pessoa procurar o pedido
+  // em outra tela quando ele está bem ali, atrás de um checkbox.
+  const alvoEscondido = !!alvo && nAlvo === 0 && itens.some(ehAlvo)
+
+  // leva o primeiro à vista: o card pode estar abaixo da dobra com 248 entregas
+  const refAlvo = useRef(null)
+  useEffect(() => {
+    if (!alvo || !refAlvo.current) return
+    refAlvo.current.scrollIntoView({ block: 'center',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [alvo, nAlvo])
 
   return (
     <>
@@ -153,15 +178,35 @@ export default function Entregues() {
           value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
 
+      {termo && (
+        <div className="qv-resumo">
+          {lista.length} de {itens.length} entrega(s) · busca "{termo}"
+          {ehNumero && (nAlvo
+            ? ` · pedido #${alvo} destacado abaixo${nAlvo > 1 ? ` (${nAlvo} remessas)` : ''}`
+            : alvoEscondido
+              ? ` · o pedido #${alvo} está entregue, mas escondido pelos outros filtros`
+              : ` · nenhuma entrega com o número ${termo}`)}
+        </div>
+      )}
+
       {lista.length === 0 ? (
-        <div className="empty"><div className="big">📦</div>Nenhuma entrega registrada ainda.</div>
+        <div className="empty"><div className="big">{termo ? '🔎' : '📦'}</div>
+          {termo
+            ? <>Nenhuma entrega encontrada para "{termo}".
+                <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-faint)' }}>
+                  Se o pedido ainda não foi entregue, ele está na Produção ou na Rota — não aqui.
+                </div></>
+            : 'Nenhuma entrega registrada ainda.'}
+        </div>
       ) : (
         <div className="cards">
-          {lista.map((p) => (
-            <div key={p.id} className="card em_dia">
+          {lista.map((p, n) => (
+            <div key={p.id} className={`card em_dia${ehAlvo(p) ? ' card-alvo' : ''}`}
+              ref={n === idxAlvo ? refAlvo : null}>
               <div className="card-top">
-                <div className="cliente">{nomeCliente(p.cliente, clientes)}</div>
-                <div className="idv">#{p.idVenda}{p.remessa > 1 ? ` · remessa ${p.remessa}` : ''}</div>
+                <div className="cliente"><Realce texto={nomeCliente(p.cliente, clientes)} termo={termo} /></div>
+                <div className="idv">#<Realce texto={String(p.idVenda)} termo={termo} />
+                  {p.remessa > 1 ? ` · remessa ${p.remessa}` : ''}</div>
               </div>
               <div className="meta-row">
                 {p.origem && <span className={`chip origem-${p.origem.toLowerCase()}`}>{ORIGEM_NM[p.origem] || p.origem}</span>}
@@ -213,4 +258,19 @@ export default function Entregues() {
       )}
     </>
   )
+}
+
+// Pinta no texto o pedaço que foi digitado — o mesmo serviço que o ⌘F do
+// navegador prestava. Comparação sem acento e sem caixa (é o que `normaliza`
+// faz), mas o recorte é feito no texto ORIGINAL, pelas posições: devolver o
+// texto normalizado deixaria o cliente sem acento na tela.
+function Realce({ texto, termo }) {
+  const t = String(texto ?? '')
+  const q = normaliza(termo || '')
+  if (!q) return t
+  const i = normaliza(t).indexOf(q)
+  // a busca é tolerante (nome parecido); quando o pedaço não está literalmente
+  // no texto não há o que sublinhar, e o card já está na lista por outro motivo
+  if (i < 0) return t
+  return <>{t.slice(0, i)}<mark className="hl">{t.slice(i, i + q.length)}</mark>{t.slice(i + q.length)}</>
 }
