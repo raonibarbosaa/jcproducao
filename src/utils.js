@@ -280,6 +280,12 @@ export function abasDoUsuario(perfil, setores, base) {
   if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('carga')) {
     abas.splice(abas.indexOf('producao') + 1 || abas.length, 0, 'carga')
   }
+  // quem trabalha na expedição também precisa VER os erros reportados — o
+  // "já foi entregue" do vendedor é justamente o aviso de não carregar de novo
+  // o que já saiu. Só leitura: fechar o aviso continua sendo do escritório.
+  if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('erros')) {
+    abas.push('erros')
+  }
   return abas
 }
 

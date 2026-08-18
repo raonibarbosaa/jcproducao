@@ -859,6 +859,15 @@ input, select { font-family: var(--font); }
   background: rgba(229,72,77,.08); border: 1px solid var(--danger); color: var(--text);
 }
 
+/* aviso de "já foi entregue" no card do quadro da fábrica: o pedido que o
+   vendedor diz que já saiu e continua na fila. Vermelho e por extenso — este é
+   o aviso que evita produzir (e carregar) duas vezes. */
+.qcard-entregue {
+  margin: 6px 0 2px; padding: 6px 8px; border-radius: 6px; font-size: 11px;
+  background: rgba(229,72,77,.12); border: 1px solid var(--danger); color: var(--text);
+}
+.qcard-entregue div { color: var(--text-faint); margin-top: 2px; }
+
 /* rodapé de erro no card do quadro do vendedor: o que já foi avisado + o botão
    de avisar. Fica embaixo dos itens porque o aviso é do PEDIDO, não do item. */
 .qv-card-erro {

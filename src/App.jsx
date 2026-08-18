@@ -29,7 +29,9 @@ const ACESSO = {
   dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
-  expedicao:  ['producao', 'carga', 'rota'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
+  // a expedição VÊ os erros (o "já foi entregue" do vendedor é o aviso de não
+  // carregar de novo o que já saiu), mas não resolve: a tela abre só de leitura
+  expedicao:  ['producao', 'carga', 'rota', 'erros'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
 }
 
 export default function App() {

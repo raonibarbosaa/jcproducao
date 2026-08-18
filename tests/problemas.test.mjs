@@ -6,7 +6,7 @@
 // ninguém sabe se quer dizer "não sei" ou "não se aplica".
 import {
   docProblema, ehErroEntrega, nomeCampoErro, CAMPOS_ERRO,
-  indexaProblemas, problemasDoPedido, problemaDoItem,
+  indexaProblemas, problemasDoPedido, problemaDoItem, abasDoUsuario,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
 
@@ -50,5 +50,20 @@ t('O QUE ISSO PROTEGE: aviso do pedido inteiro acende em TODOS os itens',
   [problemaDoItem(mapa, '5276', k(p, 0)).length, problemaDoItem(mapa, '5276', k(p, 1)).length],
   [1, 1])
 t('pedido sem aviso não inventa nada', problemasDoPedido(mapa, '9999'), [])
+
+// ---------- quem VÊ o aviso ----------
+// A permissão é de dois eixos: quem trabalha na expedição pode ser perfil
+// `expedicao` OU operador com o setor liberado. Liberar só um dos dois deixa a
+// metade da expedição sem enxergar o "já foi entregue" — e o aviso existe para
+// não carregarem de novo o que já saiu.
+ok('operador da expedição enxerga a aba Erros',
+  abasDoUsuario('operador', ['expedicao'], ['producao']).includes('erros'))
+ok('e o da entrega também',
+  abasDoUsuario('operador', ['entrega'], ['producao']).includes('erros'))
+ok('operador só do silk NÃO ganha a aba',
+  !abasDoUsuario('operador', ['PRODUCAO'], ['producao']).includes('erros'))
+ok('quem já tem a aba não ganha duplicada',
+  abasDoUsuario('operador', ['expedicao'], ['producao', 'erros'])
+    .filter((a) => a === 'erros').length === 1)
 
 export default resultado('problemas')

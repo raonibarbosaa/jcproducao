@@ -25,7 +25,12 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 // verdade é o vendedor arrumar no Posseidon.
 export default function Erros({ pedidos, problemas }) {
   const { clientes, vendedores: cadastros } = useCadastros()
-  const { nome } = useAuth()
+  const { nome, perfil } = useAuth()
+  // ⚠️ A expedição (e o operador dela) VÊ a lista, mas as rules de `problemas` e
+  // de `pedidos.correcoes` só aceitam escrita de staff. Mostrar os botões para
+  // quem não pode gravar daria "permission-denied" na cara de quem clicasse —
+  // botão que existe e não funciona é pior do que botão que não existe.
+  const podeResolver = ['dono', 'designer', 'financeiro'].includes(perfil)
   const [filtros, setFiltros] = useState({})
   const [soAbertos, setSoAbertos] = useState(true)
   const [salvando, setSalvando] = useState('')
@@ -97,7 +102,10 @@ export default function Erros({ pedidos, problemas }) {
     <>
       <div className="toolbar">
         <h1 className="page-title">Erros
-          <small>{abertos ? `${abertos} em aberto` : 'nenhum erro em aberto'}</small>
+          <small>
+            {abertos ? `${abertos} em aberto` : 'nenhum erro em aberto'}
+            {!podeResolver && ' · só leitura'}
+          </small>
         </h1>
         <div className="spacer" />
         <button className={`btn${soAbertos ? ' primary' : ''}`} onClick={() => setSoAbertos((v) => !v)}>
@@ -152,7 +160,15 @@ export default function Erros({ pedidos, problemas }) {
               reportado por {x.porNome || x.porEmail || '—'} ({x.perfil}) · {fmtDataHora(x.quando)}
             </div>
 
-            {aberto ? (
+            {aberto && !podeResolver ? (
+              <div className="erro-acoes no-print">
+                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                  {ehErroEntrega(x.campo)
+                    ? '📦 Avisado como já entregue — confirme antes de produzir ou carregar de novo. A baixa é dada pelo escritório.'
+                    : '⚠ Em aberto — quem fecha é o escritório (dono, designer ou financeiro).'}
+                </div>
+              </div>
+            ) : aberto ? (
               <div className="erro-acoes no-print">
                 {ehErroEntrega(x.campo) && (
                   <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
@@ -184,7 +200,9 @@ export default function Erros({ pedidos, problemas }) {
             ) : (
               <div className="erro-resolvido">
                 ✓ {x.resolucao} — {x.resolvidoPor || '—'} · {fmtDataHora(x.resolvidoEm)}
-                <button className="mini-btn" style={{ marginLeft: 8 }} onClick={() => reabrir(x)}>reabrir</button>
+                {podeResolver && (
+                  <button className="mini-btn" style={{ marginLeft: 8 }} onClick={() => reabrir(x)}>reabrir</button>
+                )}
               </div>
             )}
           </div>

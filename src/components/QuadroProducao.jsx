@@ -11,7 +11,7 @@ import {
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
-  docProblema, problemaDoItem, temCorrecao,
+  docProblema, problemaDoItem, problemasDoPedido, ehErroEntrega, temCorrecao,
   tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -385,6 +385,21 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                         </span>
                       )}
                     </div>
+                    {/* O vendedor avisou que este pedido JÁ FOI ENTREGUE e ele
+                        continua aqui. É o aviso mais caro do quadro: sem ele a
+                        fábrica refaz — e a expedição recarrega — o que já saiu.
+                        Fica na cara do card, não escondido num tooltip. */}
+                    {problemasDoPedido(problemas, p.idVenda)
+                      .filter((x) => ehErroEntrega(x.campo))
+                      .slice(0, 1)
+                      .map((x, n) => (
+                        <div key={n} className="qcard-entregue" title={x.obs || ''}>
+                          📦 <b>Avisado como JÁ ENTREGUE</b>
+                          {x.entregueEm ? ` em ${fmtData(`${x.entregueEm}T00:00:00`)}` : ''}
+                          {x.entreguePor ? ` · ${x.entreguePor}` : ''}
+                          <div>por {x.porNome || x.porEmail || '—'} — confirme antes de produzir.</div>
+                        </div>
+                      ))}
                     <ul className="itens">
                       {idxs.map((i) => {
                         const it = p.itens[i]

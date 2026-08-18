@@ -587,7 +587,18 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   avisos agora é dele mesmo, e cada linha diz de quem é e quando.
 - **Rules: nada a publicar.** `problemas` já é `create: if temPerfil()` e o
   vendedor já lê os dos próprios pedidos (`resource.data.vendedor`).
-- Testes em `tests/problemas.test.mjs`.
+- **Quem VÊ o aviso (18/08/2026):** dono e designer já tinham a aba; a
+  **EXPEDIÇÃO** entrou pelos DOIS eixos — perfil `expedicao` no `ACESSO` e
+  operador com setor `expedicao|entrega` em `abasDoUsuario` (mesmo par da aba
+  Entregas). Liberar só um deixaria metade da expedição sem enxergar.
+- ⚠️ **Para a expedição a tela é SÓ LEITURA**, e não por educação: as rules de
+  `problemas` (update) e de `pedidos.correcoes` só aceitam staff, então os botões
+  de resolver dariam `permission-denied` na cara de quem clicasse. `podeResolver`
+  esconde as ações e o título diz "só leitura".
+- **No QUADRO da fábrica o "já foi entregue" vira faixa vermelha no card**
+  (`.qcard-entregue`), não tooltip: é o aviso que evita produzir de novo — e
+  recarregar — o que já saiu. Os outros tipos de erro seguem no ⚠ do item.
+- Testes em `tests/problemas.test.mjs` (inclui a aba da expedição pelos 2 eixos).
 
 ## Conciliação com a planilha de entregas (MIGRAÇÃO — pode sair depois de usada)
 Aba **Conciliação** (`Conciliacao.jsx`), só do dono. O sistema entrou no ar com pedidos
