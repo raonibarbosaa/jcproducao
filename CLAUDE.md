@@ -705,6 +705,17 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
 - **A expedição NÃO dá a entrega.** Ela monta, confere e marca a saída; a entrega (que
   abre a cobrança) segue com dono/designer/financeiro na tela de Rota. Rules: `cargas`
   create/update para staff + expedição, delete só staff.
+- **MAIS DE UMA CARGA EM MONTAGEM (18/08/2026):** a trava de "uma por vez" caiu.
+  Ela existia para a segunda não nascer escondida atrás da conferência da
+  primeira — e isso se resolve **mostrando as duas**, não proibindo a segunda:
+  a aba ganhou uma régua de cargas (`#15 · 3/8 · JUNINHO`) e o rodapé do
+  planejamento avisa `📦 N carga(s) já em montagem` em vez de desabilitar o
+  botão. Uma carga esquecida em montagem **parava o planejamento inteiro**, e o
+  motivo só aparecia no tooltip de um botão desabilitado (o dono perguntou "por
+  que não está liberando a entrega?" em 18/08/2026).
+  ⚠️ **O que impede volume repetido nunca foi a trava** — é o comprometimento,
+  contado sobre TODAS as cargas vivas (`CARGA_SEGURA_ITENS`), não sobre "a
+  aberta". Por isso soltar a trava é seguro.
 - ⚠️ **Pedido não pode entrar em duas cargas.** A tela desconta, item a item, o que já
   está comprometido com carga `montando` ou `saiu`. E o caso inverso é real: expediram 40
   (foram numa carga), depois expediram os outros 60 — esses 60 PODEM ir numa carga nova,

@@ -401,8 +401,17 @@ export const chaveCarga = (it) => `${it.idVenda}|${it.itemKey}|${it.volumeId || 
 export const proximoNumeroCarga = (cargas) =>
   (cargas || []).reduce((m, c) => Math.max(m, Number(c.numero) || 0), 0) + 1
 
-export const cargaAberta = (cargas) =>
-  (cargas || []).find((c) => c.status === STATUS_CARGA.MONTANDO) || null
+// TODAS as cargas em montagem. Podem ser várias: a trava de "uma por vez" existia
+// para a segunda não nascer escondida atrás da conferência da primeira — o que se
+// resolve mostrando as duas, não proibindo a segunda. Duas viagens no mesmo dia é
+// rotina, e travar a liberação parava o planejamento inteiro.
+// ⚠️ Volume não entra em duas cargas mesmo assim: o comprometimento é contado
+// sobre TODAS as cargas vivas (`CARGA_SEGURA_ITENS`), não sobre "a aberta".
+export const cargasEmMontagem = (cargas) =>
+  (cargas || []).filter((c) => c.status === STATUS_CARGA.MONTANDO)
+    .sort((a, b) => (a.criadaEm || '').localeCompare(b.criadaEm || ''))
+
+export const cargaAberta = (cargas) => cargasEmMontagem(cargas)[0] || null
 
 export function progressoConferencia(carga) {
   const itens = carga?.itens || []

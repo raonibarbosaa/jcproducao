@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  STATUS_CARGA, itensParaCarga, proximoNumeroCarga, cargaAberta, progressoConferencia,
+  STATUS_CARGA, itensParaCarga, proximoNumeroCarga, cargasEmMontagem, progressoConferencia,
   cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
   CARGA_SEGURA_ITENS,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
@@ -41,6 +41,7 @@ export default function Carga({ pedidos }) {
   const [planos, setPlanos] = useState([])
   const [planoId, setPlanoId] = useState('')    // plano sendo montado na tela
   const [aba, setAba] = useState('planos')      // 'planos' | 'montar' | 'historico'
+  const [cargaId, setCargaId] = useState('')    // qual das cargas em montagem está na tela
   const [filtros, setFiltros] = useState({})           // dentro do plano
   const [filtrosLista, setFiltrosLista] = useState({}) // lista de previsões
   const motoristasAtivos = motoristas.filter((m) => m.ativo !== false)
@@ -59,7 +60,9 @@ export default function Carga({ pedidos }) {
     return unsub
   }, [])
 
-  const aberta = cargaAberta(cargas)
+  // pode haver MAIS DE UMA carga em montagem — duas viagens no mesmo dia é rotina
+  const emMontagem = cargasEmMontagem(cargas)
+  const aberta = emMontagem.find((c) => c.id === cargaId) || emMontagem[0] || null
 
   // Quanto de cada item já está comprometido com alguma carga viva (montando ou
   // que já saiu). Sem isso o mesmo pedido entraria em duas cargas — e o caso não
@@ -487,7 +490,7 @@ export default function Carga({ pedidos }) {
         }),
       })
       if (!restam.length) setPlanoId('')
-      setMotorista(''); setAba('montar')
+      setMotorista(''); setCargaId(ref.id); setAba('montar')
     } catch (e) {
       alert('Não foi possível liberar: ' + (e.code || e.message))
     } finally { setSalvando('') }
@@ -605,8 +608,8 @@ export default function Carga({ pedidos }) {
       <div className="toolbar no-print">
         <h1 className="page-title">Controle de entregas
           <small>
-            {aberta
-              ? `carga #${aberta.numero} em montagem`
+            {emMontagem.length
+              ? `${emMontagem.length} carga(s) em montagem`
               : `${abertos.length} plano(s) · ${disponiveis.length} pedido(s) prontos`}
           </small>
         </h1>
@@ -618,7 +621,7 @@ export default function Carga({ pedidos }) {
             📋 Planejamento {abertos.length > 0 && `(${abertos.length})`}
           </button>
           <button className={`btn${aba === 'montar' ? ' primary' : ''}`} onClick={() => setAba('montar')}>
-            📦 Carga atual
+            📦 Carga atual {emMontagem.length > 1 && `(${emMontagem.length})`}
           </button>
           <button className={`btn${aba === 'historico' ? ' primary' : ''}`} onClick={() => setAba('historico')}>
             ☰ Histórico {historico.length + planosFeitos.length > 0
@@ -637,9 +640,10 @@ export default function Carga({ pedidos }) {
               totais={totaisPlano} peso={pesoPlano} capacidadeKg={capacidadeKg}
               prontos={prontosDoPlano.length} volumes={volumesDoPlano.length}
               parciais={parciaisDoPlano.length} nSegurados={nSegurados}
+              cargasAbertas={emMontagem.length}
               segurados={segurados} onSegurar={alternaItemFora}
               motorista={motorista} setMotorista={setMotorista} motoristas={motoristasAtivos}
-              salvando={salvando} temCargaAberta={!!aberta}
+              salvando={salvando}
               filtros={filtros} setFiltros={setFiltros}
               onVoltar={() => setPlanoId('')} onAlterna={alternaNoPlano}
               onAlternaTodos={alternaTodos} onLiberar={liberarPlano}
@@ -654,6 +658,23 @@ export default function Carga({ pedidos }) {
             filtros={filtrosLista} setFiltros={setFiltrosLista}
             baseFiltro={prontosLivres.map((d) => d.p)} totalPlanos={abertos.length}
             baseSeletores={todos} rotasFiltro={rotasFiltro} />)}
+
+      {/* mais de uma carga aberta: a pessoa escolhe qual está conferindo. Sem esta
+          régua a segunda ficaria invisível — que era o motivo da trava antiga. */}
+      {aba === 'montar' && emMontagem.length > 1 && (
+        <div className="vista-toggle no-print" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+          {emMontagem.map((c) => {
+            const pr = progressoConferencia(c)
+            return (
+              <button key={c.id} className={`btn${c.id === aberta?.id ? ' primary' : ''}`}
+                onClick={() => setCargaId(c.id)}>
+                🚚 {rotuloCarga(c)} · {pr.conferidos}/{pr.total}
+                {c.motorista ? ` · ${c.motorista}` : ''}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {aba === 'montar' && (aberta
         ? <Conferencia carga={aberta} pedidos={pedidos} clientes={clientes} itensCad={itensCad}
@@ -955,8 +976,8 @@ const SITUACOES = [
 function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
                        livresPorPedido, noutroPlano, itensCad, clientes,
                        cadastros, totais, peso, capacidadeKg, prontos, volumes,
-                       parciais, nSegurados, segurados, onSegurar,
-                       motorista, setMotorista, motoristas, salvando, temCargaAberta,
+                       parciais, nSegurados, segurados, onSegurar, cargasAbertas,
+                       motorista, setMotorista, motoristas, salvando,
                        filtros, setFiltros, onVoltar, onAlterna, onAlternaTodos,
                        onLiberar, onEncerrar, onDevolver }) {
   const [outras, setOutras] = useState(false)
@@ -1179,6 +1200,12 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
             {/* sai meio pedido? quem libera tem que ver isso ANTES de clicar */}
             {parciais > 0 && <b className="peso-estoura">{' · '}{parciais} sai(em) PARCIAL</b>}
             {nSegurados > 0 && <span>{' · '}⏸ {nSegurados} volume(s) segurado(s)</span>}
+            {/* a trava de "uma carga por vez" virou AVISO: liberar de novo é
+                legítimo (duas viagens no mesmo dia), mas quem libera precisa
+                saber que já tem carga esperando conferência */}
+            {cargasAbertas > 0 && (
+              <span className="rota-warn">{' · '}📦 {cargasAbertas} carga(s) já em montagem</span>
+            )}
             <b className={estoura ? 'peso-estoura' : ''}>
               {' · '}{fmtPeso(peso)}{capacidadeKg > 0 && ` de ${fmtQtd(capacidadeKg)} kg`}
             </b>
@@ -1189,8 +1216,7 @@ function PlanoAberto({ plano, dentro, fora, todos, deOutrasRotas,
               {motoristas.map((m, i) => <option key={i} value={m.nome}>{m.nome}</option>)}
             </select>
           )}
-          <button className="btn ok" disabled={!!salvando || !prontos || temCargaAberta}
-            title={temCargaAberta ? 'Termine a carga que está em montagem antes de liberar outra' : ''}
+          <button className="btn ok" disabled={!!salvando || !prontos}
             onClick={onLiberar}>
             {salvando === 'liberar' ? 'Liberando…' : `🚚 Liberar ${prontos} p/ entrega`}
           </button>

@@ -5,6 +5,7 @@
 import {
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, planosFechados, pedidosEmPlanos,
   statusDoPlano, nomeStatusPlano, fechamentoDoPlano, rotuloCarga, agrupaRomaneioPorRota,
+  cargasEmMontagem, cargaAberta, CARGA_SEGURA_ITENS,
 } from '../src/utils.js'
 import { t, ok, resultado } from './_harness.mjs'
 
@@ -70,5 +71,25 @@ ok('com as cidades do bloco à vista',
   blocos[0].cidades.includes('LAGARTO') && blocos[0].cidades.includes('ITABAIANINHA'))
 ok('rota homônima de outro vendedor fica separada',
   blocos.filter((b) => b.rota === 'ROTA 01').length === 2)
+
+// ---------- mais de uma carga em montagem ----------
+// A trava de "uma por vez" existia para a segunda não nascer escondida atrás da
+// conferência da primeira — o que se resolve MOSTRANDO as duas. Travar a
+// liberação parava o planejamento inteiro por causa de uma carga esquecida.
+const cargas = [
+  { id: 'c1', numero: 5, status: 'montando', criadaEm: '2026-08-18T10:00:00Z' },
+  { id: 'c2', numero: 6, status: 'montando', criadaEm: '2026-08-18T14:00:00Z' },
+  { id: 'c3', numero: 4, status: 'saiu', criadaEm: '2026-08-17T09:00:00Z' },
+  { id: 'c4', numero: 3, status: 'cancelada', criadaEm: '2026-08-16T09:00:00Z' },
+]
+t('as duas em montagem aparecem', cargasEmMontagem(cargas).length, 2)
+t('na ordem em que nasceram', cargasEmMontagem(cargas)[0].id, 'c1')
+t('e a primeira continua sendo a "atual" por padrão', cargaAberta(cargas).id, 'c1')
+// ⚠️ o que impede volume repetido não é a trava, é o comprometimento: carga que
+// está montando E carga que já saiu seguram item; cancelada e concluída soltam
+ok('montando prende item', CARGA_SEGURA_ITENS('montando'))
+ok('que já saiu também', CARGA_SEGURA_ITENS('saiu'))
+ok('cancelada solta', !CARGA_SEGURA_ITENS('cancelada'))
+ok('concluída solta', !CARGA_SEGURA_ITENS('concluida'))
 
 export default resultado('plano-historico')
