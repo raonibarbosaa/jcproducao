@@ -600,6 +600,61 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   recarregar — o que já saiu. Os outros tipos de erro seguem no ⚠ do item.
 - Testes em `tests/problemas.test.mjs` (inclui a aba da expedição pelos 2 eixos).
 
+## LOCALIZAR — "onde está este pedido?" (24/08/2026)
+> Nasceu de um caso concreto: o #5257 aparecia na Rota como pronto e **não
+> aparecia em Entregas**, e não havia como descobrir o porquê. Estava preso numa
+> **carga que já tinha saído** e nunca foi concluída.
+
+- **Aba nova `localizar`** (`src/pages/Localizar.jsx`), um campo de busca e a
+  resposta. Para **dono, designer, financeiro e EXPEDIÇÃO** — e para o operador
+  com setor `expedicao|entrega` (os dois eixos, como a aba Entregas).
+- **O pedido mora em QUATRO coleções e nenhuma tela mostrava as quatro juntas:**
+  `pedidos` (na fábrica) · `planos` (a previsão) · `cargas` (a viagem) ·
+  `entregues` (as remessas). ⚠️ Pedido **totalmente entregue SOME de `pedidos`** —
+  quem procurava por ele não achava nada e ficava sem saber se foi entregue ou se
+  alguém apagou. `buscaGlobal` junta as duas coleções por `idVenda`.
+- **A resposta é FÍSICA, não técnica:** não "etapa = montagem", e sim
+  **"Montagem Papel"**, "2 volumes prontos no galpão", "saiu na viagem #12 dia
+  20/08 com JUNINHO". Quem lê está de pé no galpão procurando uma caixa.
+  `ondeProcurar(etapa, material)` é quem traduz — a montagem é UM campo no banco
+  e TRÊS postos no chão de fábrica.
+- **`paradasDoItem` devolve PLURAL de propósito.** Com produção parcial o item
+  fica em duas etapas ao mesmo tempo (50 na montagem, 50 no silk); `etapaDoItem`
+  devolveria só a mais atrasada e mandaria a expedição procurar no posto errado
+  a metade que já está pronta.
+- ⚠️ **A ordem de leitura NÃO sai de `posNoFluxo`** — ele devolve 0 para as três
+  linhas, para `triagem` E para `entregue`, então o que já saiu apareceria antes
+  da montagem. É `ordemEtapaLocal`.
+- **A conta de "o que está livre para carregar" virou fonte única:**
+  `comprometimentoDeCargas` + `volumesLivresDoPedido` (utils), usadas pela busca
+  E pelo `Carga.jsx` (que tinha a conta inline). Duas contas de "o que está
+  livre" divergem em silêncio, e aí uma tela manda carregar o que a outra já deu
+  por carregado.
+- **Número casa por PEDAÇO EXATO** (dígito não tem "parecido": 5111 nunca traz
+  5118); nome e produto usam `casaBusca`. Corte da lista é **declarado**
+  (`cortado`) — lista truncada em silêncio passa por lista completa.
+- **Desbloquear é do ESCRITÓRIO** (decisão do dono em 24/08/2026): a expedição VÊ
+  o motivo e sabe a quem pedir; dono/designer é que desfazem. Mesma linha do
+  "retornar carga", que sempre foi só do dono.
+- **PEDIDO QUE VOLTOU NO CAMINHÃO — `cargas/{id}.retornados`:**
+  `[{idVenda, em, por}]`. ⚠️ **A carga NÃO é reescrita.** Tirar o item da lista
+  esconderia que a viagem chegou a levá-lo, e o romaneio impresso diz o
+  contrário. É o retorno que solta o volume: `comprometimentoDeCargas` pula os
+  itens de pedido retornado. Aparece no histórico da aba Entregas
+  ("↩ 1 voltou sem entregar (#5257)") — retorno invisível seria pior que o bug.
+  Carga em **montagem** é outra história: ali nada aconteceu ainda, e o pedido
+  sai da lista mesmo (o "↩ tirar da carga" que já existia).
+- **Rules: `entregues` ganhou `read: trabalhaComCarga()`** (decisão do dono em
+  24/08/2026) — sem isso a busca responderia "não encontrado" justamente para o
+  pedido já entregue, que é o caso que evita carregar de novo o que já saiu.
+  ⚠️ A regra libera o **documento inteiro**: o valor e a baixa financeira ficam
+  legíveis via API mesmo escondidos na tela (a mesma concessão já aceita para o
+  vendedor). ✅ **Publicadas em 24/08/2026** (antes do build, como manda a regra
+  da casa: rules velhas derrubariam a tela nova em produção).
+- `Realce` (o destaque do trecho digitado) saiu de dentro de `Entregues.jsx` e
+  virou `src/components/Realce.jsx` — as duas telas usam.
+- Testes em `tests/localizar.test.mjs`.
+
 ## Conciliação com a planilha de entregas (MIGRAÇÃO — pode sair depois de usada)
 Aba **Conciliação** (`Conciliacao.jsx`), só do dono. O sistema entrou no ar com pedidos
 que já tinham sido entregues na vida real e ficaram parados na produção; a planilha

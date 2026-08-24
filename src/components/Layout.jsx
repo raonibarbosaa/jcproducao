@@ -10,6 +10,7 @@ const LABEL = {
   carga: 'Entregas',
   rota: 'Rota',
   entregues: 'Entregues',
+  localizar: 'Localizar',
   relatorios: 'Relatórios',
   cadastros: 'Cadastros',
   usuarios: 'Usuários',

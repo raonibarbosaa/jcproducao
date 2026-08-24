@@ -286,6 +286,12 @@ export function abasDoUsuario(perfil, setores, base) {
   if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('erros')) {
     abas.push('erros')
   }
+  // e a busca de "onde está o pedido": é literalmente o trabalho dela — achar a
+  // mercadoria no galpão. Sem isto o operador de expedição enxergaria a aba
+  // Entregas e não teria como descobrir por que um pedido não está lá.
+  if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('localizar')) {
+    abas.push('localizar')
+  }
   return abas
 }
 
@@ -2401,6 +2407,258 @@ export function resumoFiltros(f) {
     partes.push(`entrega ${a} a ${b}`)
   }
   return partes.join(' · ')
+}
+
+// ---------- LOCALIZAR — "onde está este pedido?" ----------
+// A pergunta chega da expedição e do balcão ("o cliente ligou perguntando do
+// 5257"), e até aqui NENHUMA tela respondia inteira: o quadro só mostra o que
+// está na fábrica, a Rota só o que está pronto, Entregas só o que já entrou numa
+// viagem, e o pedido totalmente entregue SOME de `pedidos` — existe apenas como
+// remessa em `entregues`. Quem procurava abria quatro abas e, no fim, o ⌘F.
+//
+// Aqui o pedido é procurado nas quatro camadas de uma vez e a resposta é FÍSICA:
+// em que posto da fábrica está cada item, quantos volumes estão no galpão, se
+// está preso numa viagem e se já saiu do portão.
+
+// A ordem em que a pessoa lê o fluxo. ⚠️ NÃO dá para reusar `posNoFluxo` aqui:
+// ele devolve 0 para as três linhas E para 'triagem' E para 'entregue' (responde
+// outra pergunta), então o que já foi entregue apareceria antes da montagem.
+const ORDEM_LOCAL = ['triagem', ...MODO_ORDER, 'montagem', 'expedicao', 'expedido', 'entregue']
+export const ordemEtapaLocal = (et) => {
+  const i = ORDEM_LOCAL.indexOf(et)
+  return i < 0 ? ORDEM_LOCAL.length : i
+}
+
+// Nome do lugar onde a pessoa vai PROCURAR — não o nome técnico da etapa.
+// 'expedido' não é "expedido": para quem carrega, é a prateleira do galpão.
+export const nomeEtapaLocal = (et) => (
+  et === 'triagem' ? 'Triagem (sem linha definida)'
+  : MODO_ORDER.includes(et) ? MODO_NM[et]
+  : et === 'montagem' ? 'Montagem'
+  : et === 'expedicao' ? 'Expedição'
+  : et === 'expedido' ? 'Pronto no galpão'
+  : et === 'entregue' ? 'Entregue'
+  : et || '—')
+
+// A montagem é UM campo no banco e TRÊS postos no chão de fábrica: quem monta
+// papel não é quem monta plástico. Para localizar, o posto é o que importa.
+export function ondeProcurar(etapa, material) {
+  if (etapa !== 'montagem') return nomeEtapaLocal(etapa)
+  const m = MONTAGENS.find((x) => x.id === montagemDoMaterial(material))
+  return m ? m.nome : 'Montagem (material não cadastrado)'
+}
+
+// Onde este item está — PLURAL de propósito. Com produção parcial o mesmo item
+// fica em duas etapas ao mesmo tempo (50 na montagem, 50 no silk), e devolver
+// uma etapa só ("a mais atrasada", que é o que `etapaDoItem` faz) mandaria a
+// expedição procurar no posto errado a metade que já está pronta.
+export function paradasDoItem(p, idx, agora) {
+  const d = distribuicaoDoItem(p, idx)
+  const linha = linhaDoItem(p, idx) || 'triagem'
+  const t = agora ? Date.parse(agora) : Date.now()
+  const out = []
+  for (const et of [linha, 'montagem', 'expedicao', 'expedido', 'entregue']) {
+    const qtd = arredondaQtd(d[et])
+    if (!(qtd > 0)) continue
+    const ent = entradaNaEtapa(p, idx, et)
+    const ini = Date.parse(ent.iso)
+    out.push({
+      etapa: et,
+      qtd,
+      volumes: ETAPAS_VOLUME.includes(et)
+        ? volumesDoItem(p, idx).filter((v) => v.et === et) : [],
+      desde: ent.iso,
+      // ⚠️ `exato: false` = carimbo aproximado (item parado antes de o relógio
+      // existir). Hora cravada que não é cravada vira discussão no chão de
+      // fábrica — a tela marca com `~`.
+      exato: ent.exato,
+      parado: Number.isFinite(ini) ? Math.max(0, t - ini) : null,
+    })
+  }
+  return out
+}
+
+// O pedido inteiro, item a item, já com material e paradas.
+export function localizacaoDoPedido(p, itensCad, agora) {
+  return (p?.itens || []).map((it, i) => ({
+    idx: i,
+    key: keyDoItem(p, i),
+    produto: it.produto || '',
+    linha: linhaDoItem(p, i),
+    material: materialDoItem(it, itensCad),
+    qtdItem: arredondaQtd(it.qtd),
+    paradas: paradasDoItem(p, i, agora),
+  }))
+}
+
+// Resumo por POSTO — é a linha que responde a pergunta de uma vez ("2 itens na
+// Montagem Papel, 1 pronto no galpão"). A montagem quebra por material porque
+// são postos diferentes; o resto é a etapa mesmo.
+export function resumoLocalizacao(itensLoc) {
+  const map = new Map()
+  for (const it of itensLoc || []) {
+    for (const pa of it.paradas) {
+      const chave = pa.etapa === 'montagem'
+        ? `montagem|${montagemDoMaterial(it.material)}` : pa.etapa
+      const g = map.get(chave) || {
+        chave, etapa: pa.etapa, material: it.material,
+        onde: ondeProcurar(pa.etapa, it.material),
+        itens: 0, volumes: 0, produtos: [],
+      }
+      g.itens++
+      g.volumes += pa.volumes.length
+      g.produtos.push({ produto: it.produto, qtd: pa.qtd, linha: it.linha })
+      map.set(chave, g)
+    }
+  }
+  return [...map.values()].sort((a, b) => ordemEtapaLocal(a.etapa) - ordemEtapaLocal(b.etapa)
+    || String(a.onde).localeCompare(String(b.onde)))
+}
+
+// ---------- o que uma CARGA ainda prende ----------
+// Pedido que voltou no caminhão sem ser entregue. A carga NÃO é reescrita: o que
+// saiu, saiu — apagar o item da viagem esconderia que ela chegou a levá-lo.
+// Fica registrado o retorno, e é ele que solta o volume para a viagem seguinte.
+export const pedidosRetornados = (c) =>
+  new Set((c?.retornados || []).map((r) => String(r?.idVenda ?? r)))
+
+// Quanto de cada volume/quantidade já está comprometido com alguma carga VIVA.
+// Fonte única: a tela de Entregas e a busca precisam concordar sobre o que está
+// livre, senão a busca manda carregar o que a outra tela já deu por carregado.
+export function comprometimentoDeCargas(cargas) {
+  const volumes = new Set()
+  const qtd = new Map()
+  for (const c of cargas || []) {
+    if (!CARGA_SEGURA_ITENS(c.status)) continue
+    const voltou = pedidosRetornados(c)
+    for (const it of c.itens || []) {
+      if (voltou.has(String(it.idVenda))) continue    // voltou: não prende mais
+      const k = chaveCarga(it)
+      if (it.volumeId) { volumes.add(k); continue }
+      qtd.set(k, arredondaQtd((qtd.get(k) || 0) + (Number(it.qtd) || 0)))
+    }
+  }
+  return { volumes, qtd }
+}
+
+// O que deste pedido ainda pode entrar numa carga (volume já comprometido sai).
+// Legado sem volume conta por QUANTIDADE: expediram 40 e foram numa carga,
+// depois expediram os outros 60 — esses 60 podem ir na viagem seguinte.
+export function volumesLivresDoPedido(p, comp) {
+  const { volumes, qtd } = comp || { volumes: new Set(), qtd: new Map() }
+  return itensParaCarga(p)
+    .filter((it) => !it.volumeId || !volumes.has(chaveCarga(it)))
+    .map((it) => ({
+      ...it,
+      qtd: it.volumeId ? it.qtd : arredondaQtd(it.qtd - (qtd.get(chaveCarga(it)) || 0)),
+    }))
+    .filter((it) => it.qtd > 0)
+}
+
+// cargas que contêm este pedido. `vivas` = só as que ainda prendem item
+export function cargasDoPedido(cargas, idVenda, vivas) {
+  const id = String(idVenda)
+  return (cargas || [])
+    .filter((c) => (c.pedidos || []).some((x) => String(x) === id))
+    .filter((c) => !vivas || (CARGA_SEGURA_ITENS(c.status) && !pedidosRetornados(c).has(id)))
+    .sort((a, b) => String(b.criadaEm || '').localeCompare(String(a.criadaEm || '')))
+}
+
+// previsões que contêm este pedido (por padrão, só as ABERTAS — são as únicas
+// que o reservam; encerrada e excluída soltam o pedido sozinhas)
+export function planosDoPedido(planos, idVenda, todos) {
+  const id = String(idVenda)
+  return (planos || [])
+    .filter((pl) => todos || planoEstaAberto(pl))
+    .filter((pl) => (pl.pedidos || []).some((x) => String(x) === id))
+}
+
+// A situação LOGÍSTICA do pedido: por que ele aparece (ou não) na aba Entregas.
+// É a resposta que faltava — "está pronto e livre", "está na previsão #15",
+// "está preso na carga #12, que saiu dia 20 e nunca foi concluída".
+export function situacaoEntrega(p, { cargas, planos, remessas, comp } = {}) {
+  const id = String(p?.idVenda ?? '')
+  const c = comp || comprometimentoDeCargas(cargas)
+  const livres = p ? volumesLivresDoPedido(p, c) : []
+  const cargasVivas = cargasDoPedido(cargas, id, true)
+  const abertos = planosDoPedido(planos, id)
+  const emProducao = (p?.itens || []).some((_, i) => qtdEmProducao(p, i) > 0)
+  return {
+    livres,
+    volumesLivres: livres.length,
+    cargasVivas,
+    planosAbertos: abertos,
+    cargasAntigas: cargasDoPedido(cargas, id, false).filter((x) => !cargasVivas.includes(x)),
+    saiu: saiuParaEntrega(p),
+    remessas: remessas || [],
+    emProducao,
+    // aparece na LISTA de Entregas (fora de previsão) exatamente quando tem
+    // volume livre e nenhuma previsão aberta o reservou — a mesma conta da tela
+    naListaDeEntregas: livres.length > 0 && abertos.length === 0,
+  }
+}
+
+// ---------- a busca em si ----------
+// Junta as duas coleções por número: `pedidos` (o que está vivo) e `entregues`
+// (as remessas). Pedido totalmente entregue não existe mais em `pedidos`, e sem
+// isto a busca responderia "não achei" para o pedido que acabou de sair.
+export function indexaEntreguesPorPedido(entregues) {
+  const m = new Map()
+  for (const e of entregues || []) {
+    const k = String(e?.idVenda ?? e?.id ?? '')
+    if (!k) continue
+    if (!m.has(k)) m.set(k, [])
+    m.get(k).push(e)
+  }
+  for (const arr of m.values()) {
+    arr.sort((a, b) => (Number(a.remessa) || 1) - (Number(b.remessa) || 1))
+  }
+  return m
+}
+
+// Busca global. Número casa por PEDAÇO EXATO (dígito não tem "parecido": 5111
+// nunca pode trazer 5118); texto usa `casaBusca`, que tolera ordem trocada e
+// erro de digitação — quem procura não sabe como a razão social foi cadastrada.
+// O corte é VISÍVEL (`cortado`): lista truncada em silêncio passa a impressão de
+// que aquilo é tudo que existe.
+export function buscaGlobal(termo, { pedidos, entregues, clientes, limite = 30 } = {}) {
+  const q = String(termo || '').trim()
+  if (q.length < 2) return { termo: q, curto: q.length > 0, total: 0, itens: [], cortado: 0 }
+  const soNumero = /^\d+$/.test(q)
+  const porEntrega = indexaEntreguesPorPedido(entregues)
+  const mapa = new Map()
+  for (const p of pedidos || []) {
+    mapa.set(String(p.idVenda), { idVenda: String(p.idVenda), p, remessas: [] })
+  }
+  for (const [id, rem] of porEntrega) {
+    const r = mapa.get(id) || { idVenda: id, p: null, remessas: [] }
+    r.remessas = rem
+    mapa.set(id, r)
+  }
+  const casa = (r) => {
+    if (soNumero) return normaliza(r.idVenda).includes(normaliza(q))
+    const ref = r.p || r.remessas[r.remessas.length - 1] || {}
+    const produtos = [
+      ...(ref.itens || []).map((i) => i.produto),
+      ...r.remessas.flatMap((x) => (x.itens || []).map((i) => i.produto)),
+    ]
+    return casaBusca(q, ref.cliente, nomeCliente(ref.cliente, clientes),
+      ref.cidade, ref.vendedor, ref.rota, ...produtos)
+  }
+  const achados = [...mapa.values()].filter(casa).sort((a, b) => {
+    // o número digitado inteiro vem primeiro: é quase sempre o que se procura
+    const ea = a.idVenda === q ? 0 : 1
+    const eb = b.idVenda === q ? 0 : 1
+    if (ea !== eb) return ea - eb
+    // depois o que ainda está na fábrica — é sobre ele que dá para agir
+    if (!!a.p !== !!b.p) return a.p ? -1 : 1
+    return String(b.idVenda).localeCompare(String(a.idVenda), undefined, { numeric: true })
+  })
+  return {
+    termo: q, curto: false, total: achados.length,
+    itens: achados.slice(0, limite),
+    cortado: Math.max(0, achados.length - limite),
+  }
 }
 
 // ---------- detecção flexível de colunas da planilha ----------

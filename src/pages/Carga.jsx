@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  STATUS_CARGA, itensParaCarga, proximoNumeroCarga, cargasEmMontagem, progressoConferencia,
-  cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, arredondaQtd, chaveCarga,
-  CARGA_SEGURA_ITENS,
+  STATUS_CARGA, proximoNumeroCarga, cargasEmMontagem, progressoConferencia,
+  cargaConferida, agrupaCargaPorPedido, pedidosDaCarga, chaveCarga,
   nomeCliente, fmtData, fmtDataHora, fmtQtd, situacaoPrazo, ordemRota,
   materialDoItem, MATERIAIS, totaisPorMaterial, fmtTotais, filtraPedidos, previsaoDe,
   vendedoresDe, resumoFiltros,
   temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, mapaEtapasComQtd, qtdNaEtapa,
+  comprometimentoDeCargas, volumesLivresDoPedido,
   pesoDaLista, fmtPeso, temTrabalhoNaProducao,
   STATUS_PLANO, proximoNumeroPlano, planosAbertos, planosFechados, pedidosEmPlanos, situacaoNoPlano,
   nomeStatusPlano, fechamentoDoPlano, rotuloCarga, agrupaRomaneioPorRota,
@@ -67,34 +67,19 @@ export default function Carga({ pedidos }) {
   // Quanto de cada item já está comprometido com alguma carga viva (montando ou
   // que já saiu). Sem isso o mesmo pedido entraria em duas cargas — e o caso não
   // é raro: expediram 40, foram numa carga, depois expediram os outros 60.
-  // Volume já numa carga viva não pode entrar noutra. Para o legado sem volume,
-  // a conta continua sendo por quantidade (expediram 40, depois mais 60).
-  const volsUsados = new Set()
-  const comprometido = new Map()
-  for (const c of cargas) {
-    if (!CARGA_SEGURA_ITENS(c.status)) continue
-    for (const it of c.itens || []) {
-      if (it.volumeId) { volsUsados.add(chaveCarga(it)); continue }
-      const k = chaveCarga(it)
-      comprometido.set(k, arredondaQtd((comprometido.get(k) || 0) + (Number(it.qtd) || 0)))
-    }
-  }
+  // ⚠️ A conta mora em `comprometimentoDeCargas`/`volumesLivresDoPedido` (utils)
+  // porque a tela de busca (Localizar) precisa dar a MESMA resposta: duas contas
+  // de "o que está livre" divergem em silêncio, e aí uma tela manda carregar o
+  // que a outra já deu por carregado.
+  const comp = comprometimentoDeCargas(cargas)
 
   // pedidos com quantidade expedida ainda LIVRE para entrar numa carga.
   // A lista NÃO é filtrada: é a base da seleção. Assim dá para filtrar a ROTA 01,
   // marcar, trocar para a ROTA 02 e marcar mais — sem perder o que já foi escolhido.
   const disponiveis = []
   for (const p of (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))) {
-    const livres = itensParaCarga(p)
-      .filter((it) => !it.volumeId || !volsUsados.has(chaveCarga(it)))
-      .map((it) => ({
-        ...it,
-        material: materialDoItem({ produto: it.produto }, itensCad),
-        qtd: it.volumeId
-          ? it.qtd
-          : arredondaQtd(it.qtd - (comprometido.get(chaveCarga(it)) || 0)),
-      }))
-      .filter((it) => it.qtd > 0)
+    const livres = volumesLivresDoPedido(p, comp)
+      .map((it) => ({ ...it, material: materialDoItem({ produto: it.produto }, itensCad) }))
     if (livres.length) disponiveis.push({ p, itens: livres })
   }
 
@@ -1595,6 +1580,15 @@ function Historico({ cargas, planos, podeDesfazer, salvando, onRetornar }) {
                 {c.canceladaEm && (
                   <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
                     por {c.canceladaPor || '—'} · {fmtDataHora(c.canceladaEm)}
+                  </div>
+                )}
+                {/* pedido que a viagem levou e voltou sem entregar. Fica À VISTA:
+                    a linha diz "5 pedidos" e nem todos chegaram ao cliente —
+                    sem isto o retorno seria um estado invisível no histórico. */}
+                {(c.retornados || []).length > 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--warn)' }}>
+                    ↩ {c.retornados.length} voltou/voltaram sem entregar
+                    {' '}(#{c.retornados.map((r) => r.idVenda).join(', #')})
                   </div>
                 )}
               </td>

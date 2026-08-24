@@ -19,19 +19,23 @@ import Auditoria from './pages/Auditoria.jsx'
 import Conciliacao from './pages/Conciliacao.jsx'
 import Erros from './pages/Erros.jsx'
 import Carga from './pages/Carga.jsx'
+import Localizar from './pages/Localizar.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'carga', 'rota', 'entregues', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
-  financeiro: ['producao', 'rota', 'entregues', 'cadastros'],   // cadastros: só a aba Itens (preço)
-  dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
+  designer:   ['triagem', 'producao', 'carga', 'rota', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
+  financeiro: ['producao', 'rota', 'entregues', 'localizar', 'cadastros'],   // cadastros: só a aba Itens (preço)
+  dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
   // a expedição VÊ os erros (o "já foi entregue" do vendedor é o aviso de não
-  // carregar de novo o que já saiu), mas não resolve: a tela abre só de leitura
-  expedicao:  ['producao', 'carga', 'rota', 'erros'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
+  // carregar de novo o que já saiu), mas não resolve: a tela abre só de leitura.
+  // 'localizar' é a busca de "onde está o pedido": quem precisa achar a
+  // mercadoria no galpão é ela, então entra pelos DOIS eixos (perfil aqui, setor
+  // em `abasDoUsuario`). Também só leitura — desbloquear é do escritório.
+  expedicao:  ['producao', 'carga', 'rota', 'localizar', 'erros'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
 }
 
 export default function App() {
@@ -120,6 +124,7 @@ export default function App() {
         {abas.includes('carga') && <Route path="/carga" element={<Carga pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}
+        {abas.includes('localizar') && <Route path="/localizar" element={<Localizar pedidos={pedidos} problemas={problemas} />} />}
         {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios pedidos={pedidos} />} />}
         {abas.includes('cadastros') && <Route path="/cadastros" element={<Cadastros />} />}
         {abas.includes('usuarios') && <Route path="/usuarios" element={<Usuarios />} />}

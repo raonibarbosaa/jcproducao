@@ -75,8 +75,17 @@ service cloud.firestore {
     // senão o Firestore recusa. Atenção: regra libera o DOCUMENTO inteiro, não
     // campo a campo — o vendedor enxerga também a baixa financeira (pago/pagoEm)
     // dos pedidos dele. Foi decisão deliberada.
+    //
+    // ⚠️ A EXPEDIÇÃO passa a LER (24/08/2026, decisão do dono): a aba Localizar
+    // precisa responder "esse pedido já foi entregue em 12/08 com o JUNINHO", e
+    // o pedido totalmente entregue SOME de `pedidos` — sem esta leitura a busca
+    // responderia "não encontrado" justamente no caso que evita carregar de novo
+    // o que já saiu. Mesma concessão já aceita para o vendedor: a regra libera o
+    // DOCUMENTO inteiro, então o valor e a baixa financeira ficam legíveis via
+    // API mesmo escondidos na tela. ESCRITA continua só de staff — a entrega é
+    // que abre a cobrança.
     match /entregues/{id} {
-      allow read: if ehStaff()
+      allow read: if trabalhaComCarga()
         || (ehVendedor() && resource.data.vendedor == meuVendedor());
       allow write: if ehStaff();
     }
