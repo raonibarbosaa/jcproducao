@@ -1047,10 +1047,14 @@ function mapaEtapasComQtdCru(p, movimentos, quem) {
     const m = porIdx.get(i)
     const movido = m ? moveQtdItem(p, i, m.de, m.para, m.qtd) : null
     const ant = doMapaDoItem(p?.etapas, p, i)
-    // Item já embalado anda por VOLUME, não por quantidade solta: preservar a
-    // entrada como está evita que um avanço por quantidade apague os volumes —
-    // seria perda silenciosa do que a montagem pesou.
-    if (Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[k] = ant; return }
+    // ⚠️ Item já embalado: preservar a entrada como está evita que um avanço por
+    // quantidade apague os volumes — seria perda silenciosa do que a balança
+    // pesou. Mas só quando NÃO há movimento para ele: com movimento, quem
+    // devolveu a entrada foi `moveQtdItem`, e ela já vem com os volumes dentro.
+    // Preservar mesmo assim era um NO-OP SILENCIOSO — o operador clicava,
+    // ninguém reclamava e o item não saía do lugar (o resto do lote do #5458
+    // ficou preso na gráfica assim).
+    if (!movido && Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[k] = ant; return }
     if (movido) {
       mapa[k] = { ...movido, por: quem || '', em: agora }
     } else {
@@ -1260,6 +1264,28 @@ export function moveQtdItem(p, idx, de, para, qtd) {
   const d = distribuicaoDoItem(p, idx)
   const mover = Math.min(arredondaQtd(qtd), arredondaQtd(d[de]))   // nunca move mais do que tem
   if (mover <= 0) return null
+
+  // ITEM JÁ EMBALADO com saldo ainda na linha. Depois da montagem quem anda
+  // pelas etapas de VOLUME é o volume — mas o que ainda NÃO foi embalado
+  // continua sendo quantidade solta, e com produção parcial isso é rotina: 227
+  // fecharam em volume e saíram, 273 seguem na gráfica. Esse resto precisa
+  // poder avançar para a montagem, e a entrada tem que voltar COM os volumes:
+  // devolver só `{montagem, expedicao, …}` apagaria o que a balança pesou.
+  if (temVolumes(p, idx)) {
+    // etapa de volume não se move por quantidade — ali quem manda é o volume
+    if (ETAPAS_VOLUME.includes(de) || ETAPAS_VOLUME.includes(para)) return null
+    const bruto = doMapaDoItem(p?.etapas, p, idx)
+    const naMontagem = Math.max(0, arredondaQtd(d.montagem))
+    return {
+      montagem: Math.max(0, arredondaQtd(naMontagem
+        + (para === 'montagem' ? mover : 0) - (de === 'montagem' ? mover : 0))),
+      produzido: Math.max(0, arredondaQtd(bruto?.produzido)),
+      volumes: volumesDoItem(p, idx).map((v) => ({ id: v.id, qtd: v.qtd, et: v.et })),
+      ...(bruto?.desde ? { desde: bruto.desde } : {}),
+      ...(bruto?.tempos ? { tempos: bruto.tempos } : {}),
+    }
+  }
+
   const novo = {}
   for (const e of ETAPAS_QTD) novo[e] = arredondaQtd(d[e])
   if (ETAPAS_QTD.includes(de)) novo[de] = arredondaQtd(novo[de] - mover)

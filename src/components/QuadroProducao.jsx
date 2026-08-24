@@ -11,6 +11,7 @@ import {
   qtdNoPainel, mapaEtapasComQtd, arredondaQtd, fmtQtd, unidadeDoMaterial,
   fechaMontagemEmVolumes, keyDoItem, distribuicaoDoItem, doMapaDoItem,
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
+  ETAPAS_VOLUME,
   docProblema, problemaDoItem, problemasDoPedido, ehErroEntrega, temCorrecao,
   tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos,
 } from '../utils.js'
@@ -125,47 +126,84 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // movimentos = [{ idx, de, para, qtd }] — com produção parcial o item pode
   // avançar só em parte, e o resto continua onde estava.
   async function mover(p, movimentos, marca) {
-    // Item já embalado não anda por quantidade: move-se o VOLUME inteiro, que é
-    // a unidade física dali em diante.
-    const comVolume = (movimentos || []).filter((m) => m.para && temVolumes(p, m.idx))
-    // voltar para a montagem desfaz a embalagem — só dá enquanto nada saiu
-    const travados = comVolume.filter((m) => m.para === 'montagem' && !podeDesembalar(p, m.idx))
-    if (travados.length) {
+    const movs = (movimentos || []).filter((m) => m.para)
+
+    // O que é assunto de VOLUME: só quando a ORIGEM ou o DESTINO é etapa de
+    // volume (expedição em diante). Item embalado com saldo ainda na LINHA
+    // continua andando por quantidade até a montagem — com produção parcial
+    // isso é rotina (227 fecharam em volume e saíram, 273 seguem na gráfica).
+    // ⚠️ Antes bastava o item TER volume: "Concluir → Montagem" de um item
+    // meio embalado caía no caminho do desembalar e a tela recusava com
+    // "não dá para voltar", travando um avanço perfeitamente normal (#5458).
+    const ehVolume = (m) => temVolumes(p, m.idx)
+      && (ETAPAS_VOLUME.includes(m.de) || ETAPAS_VOLUME.includes(m.para))
+    const volMovs = movs.filter(ehVolume)
+    const qtdMovs = movs.filter((m) => !ehVolume(m) && m.qtd > 0)
+
+    // voltar da expedição para a montagem desfaz a embalagem — só dá enquanto
+    // nada saiu (com volume já expedido não há resposta certa para "quanto volta")
+    if (volMovs.some((m) => m.para === 'montagem' && !podeDesembalar(p, m.idx))) {
       alert('Não dá para voltar: já há volume expedido ou entregue neste item.\n' +
         'Cancele a entrega ou traga o volume de volta para a expedição antes.')
       return
     }
-    const porVolume = comVolume
+
+    const porVolume = volMovs
       .map((m) => ({
         idx: m.idx, para: m.para,
         ids: m.para === 'montagem' ? [] : volumesNaEtapa(p, m.idx, m.de),
       }))
       .filter((m) => m.para === 'montagem' || m.ids.length)
-    if (porVolume.length) return moverVolumes(p, porVolume, marca)
 
-    const mov = (movimentos || []).filter((m) => m.para && m.qtd > 0)
-    if (!mov.length || salvando) return
+    if (!porVolume.length && !qtdMovs.length) return
+    if (salvando) return
     setSalvando(marca)
     try {
       // etapa + auditoria no MESMO batch: ou as duas coisas acontecem, ou nenhuma.
       // Assim nunca existe item movido sem registro de quem moveu.
       const batch = writeBatch(db)
-      const idxs = mov.map((m) => m.idx)
-      const destino = (i) => mov.find((m) => m.idx === i)?.para
-      batch.update(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasComQtd(p, mov, nome) })
+      // Card MISTO (um item por volume, outro por quantidade) é normal. Cada
+      // construtor CONGELA o que não é dele, então rodar o de quantidade sobre
+      // o resultado do de volume preserva as duas metades — e sai num write só.
+      let etapas = p.etapas
+      if (porVolume.length) etapas = mapaEtapasMovendoVolumes(p, porVolume, nome)
+      if (qtdMovs.length) etapas = mapaEtapasComQtd({ ...p, etapas }, qtdMovs, nome)
+      batch.update(doc(db, 'pedidos', p.idVenda), { etapas })
+
       const quem = {
         porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
         perfil: perfil || '', ip,
       }
-      const regs = registrosAuditoria(p, idxs, destino, quem, (i) => materialDoItem(p.itens[i], itensCad))
-      // a auditoria registra QUANTO andou e DE ONDE. O `de` não pode sair de
-      // etapaDoItem: com o item dividido, ela devolve a etapa mais atrasada, que
-      // não é necessariamente a coluna de onde a pessoa moveu.
-      regs.forEach((r, n) => {
-        r.qtd = mov[n]?.qtd ?? r.qtd
-        r.qtdItem = arredondaQtd(p.itens[mov[n]?.idx]?.qtd)
-        r.de = mov[n]?.de ?? r.de
-      })
+      const material = (i) => materialDoItem(p.itens[i], itensCad)
+      const regs = []
+      if (porVolume.length) {
+        const rs = registrosAuditoria(p, porVolume.map((m) => m.idx),
+          (i) => porVolume.find((m) => m.idx === i)?.para, quem, material)
+        rs.forEach((r, n) => {
+          const m = porVolume[n]
+          const vols = m.para === 'montagem'
+            ? volumesDoItem(p, m.idx)                       // desembalar desfaz todos
+            : volumesDoItem(p, m.idx).filter((v) => m.ids.includes(v.id))
+          r.qtd = arredondaQtd(vols.reduce((sm, v) => sm + v.qtd, 0))
+          r.qtdItem = arredondaQtd(p.itens[m.idx]?.qtd)
+          r.volumes = vols.length
+          if (m.para === 'montagem') r.desembalou = true
+        })
+        regs.push(...rs)
+      }
+      if (qtdMovs.length) {
+        const rs = registrosAuditoria(p, qtdMovs.map((m) => m.idx),
+          (i) => qtdMovs.find((m) => m.idx === i)?.para, quem, material)
+        // a auditoria registra QUANTO andou e DE ONDE. O `de` não pode sair de
+        // etapaDoItem: com o item dividido, ela devolve a etapa mais atrasada,
+        // que não é necessariamente a coluna de onde a pessoa moveu.
+        rs.forEach((r, n) => {
+          r.qtd = qtdMovs[n]?.qtd ?? r.qtd
+          r.qtdItem = arredondaQtd(p.itens[qtdMovs[n]?.idx]?.qtd)
+          r.de = qtdMovs[n]?.de ?? r.de
+        })
+        regs.push(...rs)
+      }
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
     } catch (e) {

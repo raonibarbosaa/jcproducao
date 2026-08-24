@@ -1131,6 +1131,36 @@ apuração de custo por pedido/linha/produto e margem. Depende do cadastro de It
 - ⚠️ No arreio, entrada de etapa **vazia não entra no mapa**: um `{}` já conta
   como "formato novo" e esconde o fallback do campo antigo `p.etapa`.
 
+## ITEM MEIO EMBALADO — o resto do lote precisa continuar andando (24/08/2026)
+> Bug de produção relatado pelo dono no **#5458**: "Concluir → Montagem Papel"
+> respondia *"Não dá para voltar: já há volume expedido ou entregue neste item"*.
+> Era um AVANÇO normal sendo lido como desembalar.
+
+- **O estado é rotina com produção parcial:** 227 de 500 fecharam em volume e
+  foram expedidas; as 273 restantes continuavam na GRÁFICA. O item **tem**
+  volume e **tem** saldo na linha ao mesmo tempo.
+- **Duas falhas somadas, e a segunda era pior:**
+  1. `QuadroProducao.mover` classificava como "assunto de volume" todo movimento
+     de um item que TIVESSE volume, sem olhar de ONDE ele vinha — então
+     `linha → montagem` caía na trava do desembalar. Agora só é volume quando a
+     **origem ou o destino** é etapa de volume (`ETAPAS_VOLUME`).
+  2. `mapaEtapasComQtdCru` preservava a entrada inteira sempre que o item tinha
+     volumes. Mesmo sem a trava, o movimento seria **no-op SILENCIOSO** — o
+     operador clica, ninguém reclama e o item não sai do lugar. Agora só
+     preserva quando **não há movimento** para aquele item.
+- **`moveQtdItem` ganhou o caminho do item embalado:** ajusta só `montagem` e
+  devolve a entrada **com `volumes` e `produzido` intactos**. Devolver o formato
+  `{montagem, expedicao, …}` apagaria o que a balança pesou — que é justamente
+  o motivo da preservação existir.
+- ⚠️ **Etapa de VOLUME continua fora do alcance da quantidade:** `moveQtdItem`
+  devolve `null` quando `de` ou `para` está em `ETAPAS_VOLUME`. Dali em diante
+  quem anda é o volume.
+- **Card MISTO agora funciona:** um item por volume e outro por quantidade no
+  mesmo "Concluir →". Os dois construtores congelam o que não é deles, então o
+  de quantidade roda **sobre o resultado** do de volume e sai num write só.
+  Antes o `return moverVolumes(...)` descartava os movimentos por quantidade.
+- Testes no fim de `tests/volumes.test.mjs` (o cenário exato do #5458).
+
 ## ⚠️ `fechaMontagemEmVolumes` e `desfazEmbalagem` devolvem ENTRADA, não mapa
 Bug achado ao escrever os testes (15/08/2026): as duas estavam envolvidas por
 `carimbaTempos`, que espera um MAPA indexado por chave de item. Carimbar uma
