@@ -681,11 +681,15 @@ export function pedidosEmPlanos(planos, exceto) {
 // a data de entrega VIVA do pedido, em 'YYYY-MM-DD'.
 // Partes LOCAIS, não `toISOString()`: em UTC-3 o ISO de uma data manual pode cair
 // no dia anterior, e a viagem inteira mudaria de dia por causa do fuso.
-export function diaDaPrevisao(p) {
-  if (!p?.previsao) return null
-  const d = new Date(p.previsao)
+export function diaISO(v) {
+  if (!v) return null
+  const d = v instanceof Date ? v : new Date(v)
   if (isNaN(d)) return null
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function diaDaPrevisao(p) {
+  return p?.previsao ? diaISO(p.previsao) : null
 }
 
 // a entrega deste pedido é NO dia ou ANTES dele?
@@ -2883,4 +2887,423 @@ export function agrupaPedidosZeus(linhas, mapa, cadastros) {
     }
   }
   return Object.values(porId).map(carimbaKeys)
+}
+
+// ============================================================
+// FINANCEIRO — CONTAS A RECEBER (Fase 1)
+// Desenho completo e o porquê de cada decisão: FINANCEIRO.md
+//
+// Duas peças, e a separação é o ponto:
+//   `cobrancas`  = quem me deve (nasce da entrega ou é lançada à mão)
+//   `movimentos` = o que entrou/saiu (o livro-caixa, base do OFX depois)
+// A cobrança NÃO guarda "quanto já recebi": isso é somado no render a partir
+// dos movimentos. Total desnormalizado diverge em silêncio — mesma regra de
+// `qtdNoPainel` no quadro.
+// ============================================================
+
+// A empresa é EIXO, não filtro: todo lançamento nasce com ela. Enxertar depois
+// obrigaria a adivinhar de quem é cada registro já gravado.
+export const EMPRESAS = [
+  { id: 'sacolas', nome: 'JC Sacolas', curto: 'Sacolas' },
+  { id: 'plastico', nome: 'JC Plástico', curto: 'Plástico' },
+]
+export const EMPRESA_PADRAO = 'sacolas'
+export const nomeEmpresa = (id) => EMPRESAS.find((e) => e.id === id)?.nome || ''
+
+export const FORMAS_PGTO = [
+  { id: 'pix', nome: 'PIX' },
+  { id: 'dinheiro', nome: 'Dinheiro' },
+  { id: 'boleto', nome: 'Boleto' },
+  { id: 'cheque', nome: 'Cheque' },
+  { id: 'cartao', nome: 'Cartão' },
+  { id: 'transferencia', nome: 'Transferência' },
+]
+export const nomeForma = (id) => FORMAS_PGTO.find((f) => f.id === id)?.nome || ''
+
+// As contas de cada empresa, como o dono descreveu. É aqui que o extrato vai
+// desembocar na Fase 5 — por isso a conta é obrigatória na baixa: sem ela o
+// recebimento não tem onde ser conciliado.
+export const CONTAS = [
+  { id: 'bradesco', nome: 'Bradesco', empresas: ['sacolas', 'plastico'] },
+  { id: 'banese', nome: 'Banese', empresas: ['plastico'] },
+  { id: 'nordeste', nome: 'Banco do Nordeste', empresas: ['plastico'] },
+  { id: 'cielo', nome: 'Cielo', empresas: ['sacolas'] },
+  { id: 'caixa', nome: 'Caixa interno', empresas: ['sacolas', 'plastico'] },
+]
+export const contasDaEmpresa = (emp) =>
+  CONTAS.filter((c) => !emp || c.empresas.includes(emp))
+export const nomeConta = (id) => CONTAS.find((c) => c.id === id)?.nome || ''
+
+// quem enxerga a aba Financeiro. O DESIGNER fica de fora de propósito: ele é
+// staff para todo o resto (`ehStaff` nas rules o inclui), mas dinheiro não.
+export const veFinanceiro = (perfil) => perfil === 'dono' || perfil === 'financeiro'
+
+export const arredondaMoeda = (n) => Math.round((Number(n) || 0) * 100) / 100
+
+// ---------- DATAS DE VENCIMENTO ----------
+// ⚠️ 'YYYY-MM-DD' passado ao `new Date()` é lido como UTC: em UTC-3 vira o dia
+// ANTERIOR. Vencimento errado por um dia gera cobrança de atraso que não existe,
+// então aqui a data é montada pelas PARTES.
+export function dataDeISO(iso) {
+  const [a, m, d] = String(iso || '').slice(0, 10).split('-').map(Number)
+  if (!a || !m || !d) return null
+  return new Date(a, m - 1, d)
+}
+export function somaDias(iso, dias) {
+  const d = dataDeISO(iso)
+  if (!d) return ''
+  d.setDate(d.getDate() + (Number(dias) || 0))
+  return diaISO(d)
+}
+export const hojeISO = () => diaISO(new Date())
+
+// Uma data 'YYYY-MM-DD' na tela. O meio-dia é o truque que impede o fuso de
+// mostrar o dia anterior — e fica num lugar só para não ser reinventado em cada
+// tela (foi assim que ele apareceu em cinco lugares na primeira escrita).
+export const fmtDia = (iso) => (iso ? fmtData(`${String(iso).slice(0, 10)}T12:00`) : '—')
+
+// ---------- O VALOR ----------
+// Σ preço de tabela × quantidade. `null` quando FALTA preço em qualquer item:
+// sem a tabela inteira não dá para achar o desconto, e ratear com meia tabela
+// inventaria valor. A tela pede o número em vez de estimar.
+export function valorDeTabela(itens, itensCad) {
+  if (!itens?.length) return null
+  let soma = 0
+  for (const it of itens) {
+    const preco = precoDoItem(it, itensCad)
+    if (preco == null) return null
+    soma += preco * (Number(it.qtd) || 0)
+  }
+  return arredondaMoeda(soma)
+}
+
+// o desconto do pedido em FATOR (0,92 = 8% de desconto). É o mesmo número que
+// decide a faixa de comissão na Fase 3.
+// ⚠️ O Posseidon dá o desconto ABAIXANDO o preço unitário, não na coluna de
+// desconto (medido no relatório de julho: o mesmo produto a 32,00 e a 30,00 com
+// "Desconto Efetivo" zerado nos dois). Por isso o desconto é DERIVADO daqui.
+export function fatorDesconto(valorVendido, valorTabela) {
+  const v = Number(valorVendido) || 0
+  if (!v || !valorTabela) return null
+  return v / valorTabela
+}
+
+// A lista COMPLETA de itens do pedido, com a quantidade total de cada um.
+// ⚠️ Pedido totalmente entregue SOME de `pedidos` — existe só como remessa. Sem
+// juntar as duas pontas o valor de tabela sairia menor e o rateio inflaria a
+// cobrança. O pedido vivo manda quando existe (é o dado atual e já traz todos os
+// itens, porque a entrega parcial não mexe em `itens`).
+// índice por número de pedido. Existe por causa da escala: a fila "a cobrar"
+// resolve os itens de CADA entrega, e varrer `pedidos` + `entregues` inteiros a
+// cada uma é O(n²) — com o histórico de entregas real isso trava a tela.
+export function indexaPorVenda(pedidos, entregues) {
+  const vivos = new Map()
+  const remessas = new Map()
+  for (const p of (pedidos || [])) vivos.set(String(p.idVenda), p)
+  for (const e of (entregues || [])) {
+    const k = String(e.idVenda)
+    if (!remessas.has(k)) remessas.set(k, [])
+    remessas.get(k).push(e)
+  }
+  return { vivos, remessas }
+}
+
+export function itensDoPedidoInteiro(idVenda, pedidos, entregues, idx) {
+  const alvo = String(idVenda)
+  const { vivos, remessas } = idx || indexaPorVenda(pedidos, entregues)
+  const vivo = vivos.get(alvo)
+  if (vivo?.itens?.length) {
+    return vivo.itens.map((it, i) => ({
+      key: it.key || keyDoItem(vivo, i), produto: it.produto, qtd: arredondaQtd(it.qtd),
+    }))
+  }
+  const porKey = new Map()
+  for (const r of (remessas.get(alvo) || [])) {
+    (r.itens || []).forEach((it, i) => {
+      const k = it.key || keyDoItem(r, i)
+      // `qtdItem` é o total do item no pedido; `qtd` é só o que saiu nesta
+      // remessa. Somar contaria o item duas vezes quando ele sai em partes.
+      const q = arredondaQtd(it.qtdItem ?? it.qtd)
+      const ant = porKey.get(k)
+      if (!ant || q > ant.qtd) porKey.set(k, { key: k, produto: it.produto, qtd: q })
+    })
+  }
+  return [...porKey.values()]
+}
+
+// Quanto vale ESTA entrega.
+// Saiu tudo de uma vez? é o total do pedido, exato, sem conta nenhuma — que é a
+// esmagadora maioria dos casos. Saiu em partes? rateia pelo valor de tabela
+// aplicando o MESMO desconto do pedido, e aí a soma das remessas fecha
+// exatamente o total quando tudo tiver saído.
+// ⚠️ NUNCA ratear por quantidade: quilo e unidade não somam.
+export function valorDaEntrega(remessa, itensDoPedido, itensCad, nRemessas = 1) {
+  const total = Number(remessa?.valorTotal) || 0
+  if (!total) return { valor: null, motivo: 'sem-valor' }
+  if (nRemessas <= 1 && !remessa?.parcial) return { valor: arredondaMoeda(total), exato: true }
+  const tabela = valorDeTabela(itensDoPedido, itensCad)
+  const fator = fatorDesconto(total, tabela)
+  if (fator == null) return { valor: null, motivo: 'sem-preco' }
+  let soma = 0
+  for (const it of (remessa.itens || [])) {
+    const preco = precoDoItem(it, itensCad)
+    if (preco == null) return { valor: null, motivo: 'sem-preco' }
+    soma += preco * (Number(it.qtd) || 0)
+  }
+  return { valor: arredondaMoeda(fator * soma), exato: false, fator }
+}
+
+// ---------- A TRAVA: nada é cobrado duas vezes ----------
+// Mesma ideia de `comprometimentoDeCargas` com volume: duas contas de "o que
+// está livre" divergem em silêncio, e aí uma tela manda cobrar o que a outra já
+// deu por cobrado.
+export const chaveEntrega = (idVenda, remessa) => `${idVenda}|${remessa || 1}`
+export const cobrancaCobrePedidoInteiro = (c) => !c?.remessa
+export const cobrancasVivas = (cobrancas) =>
+  (cobrancas || []).filter((c) => c?.status !== 'cancelada')
+
+export function entregasCobertas(cobrancas) {
+  const porPedido = new Set()
+  const porEntrega = new Set()
+  for (const c of cobrancasVivas(cobrancas)) {
+    if (!c.idVenda) continue
+    if (cobrancaCobrePedidoInteiro(c)) porPedido.add(String(c.idVenda))
+    else porEntrega.add(chaveEntrega(c.idVenda, c.remessa))
+  }
+  return { porPedido, porEntrega }
+}
+export const entregaJaCobrada = (cobertas, idVenda, remessa) =>
+  cobertas.porPedido.has(String(idVenda))
+  || cobertas.porEntrega.has(chaveEntrega(idVenda, remessa))
+
+// A fila de trabalho: entregas que ainda não viraram cobrança, já com o valor
+// sugerido e o motivo quando ele não dá para calcular.
+export function entregasParaCobrar(entregues, cobrancas, pedidos, itensCad) {
+  const cobertas = entregasCobertas(cobrancas)
+  const idx = indexaPorVenda(pedidos, entregues)
+  return (entregues || [])
+    // ⚠️ Entrega que já teve a BAIXA ANTIGA (`entregues.pago`, o interruptor que
+    // existia antes deste módulo) não entra na fila: ela foi acertada no fluxo
+    // velho. Sem isto, no primeiro dia a tela mostraria todo o histórico da
+    // fábrica como dívida em aberto — e o número mais visível do sistema seria
+    // uma mentira.
+    .filter((e) => !e.pago)
+    .filter((e) => !entregaJaCobrada(cobertas, e.idVenda, e.remessa))
+    .map((e) => {
+      const itens = itensDoPedidoInteiro(e.idVenda, pedidos, entregues, idx)
+      const nR = (idx.remessas.get(String(e.idVenda)) || []).length || 1
+      return { ...e, sugestao: valorDaEntrega(e, itens, itensCad, nR) }
+    })
+    .sort((a, b) => new Date(b.entregueEm || 0) - new Date(a.entregueEm || 0))
+}
+
+// ---------- PARCELAS ----------
+// ⚠️ `n` é a identidade da parcela, NUNCA a posição no array. É o bug do
+// `keyDoItem` de novo: editar a lista renumeraria e os recebimentos passariam a
+// apontar para a parcela errada.
+export function geraParcelas(valor, quantas, primeiroVenc, intervaloDias = 30, forma = '') {
+  const qtd = Math.max(1, Math.floor(Number(quantas) || 1))
+  const cents = Math.round(arredondaMoeda(valor) * 100)
+  const base = Math.floor(cents / qtd)
+  const resto = cents - base * qtd
+  const lista = []
+  for (let i = 0; i < qtd; i++) {
+    lista.push({
+      n: i + 1,
+      // a sobra dos centavos vai na PRIMEIRA: dividida por igual, 100,00 em 3
+      // viraria 99,99 e a cobrança nunca quitaria
+      valor: (base + (i === 0 ? resto : 0)) / 100,
+      venc: somaDias(primeiroVenc, i * (Number(intervaloDias) || 0)),
+      forma: forma || '',
+    })
+  }
+  return lista
+}
+
+// ---------- MOVIMENTOS (o livro-caixa) ----------
+// Movimento não se edita nem se apaga: se CANCELA. Corrigir é cancelar e lançar
+// de novo, com o cancelado riscado na tela — apagar esconderia que aconteceu.
+export const movimentosVivos = (movs) => (movs || []).filter((m) => !m?.cancelado)
+
+export function recebidoDaCobranca(cobrancaId, movs) {
+  return arredondaMoeda(movimentosVivos(movs)
+    .filter((m) => m.cobrancaId === cobrancaId)
+    .reduce((s, m) => s + (Number(m.valor) || 0), 0))
+}
+export function recebidoDaParcela(cobrancaId, n, movs) {
+  return arredondaMoeda(movimentosVivos(movs)
+    .filter((m) => m.cobrancaId === cobrancaId && Number(m.parcelaN) === Number(n))
+    .reduce((s, m) => s + (Number(m.valor) || 0), 0))
+}
+export const parcelaTemMovimento = (cobrancaId, n, movs) =>
+  movimentosVivos(movs).some((m) => m.cobrancaId === cobrancaId && Number(m.parcelaN) === Number(n))
+
+// as parcelas com o quanto já entrou em cada uma
+export function parcelasDaCobranca(cob, movs) {
+  return (cob?.parcelas || []).map((pc) => {
+    const recebido = recebidoDaParcela(cob.id, pc.n, movs)
+    return { ...pc, recebido, saldo: arredondaMoeda((Number(pc.valor) || 0) - recebido) }
+  })
+}
+
+// ---------- SITUAÇÃO (derivada, nunca gravada) ----------
+// Só `cancelada` é um fato gravado. Aberta/parcial/quitada/vencida saem da
+// conta na hora, como `etapaDoItem` e `situacaoNoPlano`.
+export function situacaoDaCobranca(cob, movs, hoje) {
+  const valor = arredondaMoeda(cob?.valor)
+  if (cob?.status === 'cancelada') {
+    return { st: 'cancelada', valor, recebido: recebidoDaCobranca(cob.id, movs), saldo: 0 }
+  }
+  const recebido = recebidoDaCobranca(cob.id, movs)
+  const saldo = arredondaMoeda(valor - recebido)
+  const parcelas = parcelasDaCobranca(cob, movs)
+  const abertas = parcelas.filter((pc) => pc.saldo > 0.004)
+  const dia = hoje || hojeISO()
+  const vencidas = abertas.filter((pc) => pc.venc && pc.venc < dia)
+  const proxima = abertas.map((pc) => pc.venc).filter(Boolean).sort()[0] || ''
+  // meio centavo de folga: divisão de parcela deixa resíduo, e cobrança que não
+  // quita nunca sai da tela
+  if (saldo <= 0.004) return { st: 'quitada', valor, recebido, saldo: 0, parcelas, proxima: '' }
+  if (vencidas.length) {
+    const maisVelha = vencidas.map((pc) => pc.venc).sort()[0]
+    return {
+      st: 'vencida', valor, recebido, saldo, parcelas, proxima: maisVelha,
+      diasAtraso: diasEntreISO(maisVelha, dia), parcial: recebido > 0,
+    }
+  }
+  return { st: recebido > 0 ? 'parcial' : 'aberta', valor, recebido, saldo, parcelas, proxima }
+}
+
+export function diasEntreISO(de, ate) {
+  const a = dataDeISO(de); const b = dataDeISO(ate)
+  if (!a || !b) return 0
+  return Math.round((b - a) / 86400000)
+}
+
+export const SITUACAO_COBRANCA = {
+  aberta: { nm: 'Em aberto', cor: 'var(--text-dim)' },
+  parcial: { nm: 'Parcial', cor: 'var(--accent)' },
+  vencida: { nm: 'Vencida', cor: 'var(--danger)' },
+  quitada: { nm: 'Quitada', cor: 'var(--ok)' },
+  cancelada: { nm: 'Cancelada', cor: 'var(--text-faint)' },
+}
+
+// as parcelas em aberto que vencem até um dia, ordenadas pelo vencimento.
+// É a resposta de "o que eu tenho para receber esta semana".
+export function parcelasVencendo(cobrancas, movs, ate) {
+  const fora = []
+  for (const cob of cobrancasVivas(cobrancas)) {
+    for (const pc of parcelasDaCobranca(cob, movs)) {
+      if (pc.saldo <= 0.004) continue
+      if (ate && pc.venc && pc.venc > ate) continue
+      fora.push({ cob, ...pc })
+    }
+  }
+  return fora.sort((a, b) => String(a.venc).localeCompare(String(b.venc)))
+}
+
+// os números do cabeçalho. `recebidoNoMes` sai dos MOVIMENTOS, não das
+// cobranças: é dinheiro que entrou, não promessa.
+export function totaisReceber(cobrancas, movs, hoje) {
+  const dia = hoje || hojeISO()
+  const mes = dia.slice(0, 7)
+  let aberto = 0; let vencido = 0; let quitado = 0
+  for (const cob of cobrancasVivas(cobrancas)) {
+    const s = situacaoDaCobranca(cob, movs, dia)
+    aberto += s.saldo
+    if (s.st === 'vencida') vencido += s.saldo
+    if (s.st === 'quitada') quitado += s.valor
+  }
+  const recebidoNoMes = movimentosVivos(movs)
+    .filter((m) => m.tipo !== 'saida' && String(m.data || '').slice(0, 7) === mes)
+    .reduce((s, m) => s + (Number(m.valor) || 0), 0)
+  return {
+    aberto: arredondaMoeda(aberto), vencido: arredondaMoeda(vencido),
+    quitado: arredondaMoeda(quitado), recebidoNoMes: arredondaMoeda(recebidoNoMes),
+  }
+}
+
+// =====================================================================
+// PIN DO POSTO COMPARTILHADO (tablet com login geral)
+// =====================================================================
+// O funcionário é um usuário do sistema (e-mail + senha) e, para dar baixa num
+// tablet que fica logado numa conta só, usa um PIN de 4 dígitos ligado ao uid.
+//
+// O PIN mora em `pins/{uid}`, NÃO em `usuarios`: o tablet precisa ler o PIN de
+// todo o setor, e abrir `usuarios` para ele exporia perfil e vínculos de todo
+// mundo. Só vai o necessário para desenhar a faixa de nomes e conferir o PIN.
+//
+// ⚠️ A conferência é no navegador, então o hash protege contra o colega que
+// toca no nome errado — não contra quem tem a API na mão (10 mil combinações se
+// testam na hora). É a mesma natureza do log de auditoria: bom contra engano,
+// não contra má-fé.
+
+export const DOMINIO_LOGIN_INTERNO = 'jcsacolas.app'
+
+export function pinValido(pin) {
+  return /^\d{4}$/.test(String(pin ?? ''))
+}
+
+// PIN que o colega adivinha no primeiro chute. Recusar aqui é barato; aceitar
+// "1234" transforma o PIN num botão a mais.
+export function pinFraco(pin) {
+  const s = String(pin ?? '')
+  if (!pinValido(s)) return false
+  if (/^(\d)\1{3}$/.test(s)) return true                       // 0000, 7777
+  const d = s.split('').map(Number)
+  const passo = d[1] - d[0]
+  const seq = (passo === 1 || passo === -1) && d.every((x, i) => i === 0 || x - d[i - 1] === passo)
+  return seq                                                   // 1234, 4321, 6789
+}
+
+// O que há de errado com o PIN, em português, ou '' quando está bom.
+export function problemaDoPin(pin) {
+  if (!pinValido(pin)) return 'O PIN tem que ter exatamente 4 números.'
+  if (pinFraco(pin)) return 'PIN fácil demais (número repetido ou em sequência). Escolha outro.'
+  return ''
+}
+
+// SHA-256(uid:pin) em hex. O uid entra de sal: o mesmo PIN em duas pessoas
+// gera hashes diferentes, e ninguém descobre que "a Maria usa o mesmo do João".
+export async function hashPin(uid, pin) {
+  const bytes = new TextEncoder().encode(`${uid}:${pin}`)
+  const dig = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(dig)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+export async function conferePin(uid, pin, hash) {
+  if (!pinValido(pin) || !hash) return false
+  return (await hashPin(uid, pin)) === hash
+}
+
+// O documento de `pins/{uid}`. `ativo` segue o USUÁRIO: desativar o acesso tem
+// que desligar o PIN no mesmo clique, senão quem saiu da empresa continua dando
+// baixa no tablet. E só operador dá baixa em posto — trocar o perfil desliga.
+export function docPin(u, hash) {
+  const d = {
+    nome: String(u?.nome || '').trim(),
+    setores: u?.perfil === 'operador' ? (u?.setores || []).map(normSetor) : [],
+    ativo: u?.ativo !== false && u?.perfil === 'operador',
+  }
+  if (hash) d.hash = hash
+  return d
+}
+
+// Login para quem não tem e-mail: "Maria José da Silva" → maria.silva@jcsacolas.app.
+// Primeiro + último nome, sem acento; repete com 2, 3… se já existir.
+export function loginInterno(nome, emailsExistentes = []) {
+  const partes = normaliza(nome).toLowerCase().replace(/[^a-z0-9 ]/g, '').split(' ').filter(Boolean)
+  if (!partes.length) return ''
+  const base = partes.length > 1 ? `${partes[0]}.${partes[partes.length - 1]}` : partes[0]
+  const usados = new Set((emailsExistentes || []).map((e) => String(e || '').toLowerCase()))
+  for (let n = 1; ; n++) {
+    const email = `${base}${n > 1 ? n : ''}@${DOMINIO_LOGIN_INTERNO}`
+    if (!usados.has(email)) return email
+  }
+}
+
+// Login interno não recebe e-mail: "redefinir senha" nesse endereço não chega a
+// ninguém, e a tela tem que dizer isso em vez de fingir que mandou.
+export function ehLoginInterno(email) {
+  return String(email || '').toLowerCase().endsWith('@' + DOMINIO_LOGIN_INTERNO)
 }

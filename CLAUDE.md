@@ -17,6 +17,15 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
+> **Financeiro** (contas a receber, cheques, comissões, bancos): ver
+> [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde
+> 04/09/2026 — aba `financeiro`, coleções `cobrancas` e `movimentos`, só dono e
+> financeiro (`veFinanceiro` / `ehFinanceiro()` nas rules; o designer fica de
+> fora). ✅ Rules publicadas e site no ar em 16/09/2026. Fases 2–5 (cheques, comissões, canhoto, contas a pagar/OFX)
+> seguem só como desenho. Começa por Contas a Receber; comissão é por
+> FATURAMENTO (`dataVenda`) sobre o `valorTotal`; `empresa` (JC Sacolas × JC
+> Plástico) é eixo obrigatório em todo lançamento desde o primeiro.
+
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
 > em produção por encomenda a peça passa a maior parte do tempo esperando, e é a
@@ -222,7 +231,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   `valorDosItens(p,idxs)` soma `it.valor` — a planilha do Posseidon **não traz valor por
   item** (a coluna `Valor` repete o total do pedido), então hoje devolve `null` e o card
   mostra o total do pedido rotulado. Ligar valor por item depende de mapear uma coluna
-  de valor unitário no import (pendente de confirmação do cliente).
+  de valor unitário no import. ✅ **CONFIRMADO que existe** (04/09/2026): o
+  relatório *Listagem de Pedido — Analítico Mod.02* do Posseidon traz preço
+  unitário, preço líquido, desconto efetivo e valor líquido POR ITEM — só que em
+  PDF. Ver [`FINANCEIRO.md`](FINANCEIRO.md).
 - **Setores/permissões:** `SETORES_PROD` (em utils) = etapas do quadro + Entrega (a
   montagem é UM setor só; quem divide por material é o eixo `materiais`). `normSetor`
   traduz o `grafica` minúsculo do cadastro antigo para `GRAFICA`. `firestore.rules`:
@@ -261,8 +273,11 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   pedido quando existe remessa NÃO parcial. Pedido com remessa parcial continua no
   fluxo e o import NÃO devolve os itens já entregues (mantém `itens`/`remessas` do
   que está no banco quando `ja.remessas` existe).
-- **FALTA:** valor por item no import (depende de o Posseidon exportar coluna de
-  valor unitário/subtotal — pendente de confirmação do cliente).
+- **valor por item no import:** ✅ a coluna EXISTE no relatório analítico do
+  Posseidon (confirmado em 04/09/2026) — falta saber se ele exporta em Excel/CSV.
+  ⚠️ E a quantidade desse relatório vem ARREDONDADA: 6 KG × 32,00 dá 201,60, ou
+  seja 6,3 kg reais. **Nunca recalcular `valor = qtd × preço` a partir dele.**
+  Ver [`FINANCEIRO.md`](FINANCEIRO.md).
 - **Fase B (no ar, ajustada pelo item):** perfil **`operador`** (chão de fábrica). `AuthContext` expõe `setores`
   (array liberado, lido de `usuarios/{uid}.setores`). Cadastro de Usuários tem o perfil
   Operador + seleção de setores (Gráfica/Montagem/Expedição/Entrega); designer também acessa
@@ -698,7 +713,74 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   ("LUX BEACHWEAR" × "LUX BEACH WEAR"), mas **não é fuzzy**: "SAF FUNERARIA" × "ATUAL
   MODAS" (mesmo número, cliente outro) tem que continuar caindo na revisão.
 
+## POSTO COMPARTILHADO — tablet com login geral (desenho fechado em 16/09/2026; etapa 1 FEITA)
+> Um tablet no Silk, uma conta só, vários funcionários dando baixa. Separa
+> "QUEM ESTÁ LOGADO" (o aparelho) de "QUEM FEZ" (o funcionário).
+
+- **Conta do posto:** usuário Firebase comum, perfil `operador` + `posto: true`,
+  setor do posto (começa no Silk; o mecanismo é genérico e serve para
+  Montagem/Gráfica configurando outro tablet). Só a fila do setor, sem outras
+  abas, sem R$, sem voz.
+- **O funcionário É um usuário do sistema** (decisão do dono, revisada no mesmo
+  dia — a primeira versão tinha cadastro separado sem login): criado em
+  Usuários, perfil `operador`, com e-mail e senha, e com um **PIN de 4 dígitos**
+  ligado ao uid. Quem não tem e-mail recebe login interno
+  (`nome@jcsacolas.app`).
+- **PIN mora em `pins/{uid}`**, não em `usuarios`: `{hash, nome, apelido,
+  setores, ativo}`. O tablet precisa ler o PIN de TODOS do setor, e abrir
+  `usuarios` para ele exporia perfil e vínculos de todo mundo. Hash =
+  SHA-256(uid + pin), nunca o PIN em claro. Rules: lê staff + conta de posto;
+  grava staff E o próprio uid (troca do próprio PIN).
+- **PIN: o dono cria, o funcionário troca** (decisão do dono) — entrando com
+  e-mail e senha, tela "Meu PIN". Depois da troca só ele sabe.
+- ⚠️ **Login interno não recupera senha** (o e-mail não existe) e o SDK do
+  navegador não redefine senha de outra pessoa (exigiria Admin SDK / Blaze).
+  Consequência aceitável: a senha só serve para trocar o PIN; o dia a dia é o
+  PIN, e esse o dono redefine. Esqueceu a senha = o dono redefine o PIN.
+- ⚠️ **Desativar o usuário desativa o PIN no MESMO clique** (`pins.ativo`) —
+  senão quem saiu da empresa continua dando baixa no tablet.
+- **No tablet:** faixa com os funcionários do setor → toca no nome → PIN →
+  fica **ativo**, com o nome em destaque e contagem regressiva. **Expira em 5
+  minutos sem uso** (cada baixa renova). **Sair é um botão grande ao lado do
+  nome**, sempre visível, sem confirmação; tocar em outro nome troca (pede o PIN
+  dele). Sem ninguém ativo, o botão de baixa TRAVA.
+- **Um funcionário por baixa** (decisão do dono): quem fez junto baixa cada um a
+  sua parte pela quantidade parcial — a conta por pessoa fica exata.
+- **Gravação:** auditoria ganha `executorUid`/`executorNome`; `porUid` continua
+  sendo o tablet (a rule `porUid == auth.uid` não muda) e passa a dizer EM QUAL
+  APARELHO. Com o funcionário logado no próprio celular, `executorUid ==
+  porUid`. A rule confere que `executorUid` tem `pins` ativo. O `por` da etapa
+  vira o funcionário. Filtro por funcionário na Auditoria; relatório de produção
+  por pessoa fica para depois — como o executor é um uid, junta direto.
+- ⚠️ **O PIN é conferido no navegador:** protege contra o colega que toca no
+  nome errado, não contra quem tem acesso à API (4 dígitos com hash legível se
+  quebram na hora). Mesma natureza do log: bom contra engano, não contra má-fé.
+- ⚠️ As etapas 3–5 mexem de novo nas rules (auditoria com `executorUid`):
+  publicar ANTES do build — o log vai no mesmo batch da etapa.
+- ✅ **Etapa 1 FEITA e NO AR (16/09/2026, rules publicadas antes do build):** helpers
+  `pinValido`/`pinFraco`/`problemaDoPin` (recusa 0000, 1234, 4321…),
+  `hashPin`/`conferePin`, `docPin`, `loginInterno`/`ehLoginInterno` (utils,
+  testes em `tests/pin.test.mjs`). Usuários: campo PIN (só Operador), checkbox
+  "Não tem e-mail — gerar login interno", chip do PIN, "Remover PIN", e o
+  "Redefinir senha" de login interno EXPLICA em vez de mandar e-mail para o
+  nada. Perfil e PIN vão no mesmo `writeBatch`; editar nome/setor/perfil
+  regrava o `pins` (a faixa do tablet mostra esses dados). Rules: `pins` +
+  `ehPosto()`. `npm run test:tela` passou a cobrir Usuários (stubs de
+  `firebase/app` e `firebase/auth`).
+- **Ordem:** (1) PIN no cadastro de Usuários + `pins` + desativar junto;
+  (2) "Meu PIN" para o funcionário; (3) conta de posto abrindo só na fila;
+  (4) faixa + PIN + expiração + Sair no quadro; (5) executor na auditoria e
+  filtro.
+
 ## PENDENTE — próxima sessão
+0. **CORES DE IMPRESSÃO no Silk** (pedido do dono em 16/09/2026, para a
+   próxima melhoria): preto · dourado · vermelho · rosa · **duas cores**.
+   Leitura provável: a cor da tinta do item no silk (como a laminação é o
+   acabamento da gráfica), marcada por item e visível no card do quadro.
+   ⚠️ Confirmar com o dono antes de desenhar: (a) se a lista é fechada ou
+   cadastrável; (b) se "duas cores" é uma opção própria ou a escolha de 2 cores
+   da lista (e quais); (c) quem marca (Triagem?) e se trava a entrada no quadro,
+   como a laminação.
 1. **Expedição controlando a aba Entregas** (pedido do dono em 12/08/2026, para depois).
    Hoje a expedição já vê a aba e faz montar → conferir → marcar saída; o que ela NÃO faz
    é confirmar a entrega, e isso foi decisão explícita do próprio dono na mesma conversa
@@ -1117,7 +1199,18 @@ apuração de custo por pedido/linha/produto e margem. Depende do cadastro de It
 > Lembrete contábil: critério de rateio e apuração (custo de estoque/CMV) tem implicação
 > fiscal — validar o método com a contabilidade da JC antes de virar número oficial.
 
-## TESTES — `npm test` (15/08/2026)
+## TESTES — `npm test` (15/08/2026) + `npm run test:tela` (04/09/2026)
+- **`npm run test:tela` é o arreio de RENDER** (`tests/render/`): monta a tela do
+  Financeiro e os dois modais com `react-dom/server` e confere que o texto que
+  importa chegou no HTML. Existe porque **prop não declarada dá tela preta e o
+  build do Vite não pega** — a armadilha nº 1 daqui. Sem dependência nova (usa o
+  vite e o react-dom que já estão no projeto); Firestore e contextos entram como
+  stubs, então não há rede. ⚠️ Duas normalizações obrigatórias no comparador: o
+  SSR do React separa expressões vizinhas com `<!-- -->` e o `R$` do
+  `toLocaleString('pt-BR')` usa espaço NÃO-SEPARÁVEL (U+00A0). Sem elas o teste
+  acusa falha onde não há. ⚠️ O SSR não clica: bloco que só existe depois de um
+  clique (as parcelas atrás do `▸`) NÃO é coberto.
+
 - **Onde:** `tests/*.test.mjs` + `tests/_run.mjs`, sem dependência (ESM puro no
   `node`). Antes viviam em pasta temporária e **se perderam** numa troca de
   sessão; agora são versionados.

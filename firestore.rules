@@ -23,6 +23,12 @@ service cloud.firestore {
       return temPerfil() && meu().perfil == 'expedicao';
     }
     function meuVendedor() { return meu().vendedorNome; }
+    // Dinheiro é do DONO e do FINANCEIRO. O designer é staff para todo o resto
+    // (`ehStaff()` o inclui) e aqui NÃO entra — foi decisão explícita: ele
+    // trabalha com produção, não com contas a receber.
+    function ehFinanceiro() {
+      return temPerfil() && meu().perfil in ['dono', 'financeiro'];
+    }
     // operador com Expedição/Entrega liberada trabalha com carga: a permissão é
     // de DOIS eixos (perfil × setores), então o setor também tem que valer aqui,
     // senão a tela aparece para ele e nada funciona.
@@ -35,6 +41,24 @@ service cloud.firestore {
     match /usuarios/{uid} {
       allow read: if logado() && (request.auth.uid == uid || ehStaff());
       allow write: if ehStaff();
+    }
+
+    // PIN do posto compartilhado (tablet com login geral). Fica FORA de
+    // `usuarios` de propósito: o tablet lê o PIN de todo o setor, e abrir
+    // `usuarios` para ele exporia perfil e vínculos de todo mundo.
+    // O próprio funcionário lê e TROCA o seu hash — e só o hash: se pudesse
+    // mexer em `ativo`, quem foi desligado se religaria sozinho.
+    function ehPosto() {
+      return ehOperador() && meu().get('posto', false) == true;
+    }
+    match /pins/{uid} {
+      allow read: if ehStaff() || ehPosto() || (logado() && request.auth.uid == uid);
+      allow create, update: if ehStaff();
+      allow update: if logado() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['hash', 'definidoEm', 'definidoPor'])
+        && request.resource.data.definidoPor == request.auth.uid;
+      allow delete: if ehStaff();
     }
 
     // Pedidos: staff vê tudo; operador vê tudo (precisa do quadro); vendedor só os
@@ -153,6 +177,38 @@ service cloud.firestore {
     // Escreve quem pode mover (staff, operador, expedição) — o registro vai no
     // mesmo writeBatch da mudança de etapa. Lê SÓ o dono. Ninguém edita nem
     // apaga, nem o dono: um log que pode ser corrigido não prova nada.
+    // ---------- FINANCEIRO — contas a receber (Fase 1). Ver FINANCEIRO.md ----------
+    // `cobrancas` = quem me deve. `movimentos` = o livro-caixa (o que entrou e,
+    // na Fase 5, o que sai). As duas são do dono e do financeiro, e de mais
+    // ninguém: o vendedor não vê o que o cliente dele deve, a expedição não vê
+    // dinheiro nenhum.
+    match /cobrancas/{id} {
+      allow read: if ehFinanceiro();
+      // ⚠️ quem lança assina: `criadaUid` tem que ser o próprio, como na auditoria.
+      allow create: if ehFinanceiro()
+        && request.resource.data.criadaUid == request.auth.uid;
+      // cobrança se CANCELA (status), e o resto pode ser corrigido enquanto não
+      // houver movimento — quem impede isso é a tela, não a regra.
+      allow update: if ehFinanceiro();
+      // não se apaga: cobrança cancelada continua no histórico, senão não dá
+      // para explicar por que uma entrega voltou a aparecer como "a cobrar".
+      allow delete: if false;
+    }
+
+    match /movimentos/{id} {
+      allow read: if ehFinanceiro();
+      allow create: if ehFinanceiro()
+        && request.resource.data.porUid == request.auth.uid;
+      // ⚠️ Movimento NÃO se edita: só se CANCELA. A regra deixa passar apenas os
+      // três campos do cancelamento — trocar o valor de um recebimento já
+      // lançado reescreveria o caixa sem deixar rastro. Corrigir é cancelar e
+      // lançar de novo.
+      allow update: if ehFinanceiro()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['cancelado', 'canceladoPor', 'canceladoEm']);
+      allow delete: if false;
+    }
+
     match /auditoria/{id} {
       allow read: if temPerfil() && meu().perfil == 'dono';
       // ⚠️ `porUid` TEM que ser quem está assinando: sem isso dava para gravar

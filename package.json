@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/_run.mjs"
+    "test": "node tests/_run.mjs",
+    "test:tela": "node tests/render/run.mjs"
   },
   "dependencies": {
     "firebase": "^10.12.2",

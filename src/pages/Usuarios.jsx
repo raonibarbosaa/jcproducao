@@ -3,11 +3,14 @@ import { initializeApp, deleteApp } from 'firebase/app'
 import {
   getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut,
 } from 'firebase/auth'
-import { collection, doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, onSnapshot, writeBatch } from 'firebase/firestore'
 import { auth, db, firebaseConfig } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
-import { SETORES_PROD, normSetor, MATERIAIS, nomeDoMaterial } from '../utils.js'
+import {
+  SETORES_PROD, normSetor, MATERIAIS, nomeDoMaterial,
+  problemaDoPin, hashPin, docPin, loginInterno, ehLoginInterno,
+} from '../utils.js'
 
 const PERFIS = [
   { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção, Cadastros e Usuários' },
@@ -31,6 +34,8 @@ export default function Usuarios() {
   const [novo, setNovo] = useState(false)
   const [editando, setEditando] = useState(null) // uid em edição
   const [msg, setMsg] = useState('')
+  // pins/{uid} — só para saber quem já tem PIN do tablet (o hash não aparece)
+  const [pins, setPins] = useState({})
 
   // lista em tempo real
   useEffect(() => {
@@ -41,6 +46,9 @@ export default function Usuarios() {
     })
     return unsub
   }, [])
+  useEffect(() => onSnapshot(collection(db, 'pins'),
+    (snap) => setPins(Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]))),
+    (e) => console.error('pins:', e)), [])
 
   function aviso(texto) {
     setMsg(texto)
@@ -50,12 +58,13 @@ export default function Usuarios() {
   // ---- criar usuário sem derrubar a sessão do admin ----
   // usa uma instância secundária do Firebase: o novo usuário "loga" nela,
   // a gente grava o perfil e desconecta — a sessão principal não é tocada.
-  async function criarUsuario({ nome, email, senha, perfil, vendedorNome, setores, materiais }) {
+  async function criarUsuario({ nome, email, senha, perfil, vendedorNome, setores, materiais, pin }) {
     const appSec = initializeApp(firebaseConfig, 'criacao-usuario')
     const authSec = getAuth(appSec)
     try {
       const cred = await createUserWithEmailAndPassword(authSec, email.trim(), senha)
-      await setDoc(doc(db, 'usuarios', cred.user.uid), {
+      const uid = cred.user.uid
+      const perfilDoc = {
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
         perfil,
@@ -65,35 +74,77 @@ export default function Usuarios() {
         materiais: perfil === 'operador' ? (materiais || []) : [],
         ativo: true,
         criadoEm: new Date().toISOString(),
-      })
+      }
+      // perfil e PIN no MESMO batch: não pode existir PIN sem usuário
+      const batch = writeBatch(db)
+      batch.set(doc(db, 'usuarios', uid), perfilDoc)
+      if (pin && perfil === 'operador') {
+        batch.set(doc(db, 'pins', uid), {
+          ...docPin(perfilDoc, await hashPin(uid, pin)),
+          definidoEm: new Date().toISOString(), definidoPor: user?.uid || '',
+        })
+      }
+      await batch.commit()
       await signOut(authSec)
       setNovo(false)
-      aviso(`Usuário ${nome.trim()} criado com o perfil ${PERFIL_NM[perfil]}.`)
+      aviso(`Usuário ${nome.trim()} criado com o perfil ${PERFIL_NM[perfil]}`
+        + `${pin && perfil === 'operador' ? ' e PIN do tablet' : ''} — login: ${email.trim().toLowerCase()}`)
     } finally {
       await deleteApp(appSec).catch(() => {})
     }
   }
 
-  async function salvarEdicao(uid, { nome, perfil, vendedorNome, setores, materiais }) {
-    await updateDoc(doc(db, 'usuarios', uid), {
+  // Nome, setor e perfil também vivem no `pins` (é o que a faixa do tablet
+  // mostra), então editar o usuário regrava o PIN junto — senão o tablet
+  // continuaria mostrando o nome antigo ou o setor que ele já não tem.
+  async function salvarEdicao(u, { nome, perfil, vendedorNome, setores, materiais, pin }) {
+    const mudou = {
       nome: nome.trim(), perfil,
       vendedorNome: perfil === 'vendedor' ? (vendedorNome || '') : '',
       setores: perfil === 'operador' ? (setores || []) : [],
       materiais: perfil === 'operador' ? (materiais || []) : [],
-    })
+    }
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'usuarios', u.uid), mudou)
+    const novoPin = pin && perfil === 'operador'
+    if (pins[u.uid] || novoPin) {
+      const d = docPin({ ...u, ...mudou }, novoPin ? await hashPin(u.uid, pin) : '')
+      if (novoPin) { d.definidoEm = new Date().toISOString(); d.definidoPor = user?.uid || '' }
+      batch.set(doc(db, 'pins', u.uid), d, { merge: true })
+    }
+    await batch.commit()
     setEditando(null)
-    aviso('Usuário atualizado.')
+    aviso(novoPin ? 'Usuário atualizado com PIN novo.' : 'Usuário atualizado.')
   }
 
+  // ⚠️ Desativar desliga o PIN no MESMO batch: quem saiu da empresa não pode
+  // continuar dando baixa no tablet, que fica logado com outra conta.
   async function alternarAtivo(u) {
     if (u.uid === user.uid) { alert('Você não pode desativar o seu próprio acesso.'); return }
     const acao = u.ativo === false ? 'reativar' : 'desativar'
-    if (!confirm(`Deseja ${acao} o acesso de "${u.nome || u.email}"?`)) return
-    await updateDoc(doc(db, 'usuarios', u.uid), { ativo: u.ativo === false })
-    aviso(u.ativo === false ? 'Acesso reativado.' : 'Acesso desativado. O usuário não consegue mais entrar.')
+    const extra = pins[u.uid] && u.ativo !== false ? '\n\nO PIN do tablet também deixa de funcionar.' : ''
+    if (!confirm(`Deseja ${acao} o acesso de "${u.nome || u.email}"?${extra}`)) return
+    const ativo = u.ativo === false
+    const batch = writeBatch(db)
+    batch.update(doc(db, 'usuarios', u.uid), { ativo })
+    if (pins[u.uid]) batch.update(doc(db, 'pins', u.uid), { ativo: docPin({ ...u, ativo }).ativo })
+    await batch.commit()
+    aviso(ativo ? 'Acesso reativado.' : 'Acesso desativado. O usuário não consegue mais entrar nem usar o PIN.')
+  }
+
+  async function removerPin(u) {
+    if (!confirm(`Remover o PIN do tablet de "${u.nome || u.email}"? Ele deixa de aparecer no tablet.`)) return
+    await deleteDoc(doc(db, 'pins', u.uid))
+    aviso('PIN removido.')
   }
 
   async function resetarSenha(u) {
+    if (ehLoginInterno(u.email)) {
+      alert(`${u.email} é um login interno: não existe caixa de e-mail para receber a redefinição.\n\n`
+        + 'No dia a dia ele usa o PIN — para esse, use Editar › Novo PIN. '
+        + 'Se a senha for indispensável, desative este usuário e crie outro.')
+      return
+    }
     if (!confirm(`Enviar e-mail de redefinição de senha para ${u.email}?`)) return
     await sendPasswordResetEmail(auth, u.email)
     aviso(`E-mail de redefinição enviado para ${u.email}.`)
@@ -115,6 +166,7 @@ export default function Usuarios() {
 
       {novo && (
         <FormUsuario
+          emails={usuarios.map((u) => u.email)}
           onSalvar={criarUsuario}
           onCancelar={() => setNovo(false)}
         />
@@ -131,15 +183,16 @@ export default function Usuarios() {
         <div className="cards">
           {usuarios.map((u) => (
             editando === u.uid ? (
-              <FormEdicao key={u.uid} u={u}
-                onSalvar={(dados) => salvarEdicao(u.uid, dados)}
+              <FormEdicao key={u.uid} u={u} temPin={!!pins[u.uid]}
+                onSalvar={(dados) => salvarEdicao(u, dados)}
                 onCancelar={() => setEditando(null)}
               />
             ) : (
-              <CardUsuario key={u.uid} u={u} euMesmo={u.uid === user.uid}
+              <CardUsuario key={u.uid} u={u} euMesmo={u.uid === user.uid} pin={pins[u.uid]}
                 onEditar={() => { setEditando(u.uid); setNovo(false) }}
                 onAtivo={() => alternarAtivo(u)}
                 onSenha={() => resetarSenha(u)}
+                onRemoverPin={() => removerPin(u)}
               />
             )
           ))}
@@ -149,8 +202,9 @@ export default function Usuarios() {
   )
 }
 
-function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
+export function CardUsuario({ u, euMesmo, pin, onEditar, onAtivo, onSenha, onRemoverPin }) {
   const inativo = u.ativo === false
+  const interno = ehLoginInterno(u.email)
   return (
     <div className="card em_dia" style={inativo ? { opacity: 0.55 } : undefined}>
       <div className="card-top">
@@ -159,6 +213,10 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
       </div>
       <div className="meta-row">
         <span className="chip">✉️ {u.email}</span>
+        {interno && <span className="chip" title="Sem caixa de e-mail: não recebe redefinição de senha">login interno</span>}
+        {pin && (pin.ativo
+          ? <span className="chip">🔢 PIN do tablet</span>
+          : <span className="chip rota-warn" title="Usuário inativo ou fora do perfil Operador">🔢 PIN desligado</span>)}
         {u.perfil === 'vendedor' && u.vendedorNome && <span className="chip">👤 {u.vendedorNome}</span>}
         {u.perfil === 'operador' && (
           (u.setores || []).length
@@ -178,6 +236,7 @@ function CardUsuario({ u, euMesmo, onEditar, onAtivo, onSenha }) {
       <div className="modo-btns">
         <button className="modo-btn" onClick={onEditar}>Editar</button>
         <button className="modo-btn" onClick={onSenha}>Redefinir senha</button>
+        {pin && <button className="modo-btn" onClick={onRemoverPin}>Remover PIN</button>}
         {!euMesmo && (
           <button className="modo-btn" onClick={onAtivo}
             style={{ color: inativo ? 'var(--ok, #4caf50)' : 'var(--danger)' }}>
@@ -231,7 +290,28 @@ function MateriaisPicker({ materiais, onToggle }) {
   )
 }
 
-function FormUsuario({ onSalvar, onCancelar }) {
+// PIN do tablet: só números, 4 dígitos. Fica escondido (quem está do lado não
+// lê), com um olho para quem digita conferir.
+function PinCampo({ valor, onChange, rotulo, dica }) {
+  const [ver, setVer] = useState(false)
+  return (
+    <div className="field" style={{ marginTop: 10, maxWidth: 320 }}>
+      <label>{rotulo}</label>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input value={valor} type={ver ? 'text' : 'password'} inputMode="numeric"
+          autoComplete="off" maxLength={4} placeholder="4 números"
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          style={{ letterSpacing: '0.4em', fontSize: 18, width: 120 }} />
+        <button type="button" className="modo-btn" onClick={() => setVer((v) => !v)}>
+          {ver ? 'ocultar' : 'mostrar'}
+        </button>
+      </div>
+      <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{dica}</span>
+    </div>
+  )
+}
+
+export function FormUsuario({ emails, onSalvar, onCancelar }) {
   const { vendedores } = useCadastros()
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
@@ -241,6 +321,8 @@ function FormUsuario({ onSalvar, onCancelar }) {
   const [vendedorNome, setVendedorNome] = useState('')
   const [setores, setSetores] = useState([])
   const [materiais, setMateriais] = useState([])
+  const [semEmail, setSemEmail] = useState(false)
+  const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState('')
   // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
@@ -251,17 +333,21 @@ function FormUsuario({ onSalvar, onCancelar }) {
   const toggleMaterial = (id) => setMateriais((m) =>
     m.includes(id) ? m.filter((x) => x !== id) : [...m, id])
 
+  // sem e-mail, o login sai do nome — e acompanha o que se digita
+  const login = semEmail ? loginInterno(nome, emails) : email
+
   async function salvar() {
     setErro('')
     if (!nome.trim()) { setErro('Informe o nome.'); return }
-    if (!email.trim()) { setErro('Informe o e-mail.'); return }
+    if (!login.trim()) { setErro(semEmail ? 'Informe o nome para gerar o login.' : 'Informe o e-mail.'); return }
     if (senha.length < 6) { setErro('A senha precisa ter pelo menos 6 caracteres.'); return }
     if (senha !== senha2) { setErro('As senhas não conferem.'); return }
     if (perfil === 'vendedor' && !vendedorNome) { setErro('Escolha qual vendedor este usuário representa.'); return }
     if (perfil === 'operador' && !setores.length) { setErro('Libere pelo menos um setor para o operador.'); return }
+    if (perfil === 'operador' && pin && problemaDoPin(pin)) { setErro(problemaDoPin(pin)); return }
     setBusy(true)
     try {
-      await onSalvar({ nome, email, senha, perfil, vendedorNome, setores, materiais })
+      await onSalvar({ nome, email: login, senha, perfil, vendedorNome, setores, materiais, pin })
     } catch (e) {
       const map = {
         'auth/email-already-in-use': 'Já existe um usuário com este e-mail.',
@@ -287,9 +373,18 @@ function FormUsuario({ onSalvar, onCancelar }) {
         </div>
         <div className="field" style={{ flex: 1, minWidth: 200 }}>
           <label>E-mail (será o login)</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="maria@jcsacolas.com.br" />
+          {semEmail
+            ? <input value={login} disabled placeholder="digite o nome" style={{ opacity: 0.75 }} />
+            : <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="maria@jcsacolas.com.br" />}
         </div>
       </div>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, margin: '-2px 0 10px' }}>
+        <input type="checkbox" checked={semEmail} onChange={(e) => setSemEmail(e.target.checked)} />
+        Não tem e-mail — gerar login interno
+        {semEmail && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+          (anote o login e a senha para entregar a ele: não há como recuperar a senha por e-mail)
+        </span>}
+      </label>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
@@ -334,6 +429,10 @@ function FormUsuario({ onSalvar, onCancelar }) {
 
       {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
       {perfil === 'operador' && <MateriaisPicker materiais={materiais} onToggle={toggleMaterial} />}
+      {perfil === 'operador' && (
+        <PinCampo valor={pin} onChange={setPin} rotulo="PIN do tablet (opcional)"
+          dica="Para dar baixa no tablet do setor. Ele pode trocar depois, entrando com o login dele." />
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar} disabled={busy}>
@@ -345,13 +444,15 @@ function FormUsuario({ onSalvar, onCancelar }) {
   )
 }
 
-function FormEdicao({ u, onSalvar, onCancelar }) {
+export function FormEdicao({ u, temPin, onSalvar, onCancelar }) {
   const { vendedores } = useCadastros()
   const [nome, setNome] = useState(u.nome || '')
   const [perfil, setPerfil] = useState(u.perfil || 'designer')
   const [vendedorNome, setVendedorNome] = useState(u.vendedorNome || '')
   const [setores, setSetores] = useState(u.setores || [])
   const [materiais, setMateriais] = useState(u.materiais || [])
+  const [pin, setPin] = useState('')
+  const [busy, setBusy] = useState(false)
   // normaliza antes de mexer: usuário antigo pode ter 'grafica' salvo no lugar de 'GRAFICA'
   const toggleSetor = (id) => setSetores((s) => {
     const atual = s.map(normSetor)
@@ -359,6 +460,23 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
   })
   const toggleMaterial = (id) => setMateriais((m) =>
     m.includes(id) ? m.filter((x) => x !== id) : [...m, id])
+
+  async function salvar() {
+    if (!nome.trim()) { alert('Informe o nome.'); return }
+    if (perfil === 'vendedor' && !vendedorNome) { alert('Escolha qual vendedor este usuário representa.'); return }
+    if (perfil === 'operador' && !setores.length) { alert('Libere pelo menos um setor para o operador.'); return }
+    if (perfil === 'operador' && pin && problemaDoPin(pin)) { alert(problemaDoPin(pin)); return }
+    if (temPin && perfil !== 'operador'
+      && !confirm('Só Operador usa o tablet: o PIN deste usuário vai ficar desligado. Continuar?')) return
+    setBusy(true)
+    try {
+      await onSalvar({ nome, perfil, vendedorNome, setores, materiais, pin })
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="card em_dia" style={{ borderLeftColor: 'var(--accent)' }}>
@@ -390,14 +508,18 @@ function FormEdicao({ u, onSalvar, onCancelar }) {
       )}
       {perfil === 'operador' && <SetoresPicker setores={setores} onToggle={toggleSetor} />}
       {perfil === 'operador' && <MateriaisPicker materiais={materiais} onToggle={toggleMaterial} />}
+      {perfil === 'operador' && (
+        <PinCampo valor={pin} onChange={setPin}
+          rotulo={temPin ? 'Novo PIN do tablet (em branco = manter o atual)' : 'PIN do tablet (opcional)'}
+          dica={temPin
+            ? 'Use para redefinir quando ele esquecer. O PIN atual não é mostrado.'
+            : 'Para dar baixa no tablet do setor.'} />
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button className="btn primary" onClick={() => {
-          if (!nome.trim()) { alert('Informe o nome.'); return }
-          if (perfil === 'vendedor' && !vendedorNome) { alert('Escolha qual vendedor este usuário representa.'); return }
-          if (perfil === 'operador' && !setores.length) { alert('Libere pelo menos um setor para o operador.'); return }
-          onSalvar({ nome, perfil, vendedorNome, setores, materiais })
-        }}>Salvar</button>
-        <button className="btn" onClick={onCancelar}>Cancelar</button>
+        <button className="btn primary" onClick={salvar} disabled={busy}>
+          {busy ? 'Salvando…' : 'Salvar'}
+        </button>
+        <button className="btn" onClick={onCancelar} disabled={busy}>Cancelar</button>
       </div>
     </div>
   )

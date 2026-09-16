@@ -11,6 +11,7 @@ const LABEL = {
   rota: 'Rota',
   entregues: 'Entregues',
   localizar: 'Localizar',
+  financeiro: 'Financeiro',
   relatorios: 'Relatórios',
   cadastros: 'Cadastros',
   usuarios: 'Usuários',
