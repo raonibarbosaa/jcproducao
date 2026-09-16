@@ -13,7 +13,8 @@ import {
   temVolumes, volumesNaEtapa, volumesDoItem, mapaEtapasMovendoVolumes, podeDesembalar,
   ETAPAS_VOLUME,
   docProblema, problemaDoItem, problemasDoPedido, ehErroEntrega, temCorrecao,
-  tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos,
+  tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos, quemAssina,
+  quemFez,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -41,8 +42,9 @@ function Espera({ ms }) {
   )
 }
 
-export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas }) {
-  const { user, perfil, nome, setores, materiais } = useAuth()
+// `posto` = o estado do tablet (usePosto) quando a conta é de posto; senão null.
+export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas, posto }) {
+  const { user, perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
   const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
   const ehStaff = perfil === 'dono' || perfil === 'designer'
   const veValor = perfil === 'dono' || perfil === 'financeiro'
@@ -65,6 +67,15 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // IP pego uma vez por sessão da tela — não atrasa cada movimento
   const [ip, setIp] = useState('')
   useEffect(() => { pegarIP().then(setIp) }, [])
+
+  // No TABLET, quem assina é o funcionário do PIN, não a conta logada. Sem
+  // ninguém identificado, nada se move — senão a baixa sairia sem autor.
+  const executor = contaPosto ? (posto?.executor || null) : null
+  const semQuem = !!contaPosto && !executor
+  const assina = executor?.nome || nome              // o `por` gravado na etapa
+  const quem = () => quemAssina({ user, nome, perfil, ip, posto: !!contaPosto, executor })
+  const trava = !!salvando || semQuem
+  const usou = () => posto?.renova?.()
 
   // monta os cards: um por (pedido × painel), com os índices dos itens que estão ali
   const porPainel = {}
@@ -156,7 +167,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       .filter((m) => m.para === 'montagem' || m.ids.length)
 
     if (!porVolume.length && !qtdMovs.length) return
-    if (salvando) return
+    if (salvando || semQuem) return
     setSalvando(marca)
     try {
       // etapa + auditoria no MESMO batch: ou as duas coisas acontecem, ou nenhuma.
@@ -166,19 +177,16 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       // construtor CONGELA o que não é dele, então rodar o de quantidade sobre
       // o resultado do de volume preserva as duas metades — e sai num write só.
       let etapas = p.etapas
-      if (porVolume.length) etapas = mapaEtapasMovendoVolumes(p, porVolume, nome)
-      if (qtdMovs.length) etapas = mapaEtapasComQtd({ ...p, etapas }, qtdMovs, nome)
+      if (porVolume.length) etapas = mapaEtapasMovendoVolumes(p, porVolume, assina)
+      if (qtdMovs.length) etapas = mapaEtapasComQtd({ ...p, etapas }, qtdMovs, assina)
       batch.update(doc(db, 'pedidos', p.idVenda), { etapas })
 
-      const quem = {
-        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
-        perfil: perfil || '', ip,
-      }
+      const q = quem()
       const material = (i) => materialDoItem(p.itens[i], itensCad)
       const regs = []
       if (porVolume.length) {
         const rs = registrosAuditoria(p, porVolume.map((m) => m.idx),
-          (i) => porVolume.find((m) => m.idx === i)?.para, quem, material)
+          (i) => porVolume.find((m) => m.idx === i)?.para, q, material)
         rs.forEach((r, n) => {
           const m = porVolume[n]
           const vols = m.para === 'montagem'
@@ -193,7 +201,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       }
       if (qtdMovs.length) {
         const rs = registrosAuditoria(p, qtdMovs.map((m) => m.idx),
-          (i) => qtdMovs.find((m) => m.idx === i)?.para, quem, material)
+          (i) => qtdMovs.find((m) => m.idx === i)?.para, q, material)
         // a auditoria registra QUANTO andou e DE ONDE. O `de` não pode sair de
         // etapaDoItem: com o item dividido, ela devolve a etapa mais atrasada,
         // que não é necessariamente a coluna de onde a pessoa moveu.
@@ -206,6 +214,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       }
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
+      usou()
     } catch (e) {
       console.error('Erro ao mover etapa:', e)
       alert('Erro ao mover: ' + e.message)
@@ -217,11 +226,11 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // Fecha a montagem de UM item criando os volumes. É por item porque cada
   // produto é embalado separado — não faz sentido fechar o card inteiro de uma vez.
   async function fecharMontagem(p, idx, volumes, consumido) {
-    if (salvando) return
+    if (salvando || semQuem) return
     const marca = `fechar|${p.idVenda}|${idx}`
     setSalvando(marca)
     try {
-      const entrada = fechaMontagemEmVolumes(p, idx, volumes, consumido, nome)
+      const entrada = fechaMontagemEmVolumes(p, idx, volumes, consumido, assina)
       if (!entrada) { setFechando(null); return }
       const etapas = { ...(p.etapas || {}) }
       ;(p.itens || []).forEach((_, i) => {
@@ -241,11 +250,8 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       // contado neste caminho, sem erro nenhum aparecer.
       const batch = writeBatch(db)
       batch.update(doc(db, 'pedidos', p.idVenda), { etapas: carimbaTempos(p, etapas) })
-      const quem = {
-        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
-        perfil: perfil || '', ip,
-      }
-      const regs = registrosAuditoria(p, [idx], 'expedicao', quem,
+      const q = quem()
+      const regs = registrosAuditoria(p, [idx], 'expedicao', q,
         (i) => materialDoItem(p.itens[i], itensCad))
       regs.forEach((r) => {
         r.de = 'montagem'
@@ -255,6 +261,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       })
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
+      usou()
       setFechando(null)
     } catch (e) {
       console.error('Erro ao fechar montagem:', e)
@@ -266,19 +273,16 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
 
   // move volumes de etapa (expedir, voltar) — mesma auditoria do mover por quantidade
   async function moverVolumes(p, movs, marca) {
-    if (salvando) return
+    if (salvando || semQuem) return
     setSalvando(marca)
     try {
       const batch = writeBatch(db)
       batch.update(doc(db, 'pedidos', p.idVenda), {
-        etapas: mapaEtapasMovendoVolumes(p, movs, nome),
+        etapas: mapaEtapasMovendoVolumes(p, movs, assina),
       })
-      const quem = {
-        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
-        perfil: perfil || '', ip,
-      }
+      const q = quem()
       const idxs = movs.map((m) => m.idx)
-      const regs = registrosAuditoria(p, idxs, (i) => movs.find((m) => m.idx === i)?.para, quem,
+      const regs = registrosAuditoria(p, idxs, (i) => movs.find((m) => m.idx === i)?.para, q,
         (i) => materialDoItem(p.itens[i], itensCad))
       regs.forEach((r, n) => {
         const m = movs[n]
@@ -292,6 +296,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
       })
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
+      usou()
     } catch (e) {
       console.error('Erro ao mover volumes:', e)
       alert('Erro ao mover: ' + e.message)
@@ -303,14 +308,12 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // Registra um erro visto por quem está produzindo. Não move nada e não trava
   // o item — só acende o ⚠ até alguém resolver.
   async function reportarErro(p, idx, dados) {
-    if (salvando) return
+    if (salvando || semQuem) return
     setSalvando('reportar')
     try {
-      const quem = {
-        porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
-        perfil: perfil || '', ip,
-      }
-      await setDoc(doc(collection(db, 'problemas')), docProblema({ p, idx, ...dados, quem }))
+      const q = quem()
+      await setDoc(doc(collection(db, 'problemas')), docProblema({ p, idx, ...dados, quem: q }))
+      usou()
       setReportando(null)
     } catch (e) {
       alert('Não foi possível reportar: ' + (e.code || e.message))
@@ -435,7 +438,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                           📦 <b>Avisado como JÁ ENTREGUE</b>
                           {x.entregueEm ? ` em ${fmtData(`${x.entregueEm}T00:00:00`)}` : ''}
                           {x.entreguePor ? ` · ${x.entreguePor}` : ''}
-                          <div>por {x.porNome || x.porEmail || '—'} — confirme antes de produzir.</div>
+                          <div>por {quemFez(x) || '—'} — confirme antes de produzir.</div>
                         </div>
                       ))}
                     <ul className="itens">
@@ -474,7 +477,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                                   title={problemaDoItem(problemas, p.idVenda, keyDoItem(p, i)).length
                                     ? 'Já existe erro reportado neste item — clique para reportar outro'
                                     : 'Reportar erro: o papel não bate com o sistema'}
-                                  disabled={!!salvando}
+                                  disabled={trava}
                                   onClick={() => setReportando({ p, idx: i })}>⚠</button>
                                 {/* avança/volta SÓ este item, e só a quantidade digitada */}
                                 {podeMoverEtapa(pa.etapa) && (
@@ -491,16 +494,16 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                                     )}
                                     {antItem && (
                                       <button className="mini-btn" title={`Voltar ${fmtQtd(aMover)} para ${nomeEtapaItem(antItem)}`}
-                                        disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: antItem, qtd: aMover }], marca)}>←</button>
+                                        disabled={trava} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: antItem, qtd: aMover }], marca)}>←</button>
                                     )}
                                     {prox && pa.tipo === 'montagem' && (
                                       // embalar é por item: abre o fechamento em volumes
                                       <button className="mini-btn" title="Fechar este item em volumes"
-                                        disabled={!!salvando} onClick={() => setFechando({ p, idx: i })}>📦</button>
+                                        disabled={trava} onClick={() => setFechando({ p, idx: i })}>📦</button>
                                     )}
                                     {prox && pa.tipo !== 'montagem' && (
                                       <button className="mini-btn" title={`Avançar ${fmtQtd(aMover)} para ${nomeEtapaItem(prox)}`}
-                                        disabled={!!salvando} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: prox, qtd: aMover }], marca)}>→</button>
+                                        disabled={trava} onClick={() => mover(p, [{ idx: i, de: pa.etapa, para: prox, qtd: aMover }], marca)}>→</button>
                                     )}
                                   </span>
                                 )}
@@ -524,7 +527,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                                     <span className="q">{fmtQtd(v.qtd)} {un}</span>
                                     {podeMoverEtapa(pa.etapa) && (
                                       <button className="mini-btn" title={`Expedir só o volume ${v.n}`}
-                                        disabled={!!salvando}
+                                        disabled={trava}
                                         onClick={() => moverVolumes(p, [{ idx: i, ids: [v.id], para: 'expedido' }], marca)}>→</button>
                                     )}
                                   </li>
@@ -551,7 +554,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                         {/* coluna de linha é o começo do fluxo — só Montagem/Expedição voltam */}
                         {pa.tipo !== 'linha' && (
                           <button className="mini-btn" title={`Voltar ${idxs.length > 1 ? 'os itens' : 'o item'} para a etapa anterior`}
-                            disabled={!!salvando}
+                            disabled={trava}
                             onClick={() => mover(p, movsPara(anteriorDe), marca)}
                           >←</button>
                         )}
@@ -561,7 +564,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                           </span>
                         )}
                         {prox && prox !== 'expedido' && pa.tipo !== 'montagem' && (
-                          <button className="btn ok qc-avancar" disabled={!!salvando}
+                          <button className="btn ok qc-avancar" disabled={trava}
                             onClick={() => mover(p, movsPara(prox), marca)}>
                             {salvando === marca
                               ? 'Salvando…'
@@ -569,7 +572,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                           </button>
                         )}
                         {prox === 'expedido' && (
-                          <button className="btn ok qc-avancar" disabled={!!salvando}
+                          <button className="btn ok qc-avancar" disabled={trava}
                             title="Sai do quadro e segue para a Rota/Entrega"
                             onClick={() => mover(p, movsPara('expedido'), marca)}>
                             {salvando === marca

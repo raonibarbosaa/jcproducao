@@ -8,6 +8,7 @@ import {
   nomeCliente, fmtData, fmtDataHora, fmtQtd, fmtDuracao, fmtMoeda, fmtPeso,
   pesoDaLista, situacaoPrazo, previsaoDe, doDoc, indexaProblemas, problemasDoPedido,
   nomeCampoErro, ehErroEntrega, saiuParaEntrega,
+  quemFez,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -258,7 +259,7 @@ function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor
       {problemas.filter((x) => x.status === 'aberto').map((x) => (
         <div key={x.id} className={`loc-alerta${ehErroEntrega(x.campo) ? ' forte' : ''}`}>
           {ehErroEntrega(x.campo) ? '🚨' : '⚠'} {nomeCampoErro(x.campo)}
-          {x.porNome && <> · {x.porNome}</>}
+          {quemFez(x) && <> · {quemFez(x)}</>}
           {x.quando && <> · {fmtDataHora(x.quando)}</>}
           {x.obs && <div className="loc-alerta-obs">{x.obs}</div>}
         </div>

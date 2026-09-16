@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import {
   nomeEtapaItem, nomeCliente, casaBusca, nomeDoMaterial, montagemDoMaterial,
   MONTAGENS, PAINEIS_QUADRO,
+  quemFez,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
@@ -51,11 +52,11 @@ export default function Auditoria() {
   }, [])
 
   const pessoas = useMemo(
-    () => [...new Set(regs.map((r) => r.porNome || r.porEmail).filter(Boolean))].sort(),
+    () => [...new Set(regs.map(quemFez).filter(Boolean))].sort(),
     [regs])
 
   const lista = regs.filter((r) => {
-    if (quem && (r.porNome || r.porEmail) !== quem) return false
+    if (quem && quemFez(r) !== quem) return false
     if (setor) {
       // o filtro casa tanto a origem quanto o destino: "o que passou pela montagem papel"
       const ids = [r.de, r.para].map((e) => (e === 'montagem' ? `montagem:${montagemDoMaterial(r.material)}` : e))
@@ -64,7 +65,7 @@ export default function Auditoria() {
     if (de && (r.quando || '') < de) return false
     if (ate && (r.quando || '') > `${ate}T23:59:59`) return false
     if (busca && !casaBusca(busca,
-      r.idVenda, r.cliente, nomeCliente(r.cliente, clientes), r.produto, r.porNome, r.porEmail,
+      r.idVenda, r.cliente, nomeCliente(r.cliente, clientes), r.produto, r.porNome, r.porEmail, r.executorNome,
     )) return false
     return true
   })
@@ -132,9 +133,10 @@ export default function Auditoria() {
                 <tr key={r.id}>
                   <td style={{ whiteSpace: 'nowrap' }}>{fmtQuando(r.quando)}</td>
                   <td>
-                    {r.porNome || r.porEmail || '—'}
+                    {quemFez(r) || '—'}
                     <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                      {r.perfil || '—'}{r.ip ? ` · ${r.ip}` : ''}
+                      {/* no tablet, o logado é o APARELHO: diz onde a baixa foi dada */}
+                      {r.posto ? `📟 ${r.porNome || 'tablet'}` : (r.perfil || '—')}{r.ip ? ` · ${r.ip}` : ''}
                     </div>
                   </td>
                   <td>

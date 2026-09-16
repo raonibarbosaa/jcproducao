@@ -273,9 +273,12 @@ export const normSetor = (s) => (s === 'grafica' ? 'GRAFICA' : s === 'silk' ? 'P
 // carga e precisa da tela de Entregas. Sem isso a permissão de dois eixos fica
 // pela metade — o setor liberava o que ele move no quadro, mas não a tela onde
 // esse trabalho acontece.
-export function abasDoUsuario(perfil, setores, base) {
+export function abasDoUsuario(perfil, setores, base, posto = false) {
   const abas = [...(base || [])]
   if (perfil !== 'operador') return abas
+  // o TABLET do setor é só a fila: nada de Entregas, Erros ou Localizar, mesmo
+  // que o setor dele abrisse essas abas para um operador de carne e osso
+  if (posto) return ['producao']
   const meus = (setores || []).map(normSetor)
   if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('carga')) {
     abas.splice(abas.indexOf('producao') + 1 || abas.length, 0, 'carga')
@@ -3283,7 +3286,8 @@ export function docPin(u, hash) {
   const d = {
     nome: String(u?.nome || '').trim(),
     setores: u?.perfil === 'operador' ? (u?.setores || []).map(normSetor) : [],
-    ativo: u?.ativo !== false && u?.perfil === 'operador',
+    // a conta do TABLET não é uma pessoa: PIN nela seria baixa sem autor
+    ativo: u?.ativo !== false && u?.perfil === 'operador' && u?.posto !== true,
   }
   if (hash) d.hash = hash
   return d
@@ -3306,4 +3310,56 @@ export function loginInterno(nome, emailsExistentes = []) {
 // ninguém, e a tela tem que dizer isso em vez de fingir que mandou.
 export function ehLoginInterno(email) {
   return String(email || '').toLowerCase().endsWith('@' + DOMINIO_LOGIN_INTERNO)
+}
+
+// ---------- o POSTO em uso (tablet) ----------
+// Quanto tempo o funcionário identificado continua valendo sem mexer em nada.
+// Cada baixa renova. Passou disso, o próximo a pegar o tablet não herda o nome.
+export const POSTO_MINUTOS = 5
+export const POSTO_TENTATIVAS = 5      // PIN errado seguido antes de esperar
+export const POSTO_ESPERA_S = 30
+
+// Milissegundos que ainda restam para quem está ativo (0 = expirou).
+export function restaDoPosto(ultimo, agora = Date.now(), minutos = POSTO_MINUTOS) {
+  if (!ultimo) return 0
+  return Math.max(0, ultimo + minutos * 60000 - agora)
+}
+
+export function fmtResta(ms) {
+  const s = Math.ceil((ms || 0) / 1000)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+// Quem aparece na faixa do tablet: PIN ligado, com hash, e que trabalha em
+// algum setor deste posto. Ordem alfabética — a mão acha o nome sem ler tudo.
+export function pinsDoPosto(pins, setoresDoPosto) {
+  const meus = (setoresDoPosto || []).map(normSetor)
+  return Object.entries(pins || {})
+    .map(([uid, d]) => ({ uid, ...d }))
+    .filter((d) => d.ativo === true && d.hash
+      && (d.setores || []).map(normSetor).some((x) => meus.includes(x)))
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+}
+
+// Quem assina o movimento. No tablet o LOGADO é o aparelho (`porUid`, exigido
+// pela rule) e quem FEZ é o funcionário do PIN (`executor*`). Fora do tablet,
+// as duas coisas são a mesma pessoa — e o executor vai preenchido igual, para a
+// auditoria ter um campo só para "quem fez".
+export function quemAssina({ user, nome, perfil, ip, posto, executor }) {
+  const q = {
+    porUid: user?.uid || '', porNome: nome || '', porEmail: user?.email || '',
+    perfil: perfil || '', ip: ip || '',
+    executorUid: user?.uid || '', executorNome: nome || '',
+  }
+  if (posto) {
+    q.executorUid = executor?.uid || ''
+    q.executorNome = executor?.nome || ''
+    q.posto = true
+  }
+  return q
+}
+
+// Quem fez, para quem LÊ a auditoria (registro antigo não tem executor).
+export function quemFez(r) {
+  return r?.executorNome || r?.porNome || r?.porEmail || ''
 }

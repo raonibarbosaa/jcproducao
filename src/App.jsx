@@ -41,7 +41,7 @@ const ACESSO = {
 }
 
 export default function App() {
-  const { user, perfil, semPerfil, nome, logout, vendedorNome, setores, carregando } = useAuth()
+  const { user, perfil, semPerfil, nome, logout, vendedorNome, setores, posto, carregando } = useAuth()
   const { vendedores: cadastros } = useCadastros()
   const [pedidosCrus, setPedidos] = useState([])
   const [problemas, setProblemas] = useState([])
@@ -103,7 +103,7 @@ export default function App() {
   }
 
   // o perfil dá a base; para o operador, os SETORES ainda podem abrir aba
-  const abas = abasDoUsuario(perfil, setores, ACESSO[perfil] || ACESSO.dono)
+  const abas = abasDoUsuario(perfil, setores, ACESSO[perfil] || ACESSO.dono, posto)
 
   // contadores
   const semDef = pedidos.filter((p) => !p.status).length

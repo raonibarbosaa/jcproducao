@@ -7,6 +7,7 @@ import {
   indexaCienciasPorPedido, cienciaDoPedido, docCiencia, fmtDataHora,
   unificaPedidosVendedor, filtraPedidos, resumoFiltros, ordemRota,
   indexaProblemas, problemasDoPedido, nomeCampoErro, ehErroEntrega, docProblema, doDoc,
+  quemFez,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import QuadroVendedor from '../components/QuadroVendedor.jsx'
@@ -292,7 +293,7 @@ function CardMeu({ p, clientes, c, salvando, onCiencia, onReportar, problemas })
                     {x.entreguePor ? ` · ${x.entreguePor}` : ''} — esperando a baixa no sistema</>
                 : <><br />no sistema: {x.noSistema || '—'} · <b>no papel: {x.noPapel || '—'}</b></>}
               <div style={{ color: 'var(--text-faint)' }}>
-                por {x.porNome || x.porEmail || '—'} · {fmtDataHora(x.quando)}
+                por {quemFez(x) || '—'} · {fmtDataHora(x.quando)}
               </div>
             </div>
           ))}

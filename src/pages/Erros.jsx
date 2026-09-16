@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import {
   nomeCampoErro, ehErroEntrega, nomeCliente, fmtData, fmtDataHora, fmtQtd, arredondaQtd,
   keyDoItem, filtraPedidos, vendedoresDe, previsaoDe,
+  quemFez,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -157,7 +158,7 @@ export default function Erros({ pedidos, problemas }) {
             {x.obs && <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 6 }}>{x.obs}</div>}
 
             <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>
-              reportado por {x.porNome || x.porEmail || '—'} ({x.perfil}) · {fmtDataHora(x.quando)}
+              reportado por {quemFez(x) || '—'} ({x.perfil}{x.posto ? ` · tablet ${x.porNome}` : ''}) · {fmtDataHora(x.quando)}
             </div>
 
             {aberto && !podeResolver ? (

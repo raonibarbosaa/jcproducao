@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx') } },
   },
   resolve: {
     alias: [
@@ -40,6 +40,7 @@ const bruto = {
   ...(await import(join(OUT, 'financeiro.js'))).roda(),
   ...(await import(join(OUT, 'usuarios.js'))).roda(),
   ...(await import(join(OUT, 'meupin.js'))).roda(),
+  ...(await import(join(OUT, 'posto.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -77,6 +78,14 @@ const ESPERA = {
   lay: ['JC Sacolas', 'Financeiro', 'Sair'],
   layOp: ['🔢 Meu PIN', 'João', 'Sair'],
   layPosto: ['Tablet Silk', 'Sair'],
+  // faixa do tablet: só quem tem PIN ligado NESTE setor, pelo primeiro nome
+  fVazia: ['Toque no seu nome para dar baixa', 'Ana', 'Pedro', '>AL<', '>PA<'],
+  fAtiva: ['Pedro Alves', 'está dando baixa', 'sai em 4:32', 'Sair', 'posto-nome on'],
+  fNinguem: ['Ninguém com PIN neste setor'],
+  fJoaos: ['João Souza', 'João Lima', 'Maria<'],
+  teclado: ['Pedro Alves', 'Digite seu PIN', '>0<', '>9<', 'Cancelar', '⌫'],
+  qTravado: ['INGRID MODAS', 'SACOLA PAPEL P02', 'Concluir → ', 'disabled=""'],
+  qLivre: ['INGRID MODAS', 'Concluir → '],
 }
 
 // o que NÃO pode aparecer
@@ -85,6 +94,10 @@ const PROIBE = {
   layPosto: ['Meu PIN'],  // o tablet não tem PIN próprio
   pSem: ['Trocar PIN'],   // sem PIN não há o que trocar
   pOff: ['Trocar PIN'],   // desligado não troca
+  fVazia: ['Caio', 'Davi', 'está dando baixa'],   // desligado / outro setor / ninguém ativo
+  fAtiva: ['Toque no seu nome'],
+  fJoaos: ['Maria Silva'],   // nome único continua só com o primeiro
+  qLivre: ['disabled=""'],   // com alguém ativo, nada travado
 }
 
 let mal = 0

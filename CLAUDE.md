@@ -713,7 +713,7 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   ("LUX BEACHWEAR" × "LUX BEACH WEAR"), mas **não é fuzzy**: "SAF FUNERARIA" × "ATUAL
   MODAS" (mesmo número, cliente outro) tem que continuar caindo na revisão.
 
-## POSTO COMPARTILHADO — tablet com login geral (desenho fechado em 16/09/2026; etapa 1 FEITA)
+## POSTO COMPARTILHADO — tablet com login geral (NO AR desde 16/09/2026)
 > Um tablet no Silk, uma conta só, vários funcionários dando baixa. Separa
 > "QUEM ESTÁ LOGADO" (o aparelho) de "QUEM FEZ" (o funcionário).
 
@@ -774,6 +774,33 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   escritório redefine. Sem PIN ou com PIN desligado, a tela explica e não
   oferece troca (a rule também não deixa o próprio criar o doc). Sem rule nova.
   O stub de Auth do `test:tela` aceita `globalThis.__auth` para trocar o perfil.
+- ✅ **Etapas 3–5 FEITAS (16/09/2026):**
+  - **Conta de posto:** checkbox "📟 Conta do TABLET do setor" em Usuários
+    (só Operador) grava `usuarios.posto`. `abasDoUsuario(..., posto)` devolve
+    só `producao`; a Produção força o quadro e esconde o ☰ Lista. Conta de
+    posto não tem PIN (`docPin` desliga) nem "Meu PIN".
+  - **Faixa (`src/components/PostoFaixa.jsx`):** `usePosto` vive na PÁGINA
+    (Producao), não no quadro — o quadro desmonta quando a fila esvazia e
+    levaria junto quem estava identificado. `pinsDoPosto` filtra PIN ligado
+    do setor; nome repetido ("João") ganha o sobrenome. Teclado numérico
+    próprio (o do sistema cobre a tela e mostra letras); 5 erros seguidos =
+    espera de 30 s (`POSTO_TENTATIVAS`/`POSTO_ESPERA_S`). `POSTO_MINUTOS = 5`,
+    cada baixa renova (`usou()` depois do commit). PIN desligado ou removido
+    no escritório derruba quem está ativo na hora.
+  - **Quadro:** `quemAssina` (utils) monta a assinatura; `trava` substituiu o
+    `disabled={!!salvando}` — sem ninguém ativo nada se move nem se reporta. O
+    `por` da etapa é o funcionário (`assina`). Os avisos de erro (`problemas`)
+    também levam o executor; telas que mostram "quem" usam `quemFez`.
+  - **Auditoria:** coluna "pessoa" e filtro por `quemFez`; linha de baixo
+    mostra `📟 <tablet>` quando veio de posto. Rule `executorValido`: no posto,
+    `executorUid` obrigatório e com `pins.ativo == true`; fora dele, igual ao
+    logado (ou ausente, nos registros antigos).
+  - Testes: `tests/posto.test.mjs` + `tests/render/posto.jsx` (faixa, teclado e
+    o quadro TRAVADO sem ninguém × livre com alguém ativo).
+  - **Para ligar um tablet:** criar usuário Operador, setor Silk, marcar
+    "Conta do tablet", logar no aparelho. Cada funcionário: Operador, setor
+    Silk, com PIN.
+  - FALTA (depois): relatório de produção por funcionário.
 - **Ordem:** (1) PIN no cadastro de Usuários + `pins` + desativar junto;
   (2) "Meu PIN" para o funcionário; (3) conta de posto abrindo só na fila;
   (4) faixa + PIN + expiração + Sair no quadro; (5) executor na auditoria e

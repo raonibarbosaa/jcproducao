@@ -16,12 +16,16 @@ import DataEntrega from '../components/DataEntrega.jsx'
 import QuadroProducao from '../components/QuadroProducao.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
+import PostoFaixa, { usePosto } from '../components/PostoFaixa.jsx'
 
 export default function Producao({ pedidos, problemas }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
-  const { perfil, nome, setores, materiais } = useAuth()
+  const { perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
+  // o TABLET do setor: faixa de funcionários + PIN, e só o quadro
+  const posto = usePosto(!!contaPosto)
   const podeEditarData = perfil === 'dono' || perfil === 'designer'
-  const [vista, setVista] = useState(['operador', 'expedicao'].includes(perfil) ? 'quadro' : 'lista')   // 'lista' | 'quadro' (fluxo gráfica)
+  const [vistaEscolhida, setVista] = useState(['operador', 'expedicao'].includes(perfil) ? 'quadro' : 'lista')
+  const vista = contaPosto ? 'quadro' : vistaEscolhida   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
   const [painelEscolhido, setPainelAba] = useState('')  // aba do quadro ('' = automática)
   const [filtroMaterial, setFiltroMaterial] = useState('') // '' | 'papel' | 'plastico'
@@ -196,10 +200,10 @@ export default function Producao({ pedidos, problemas }) {
           </small>
         </h1>
         <div className="spacer" />
-        <div className="vista-toggle">
+        {!contaPosto && <div className="vista-toggle">
           <button className={`btn${vista === 'lista' ? ' primary' : ''}`} onClick={() => setVista('lista')}>☰ Lista</button>
           <button className={`btn${vista === 'quadro' ? ' primary' : ''}`} onClick={() => setVista('quadro')} title="Quadro por setor (fluxo da gráfica)">▦ Quadro</button>
-        </div>
+        </div>}
         {vista === 'lista' && (
           <select className="btn" value={filtroLinha} onChange={(e) => setFiltroLinha(e.target.value)}>
             <option value="">Todas as linhas</option>
@@ -220,6 +224,9 @@ export default function Producao({ pedidos, problemas }) {
         {vista === 'lista' && <button className="btn" onClick={() => window.print()}>🖨 Imprimir</button>}
       </div>
 
+      {/* no tablet, a primeira coisa da tela é QUEM está dando baixa */}
+      {contaPosto && <PostoFaixa posto={posto} setores={setores} />}
+
       <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedores} pedidos={categorizados} />
 
       {vista === 'quadro' && (
@@ -232,7 +239,8 @@ export default function Producao({ pedidos, problemas }) {
                 {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
             : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad}
-                paineis={paineisDoQuadro} problemas={indexaProblemas(problemas)} />}
+                paineis={paineisDoQuadro} problemas={indexaProblemas(problemas)}
+                posto={contaPosto ? posto : null} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}

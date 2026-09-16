@@ -39,6 +39,7 @@ t('sem hash novo, não mexe no hash', 'hash' in docPin(op), false)
 t('DESATIVAR o usuário desliga o PIN', docPin({ ...op, ativo: false }).ativo, false)
 t('trocar para outro perfil desliga o PIN', docPin({ ...op, perfil: 'designer' }).ativo, false)
 t('e não leva setor', docPin({ ...op, perfil: 'designer' }).setores, [])
+t('conta do TABLET não tem PIN ligado', docPin({ ...op, posto: true }).ativo, false)
 t('usuário antigo sem campo ativo conta como ativo', docPin({ nome: 'X', perfil: 'operador' }).ativo, true)
 
 // ---------- login interno ----------

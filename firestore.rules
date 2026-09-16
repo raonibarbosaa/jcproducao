@@ -215,8 +215,21 @@ service cloud.firestore {
       // um movimento em nome de outra pessoa, e um log que aceita assinatura
       // falsa não serve de prova.
       allow create: if (ehStaff() || ehOperador() || ehExpedicao())
-        && request.resource.data.porUid == request.auth.uid;
+        && request.resource.data.porUid == request.auth.uid
+        && executorValido(request.resource.data);
       allow update, delete: if false;
+    }
+    // QUEM FEZ. No tablet (conta de posto) o logado é o aparelho, e quem fez é
+    // o funcionário do PIN: tem que vir preenchido e com PIN LIGADO — senão o
+    // tablet gravaria baixa sem autor, ou no nome de quem já foi desligado.
+    // Fora do tablet, quem fez é o próprio logado (ou o campo nem vem, nos
+    // registros gravados antes disto existir).
+    function executorValido(d) {
+      return (ehPosto()
+          && d.get('executorUid', '') != ''
+          && exists(/databases/$(database)/documents/pins/$(d.executorUid))
+          && get(/databases/$(database)/documents/pins/$(d.executorUid)).data.ativo == true)
+        || (!ehPosto() && d.get('executorUid', request.auth.uid) == request.auth.uid);
     }
   }
 }
