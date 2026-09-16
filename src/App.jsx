@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useCadastros } from './contexts/CadastrosContext.jsx'
@@ -23,7 +23,7 @@ import Localizar from './pages/Localizar.jsx'
 import Financeiro from './pages/Financeiro.jsx'
 import OrdensFabricacao from './pages/OrdensFabricacao.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
-import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe } from './utils.js'
+import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe, doDoc } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
@@ -48,6 +48,11 @@ export default function App() {
   const { vendedores: cadastros } = useCadastros()
   const [pedidosCrus, setPedidos] = useState([])
   const [problemas, setProblemas] = useState([])
+  // Ordens de Fabricação e a chave da virada (config/producao). Lidas AQUI, num
+  // ponto só: a aba de OFs e o quadro da produção precisam ver as mesmas.
+  const [ordens, setOrdens] = useState([])
+  const [erroOrdens, setErroOrdens] = useState('')
+  const [producaoCfg, setProducaoCfg] = useState({})
 
   // assina pedidos em tempo real. Vendedor só enxerga os PRÓPRIOS pedidos
   // (consulta filtrada — as regras do Firestore impõem o mesmo no servidor).
@@ -78,6 +83,20 @@ export default function App() {
       (e) => console.error('Erro ao ler problemas:', e))
     return unsub
   }, [user, perfil, vendedorNome])
+
+  useEffect(() => {
+    // vendedor não lê `ordens` (a rule barra) e não precisa: o quadro dele é outro
+    if (!user || !perfil || perfil === 'vendedor') { setOrdens([]); return undefined }
+    return onSnapshot(collection(db, 'ordens'),
+      (snap) => { setOrdens(snap.docs.map(doDoc)); setErroOrdens('') },
+      (e) => { console.error('Erro ao ler ordens:', e); setErroOrdens(e.code || e.message) })
+  }, [user, perfil])
+  useEffect(() => {
+    if (!user || !perfil) { setProducaoCfg({}); return undefined }
+    return onSnapshot(doc(db, 'config', 'producao'),
+      (snap) => setProducaoCfg(snap.exists() ? snap.data() : {}),
+      (e) => console.error('Erro ao ler config/producao:', e))
+  }, [user, perfil])
 
   // A ROTA é recalculada aqui, num ponto só — como as correções de quantidade.
   // Congelada no import, ela não acompanhava o cadastro de cidades: corrigir a
@@ -125,8 +144,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to={`/${primeira}`} replace />} />
         {abas.includes('triagem') && <Route path="/triagem" element={<Triagem pedidos={pedidos} />} />}
-        {abas.includes('ordens') && <Route path="/ordens" element={<OrdensFabricacao pedidos={pedidos} />} />}
-        {abas.includes('producao') && <Route path="/producao" element={<Producao pedidos={pedidos} problemas={problemas} />} />}
+        {abas.includes('ordens') && <Route path="/ordens" element={<OrdensFabricacao pedidos={pedidos} ordens={ordens} erroOrdens={erroOrdens} producaoCfg={producaoCfg} />} />}
+        {abas.includes('producao') && <Route path="/producao" element={<Producao pedidos={pedidos} problemas={problemas} ordens={ordens} producaoCfg={producaoCfg} />} />}
         {abas.includes('carga') && <Route path="/carga" element={<Carga pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}

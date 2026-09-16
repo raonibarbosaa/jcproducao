@@ -1350,3 +1350,9 @@ mark.hl {
   .of-ficha-ass { margin-top: 28px; display: flex; flex-direction: column; gap: 18px; font-size: 12px; }
 }
 .triagem-ocultos { font-size: 11.5px; color: var(--text-faint); margin: 4px 0 2px; font-style: italic; }
+.of-virada { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;
+  background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 9px 12px; margin: 0 0 12px; color: var(--text-dim); }
+.of-virada b { color: var(--text); }
+.of-virada.on { border-style: solid; border-color: var(--ok, #4caf50); }
+.of-virada .btn { margin-left: auto; }

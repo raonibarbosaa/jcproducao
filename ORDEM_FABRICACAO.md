@@ -1,6 +1,6 @@
 # Ordem de Fabricação (OF) + cor da impressão — desenho
 
-> Desenho fechado com o dono em 16/09/2026. **Fases A e B FEITAS (16/09/2026);** C–D não codadas.
+> Desenho fechado com o dono em 16/09/2026. **Fases A, B e C FEITAS (16/09/2026);** D (relatórios) a fazer.
 > Implementar por fases (A → D), testando entre uma e outra.
 
 ## Por que existe
@@ -136,7 +136,36 @@ Desenho original:
 - Rules: `ordens` read para staff + operador + expedição; create/update só
   dono/designer; delete `false`.
 
-### C — Quadro por OF (linha do plástico)
+### C — Quadro por OF ✅ FEITA (16/09/2026)
+Como ficou (testes em `tests/ofquadro.test.mjs` e `tests/render/ordens.jsx`):
+- **Virada escalonada (decisão do dono):** `config/producao` =
+  `{ofExigida, ofDesde, ofPor, ofMarcados}`, ligada por um botão só do dono na
+  aba de OFs (`PainelVirada`). O clique tira a FOTO (`marcacaoDaVirada`) e grava
+  `pedidos.semOF[key] = true` em lotes ANTES de ligar a chave — na ordem
+  contrária a fila de plástico sumiria por alguns segundos. Pedido sem status
+  (ainda na Triagem) não entra na foto. "Desligar" existe; as marcas ficam.
+- As sacolas que "já estavam na fila" NÃO aparecem em "Aguardando OF" (decisão
+  do dono): `itensAguardandoOF` e `plasticoSemCor` pulam `jaEstavaNaFila`.
+- `modoNaLinha` decide cada item nas colunas de LINHA: `of` (card da OF viva,
+  com ou sem a exigência), `espera` (fora do quadro, conta no aviso ⏳) ou
+  `avulso` (como sempre; com a exigência ligada o legado ganha a etiqueta
+  "sem OF · já estava na fila"). Papel é sempre avulso.
+- `ordens` e `config/producao` são lidos no **App** e descem para a aba de OFs
+  e para a Produção (quadro + contadores das abas, que pulam o que espera OF).
+- `CardOFQuadro`: pedidos da OF pelo prazo, `→` por pedido, campo de
+  quantidade da OF e "Concluir OF → Montagem Plástico" / "Concluir N kg".
+  `distribuiBaixaOF` completa o mais urgente primeiro. `moverOF` grava cada
+  pedido + o log dele (com `ordemId`/`ordemNumero`) e quebra em lotes de 450
+  sem nunca separar um pedido do seu registro. `regsDeQtd` é a mesma auditoria
+  do mover por quantidade.
+- **Excedente de reimport:** `situacaoDaOF.falta` passou a ser o que ESTÁ na
+  linha (sem limitar ao liberado) + `excedente`. Limitado, o excedente ficava
+  invisível para sempre (vínculo tira da espera, OF "concluída"). O card da OF
+  (aba e quadro) mostra "Aumentou N depois da OF" — o gestor cancela e solta de
+  novo (decisão do dono).
+- Rules: nada novo (`config` já é write de staff; `semOF` é update de staff).
+
+Desenho original:
 - Na coluna da linha, **item de plástico aparece dentro do card da SUA OF**, não
   no card do pedido: `OF #0012 · 30X40 · PRETO · 42 kg · 7 pedidos`, com a
   lista de pedidos embaixo.

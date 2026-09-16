@@ -3473,6 +3473,9 @@ export function itensAguardandoOF(pedidos, itensCad, idsVivos) {
       const cores = coresDoItem(p, i)
       if (!corOk(cores)) return
       if (ofDoItem(p, i, idsVivos)) return
+      // já estava na fila no dia da virada: termina como está, sem OF
+      // (decisão do dono, 16/09/2026)
+      if (jaEstavaNaFila(p, i)) return
       const qtd = qtdNaEtapa(p, i, linha)
       if (!(qtd > 0)) return
       out.push({
@@ -3495,6 +3498,7 @@ export function plasticoSemCor(pedidos, itensCad) {
     if (!p?.status) continue
     ;(p.itens || []).forEach((it, i) => {
       if (!itemPedeCor(it, itensCad) || corOk(coresDoItem(p, i))) return
+      if (jaEstavaNaFila(p, i)) return      // não vai para OF: a cor não a segura
       const linha = linhaDoItem(p, i)
       if (linha && qtdNaEtapa(p, i, linha) > 0) n++
     })
@@ -3565,21 +3569,29 @@ export function ofsComVinculo(p, itemKey, ordemId) {
 export function situacaoDaOF(o, pedidosPorId) {
   if (!o) return null
   if (o.status === STATUS_OF.CANCELADA) {
-    return { st: 'cancelada', falta: 0, feito: 0, total: arredondaQtd(o.total), itens: [] }
+    return { st: 'cancelada', falta: 0, feito: 0, total: arredondaQtd(o.total), itens: [], excedente: 0 }
   }
   let falta = 0
+  let excedente = 0
   const itens = (o.itens || []).map((x) => {
     const p = pedidosPorId?.[x.idVenda]
     const idx = p ? (p.itens || []).findIndex((_, i) => keyDoItem(p, i) === x.itemKey) : -1
-    const aqui = idx >= 0 ? Math.min(qtdNaEtapa(p, idx, o.linha), x.qtd) : 0
+    // ⚠️ o que está na LINHA inteiro, não limitado ao liberado: se um reimport
+    // aumentou o item, o excedente continua preso a esta OF (o vínculo tira o
+    // item da espera) e, limitado, ficaria invisível para sempre. A tela mostra
+    // e AVISA; o gestor cancela e solta de novo (decisão do dono, 16/09/2026).
+    const aqui = idx >= 0 ? qtdNaEtapa(p, idx, o.linha) : 0
+    const exc = arredondaQtd(Math.max(0, aqui - (Number(x.qtd) || 0)))
     falta += aqui
-    return { ...x, p, idx, falta: arredondaQtd(aqui), sumiu: idx < 0 }
+    excedente += exc
+    return { ...x, p, idx, falta: arredondaQtd(aqui), excedente: exc, sumiu: idx < 0 }
   })
   falta = arredondaQtd(falta)
+  excedente = arredondaQtd(excedente)
   const total = arredondaQtd(o.total ?? (o.itens || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0))
   const feito = arredondaQtd(Math.max(0, total - falta))
   const st = falta <= 0 ? 'concluida' : feito > 0 ? 'em_producao' : 'liberada'
-  return { st, falta, feito, total, itens }
+  return { st, falta, feito, total, itens, excedente }
 }
 
 export const NOME_SITUACAO_OF = {
@@ -3611,3 +3623,64 @@ export function pedidoPassaNaTriagem(p, itensCad, filtro) {
 
 export const itensSemCor = (p, itensCad) =>
   (p?.itens || []).filter((_, i) => itemFaltaCor(p, i, itensCad)).length
+
+// =====================================================================
+// ORDEM DE FABRICAÇÃO no QUADRO (fase C)
+// =====================================================================
+// `config/producao` = { ofExigida, ofDesde, ofPor, ofMarcados }. Com a exigência
+// ligada, sacola plástica SEM OF não entra na fila da linha — a não ser que
+// estivesse lá no dia da virada (`pedidos.semOF[key] = true`, foto tirada no
+// clique que liga a exigência). Virada escalonada, decisão do dono (16/09/2026):
+// o que já estava termina como está; o que vem depois precisa de OF.
+export const jaEstavaNaFila = (p, idx) => doMapaDoItem(p?.semOF, p, idx) === true
+
+export function precisaDeOF(p, idx, itensCad, cfg) {
+  if (!cfg?.ofExigida) return false
+  const it = p?.itens?.[idx]
+  if (!it || !itemPedeCor(it, itensCad)) return false
+  return !jaEstavaNaFila(p, idx)
+}
+
+// Como o item entra numa coluna de LINHA do quadro:
+//   'of'      → dentro do card da OF viva dele
+//   'espera'  → fora do quadro, aguardando OF (conta no aviso)
+//   'avulso'  → card do pedido, como sempre foi
+export function modoNaLinha(p, idx, itensCad, cfg, idsVivos) {
+  if (ofDoItem(p, idx, idsVivos)) return 'of'
+  if (precisaDeOF(p, idx, itensCad, cfg)) return 'espera'
+  return 'avulso'
+}
+
+// Foto da virada: sacolas plásticas que ESTÃO na linha agora, sem OF viva.
+// Devolve { idVenda: [itemKey…] }. Pedido sem status ainda está na Triagem —
+// não estava na fila, então não entra.
+export function marcacaoDaVirada(pedidos, itensCad, idsVivos) {
+  const out = {}
+  for (const p of pedidos || []) {
+    if (!p?.status) continue
+    ;(p.itens || []).forEach((it, i) => {
+      if (!itemPedeCor(it, itensCad)) return
+      const linha = linhaDoItem(p, i)
+      if (!linha || !(qtdNaEtapa(p, i, linha) > 0)) return
+      if (ofDoItem(p, i, idsVivos) || jaEstavaNaFila(p, i)) return
+      ;(out[p.idVenda] ??= []).push(keyDoItem(p, i))
+    })
+  }
+  return out
+}
+
+// Baixa PARCIAL de uma OF: completa o pedido mais urgente antes de passar ao
+// próximo. `linhas` = [{ idVenda, idx, aqui, previsao }] (qualquer ordem).
+// Devolve só quem recebe alguma coisa, com a quantidade arredondada.
+export function distribuiBaixaOF(linhas, qtd) {
+  let resta = arredondaQtd(qtd)
+  const out = []
+  for (const x of (linhas || []).slice().sort(ordemPrazo)) {
+    if (resta <= 0) break
+    const q = arredondaQtd(Math.min(resta, x.aqui))
+    if (q <= 0) continue
+    out.push({ ...x, qtd: q })
+    resta = arredondaQtd(resta - q)
+  }
+  return out
+}

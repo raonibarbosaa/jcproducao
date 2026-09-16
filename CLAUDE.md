@@ -19,8 +19,8 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 
 > **Ordem de Fabricação + cor da impressão** (plástico agrupado por linha +
 > produto + cor antes de ir para a produção): desenho fechado em 16/09/2026;
-> **fases A (cor na Triagem) e B (aba Ordens de Fabricação) FEITAS**, C–D a
-> fazer — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md) (fases A–D).
+> **fases A (cor na Triagem), B (aba Ordens de Fabricação) e C (quadro por OF,
+> virada escalonada) FEITAS**; D (relatórios) a fazer — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md) (fases A–D).
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde
@@ -821,8 +821,9 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
 
 ## PENDENTE — próxima sessão
 0. **Ordem de Fabricação + cores** — desenho FECHADO em
-   [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md). Fases A e B feitas; próxima é a C
-   (quadro do Silk andando por OF).
+   [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md). Fases A–C feitas. A exigência de
+   OF só vale depois que o DONO clicar "Ligar exigência de OF" na aba. Falta a
+   D (relatórios de tempo por OF).
 1. **Expedição controlando a aba Entregas** (pedido do dono em 12/08/2026, para depois).
    Hoje a expedição já vê a aba e faz montar → conferir → marcar saída; o que ela NÃO faz
    é confirmar a entrega, e isso foi decisão explícita do próprio dono na mesma conversa

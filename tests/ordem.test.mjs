@@ -104,6 +104,14 @@ ok('pedido que sumiu (entregue) conta como feito', semPedido.itens.find((x) => x
 t('e não trava a OF', semPedido.falta, 10)
 t('cancelada', situacaoDaOF({ ...of, status: 'cancelada' }, porId).st, 'cancelada')
 const aMais = { ...a, itens: [{ ...a.itens[0], qtd: 15 }, a.itens[1]] }
-t('reimport aumentou o item: a OF não passa do que liberou', situacaoDaOF(of, { 10: aMais, 11: b }).falta, 16)
+const cresceu = situacaoDaOF(of, { 10: aMais, 11: b })
+t('reimport aumentou: a falta mostra o que ESTÁ na linha (nada invisível)', cresceu.falta, 21)
+t('e avisa o excedente', [cresceu.excedente, cresceu.itens.find((x) => x.idVenda === '10').excedente], [5, 5])
+t('sem aumento, sem aviso', situacaoDaOF(of, porId).excedente, 0)
+
+// ---------- virada: o que já estava na fila não espera OF ----------
+const aLegado = { ...a, semOF: { [k(a, 0)]: true } }
+t('já estava na fila: fora da espera (decisão do dono)', itensAguardandoOF([aLegado], CAD, new Set()).length, 0)
+t('e não conta como "sem cor" que falta para OF', plasticoSemCor([{ ...semCor, semOF: { [k(semCor, 0)]: true } }], CAD), 0)
 
 export default resultado('ordem')

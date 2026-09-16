@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, doc, onSnapshot, writeBatch } from 'firebase/firestore'
+import { collection, doc, setDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import {
   MODO_ORDER, MODO_NM, CORES_IMPRESSAO, chaveCor, fmtCores,
   previsaoDe, filtraPedidos, vendedoresDe, nomeCliente, fmtData, fmtDataHora, fmtQtd,
-  situacaoPrazo, doDoc, keyDoItem,
+  situacaoPrazo, keyDoItem, marcacaoDaVirada,
   itensAguardandoOF, agrupaParaOF, docOF, situacaoDaOF, idsDeOFsVivas, ofDoItem,
   proximoNumeroOF, fmtNumeroOF, ofsComVinculo, plasticoSemCor, STATUS_OF, NOME_SITUACAO_OF,
 } from '../utils.js'
@@ -19,21 +19,15 @@ import SeloCor from '../components/SeloCor.jsx'
 // produto + cor) de pedidos diferentes e solta uma OF para a máquina.
 // Nesta fase a OF é o DOCUMENTO (espera → soltar → ficha → cancelar); o quadro
 // da produção passa a andar por OF na fase C. Ver ORDEM_FABRICACAO.md.
-export default function OrdensFabricacao({ pedidos }) {
-  const { user, nome } = useAuth()
+export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = '', producaoCfg = {} }) {
+  const { user, nome, perfil } = useAuth()
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
-  const [ordens, setOrdens] = useState([])
-  const [erroOrdens, setErroOrdens] = useState('')
   const [aba, setAba] = useState('espera')
   const [filtros, setFiltros] = useState({})
   const [linha, setLinha] = useState('')
   const [cor, setCor] = useState('')
   const [salvando, setSalvando] = useState('')
   const [ficha, setFicha] = useState(null)   // OF sendo impressa
-
-  useEffect(() => onSnapshot(collection(db, 'ordens'),
-    (snap) => { setOrdens(snap.docs.map(doDoc)); setErroOrdens('') },
-    (e) => setErroOrdens(e.code || e.message)), [])
 
   // imprime depois que a ficha está na tela, e limpa ao terminar
   useEffect(() => {
@@ -139,6 +133,54 @@ export default function OrdensFabricacao({ pedidos }) {
     }
   }
 
+  // VIRADA ESCALONADA: tira a foto do que está na fila agora (essas terminam
+  // como estão) e SÓ DEPOIS liga a exigência — na ordem contrária, por alguns
+  // segundos a fila inteira de plástico sumiria do quadro.
+  const foto = useMemo(() => marcacaoDaVirada(base, itensCad, vivos), [base, itensCad, vivos])
+  const nFoto = Object.values(foto).reduce((s, ks) => s + ks.length, 0)
+  async function ligarExigencia() {
+    if (salvando) return
+    if (!confirm(`Ligar a exigência de Ordem de Fabricação?\n\n`
+      + `${nFoto} sacola(s) plástica(s) que estão na fila AGORA, sem OF, ficam marcadas como `
+      + `"já estavam na fila" e terminam como estão.\n\n`
+      + 'Daqui em diante, sacola plástica nova só entra no quadro com OF.')) return
+    setSalvando('virada')
+    try {
+      const ids = Object.keys(foto)
+      for (let i = 0; i < ids.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const id of ids.slice(i, i + 450)) {
+          const semOF = { ...(porId[id]?.semOF || {}) }
+          for (const k of foto[id]) semOF[k] = true
+          batch.update(doc(db, 'pedidos', id), { semOF })
+        }
+        await batch.commit()
+      }
+      await setDoc(doc(db, 'config', 'producao'), {
+        ofExigida: true, ofDesde: new Date().toISOString(), ofPor: nome || '', ofMarcados: nFoto,
+      }, { merge: true })
+    } catch (e) {
+      console.error('Erro na virada:', e)
+      alert('Não foi possível ligar a exigência: ' + (e.code || e.message)
+        + '\n\nNada foi escondido do quadro — a exigência só liga no fim.')
+    } finally {
+      setSalvando('')
+    }
+  }
+  async function desligarExigencia() {
+    if (salvando || !confirm('Desligar a exigência de OF? Sacola plástica sem OF volta a entrar no quadro como card avulso.')) return
+    setSalvando('virada')
+    try {
+      await setDoc(doc(db, 'config', 'producao'), {
+        ofExigida: false, ofDesligadaEm: new Date().toISOString(), ofDesligadaPor: nome || '',
+      }, { merge: true })
+    } catch (e) {
+      alert('Não foi possível desligar: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   const abas = [
     { id: 'espera', label: '⏳ Aguardando OF', badge: grupos.length },
     { id: 'abertas', label: '🏭 OFs abertas', badge: abertas.length },
@@ -168,6 +210,9 @@ export default function OrdensFabricacao({ pedidos }) {
           <FiltrosBar filtros={filtros} setFiltros={setFiltros} vendedores={vendedoresDe(base)} pedidos={base} />
         )}
         <SubTabs abas={abas} ativa={aba} onTrocar={setAba} />
+
+        <PainelVirada cfg={producaoCfg} ehDono={perfil === 'dono'} nFoto={nFoto}
+          ocupado={!!salvando} onLigar={ligarExigencia} onDesligar={desligarExigencia} />
 
         {erroOrdens && (
           <div className="aviso-acab">⚠ Não foi possível ler as ordens ({erroOrdens}).</div>
@@ -213,6 +258,32 @@ export default function OrdensFabricacao({ pedidos }) {
 
       {fichaSit && <FichaOF o={fichaSit.o} s={fichaSit.s} clientes={clientes} />}
     </>
+  )
+}
+
+// A chave da virada, à vista de todos (só o dono mexe). Desligada, o quadro
+// continua como sempre: OF é opcional e plástico sem OF entra avulso.
+export function PainelVirada({ cfg, ehDono, nFoto, ocupado, onLigar, onDesligar }) {
+  if (cfg?.ofExigida) {
+    return (
+      <div className="of-virada on">
+        ✅ <b>Exigência de OF ligada</b> desde {fmtDataHora(cfg.ofDesde)}{cfg.ofPor ? ` por ${cfg.ofPor}` : ''}
+        {' · '}{cfg.ofMarcados || 0} sacola(s) terminam como estavam na fila.
+        Sacola plástica nova só entra no quadro com OF.
+        {ehDono && <button className="btn" disabled={ocupado} onClick={onDesligar}>Desligar</button>}
+      </div>
+    )
+  }
+  return (
+    <div className="of-virada">
+      ⏸ <b>Exigência de OF desligada</b> — o quadro ainda aceita sacola plástica sem OF.
+      {ehDono
+        ? <> Ao ligar, as <b>{nFoto}</b> sacola(s) plástica(s) que estão na fila agora terminam como estão.
+            <button className="btn primary" disabled={ocupado} onClick={onLigar}>
+              {ocupado ? 'Aguarde…' : 'Ligar exigência de OF'}
+            </button></>
+        : ' Quem liga é o dono.'}
+    </div>
   )
 }
 
@@ -291,6 +362,12 @@ export function CardOF({ o, s, clientes, ocupado, onFicha, onCancelar, abertoIni
           {s.feito > 0 ? <>falta {fmtQtd(s.falta)} <small>de {fmtQtd(s.total)}</small></> : fmtQtd(s.total)} {o.unidade}
         </span>
       </div>
+      {s.excedente > 0 && (
+        <div className="aviso-acab">
+          ⚠ Aumentou <b>{fmtQtd(s.excedente)} {o.unidade}</b> depois desta OF (reimportação da planilha).
+          Cancele e solte de novo para a ficha bater com o pedido.
+        </div>
+      )}
       <div className="meta-row">
         <span className={`chip of-st-${s.st}`}>{NOME_SITUACAO_OF[s.st]}</span>
         <span className="chip">{(o.itens || []).length} item(ns)</span>
@@ -310,7 +387,9 @@ export function CardOF({ o, s, clientes, ocupado, onFicha, onCancelar, abertoIni
                 <td>{nomeCliente(x.cliente, clientes)}<small> · {x.cidade || '—'}</small></td>
                 <td>{fmtData(x.previsao)}</td>
                 <td className="q">{fmtQtd(x.qtd)}</td>
-                <td className="q">{x.sumiu ? 'saiu' : fmtQtd(x.falta)}</td>
+                <td className="q">{x.sumiu ? 'saiu' : fmtQtd(x.falta)}
+                  {x.excedente > 0 && <small className="of-atraso"> +{fmtQtd(x.excedente)}</small>}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -16,6 +16,7 @@ import {
   tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos, quemAssina,
   quemFez,
   coresDoItem,
+  idsDeOFsVivas, modoNaLinha, ofDoItem, jaEstavaNaFila, itemPedeCor, distribuiBaixaOF, fmtNumeroOF, fmtCores,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -45,7 +46,11 @@ function Espera({ ms }) {
 }
 
 // `posto` = o estado do tablet (usePosto) quando a conta é de posto; senão null.
-export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas, posto }) {
+// `ordens` + `producaoCfg`: sacola plástica com OF viva anda no card da OF (fase
+// C); com a exigência ligada, a sem OF espera fora do quadro — menos as que já
+// estavam na fila no dia da virada.
+export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas, posto,
+  ordens = [], producaoCfg = {} }) {
   const { user, perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
   const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
   const ehStaff = perfil === 'dono' || perfil === 'designer'
@@ -82,6 +87,11 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // monta os cards: um por (pedido × painel), com os índices dos itens que estão ali
   const porPainel = {}
   for (const pa of paineis) porPainel[pa.id] = []
+  const vivos = idsDeOFsVivas(ordens)
+  const ordemPorId = Object.fromEntries((ordens || []).map((o) => [o.id, o]))
+  // cards de OF por painel: { painelId: { ordemId: [{ p, idx }] } }
+  const ofPorPainel = {}
+  const esperandoOF = new Set()   // itens de plástico fora do quadro, sem OF
   let aguardandoAcab = 0
   const semMaterial = new Set()   // itens na montagem que o cadastro de Itens não conhece
   for (const p of pedidos) {
@@ -98,6 +108,15 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
           aguardandoAcab++; continue
         }
         if (pa.tipo === 'montagem' && !mat) semMaterial.add(`${p.idVenda}|${i}`)
+        if (pa.tipo === 'linha') {
+          const modo = modoNaLinha(p, i, itensCad, producaoCfg, vivos)
+          if (modo === 'espera') { esperandoOF.add(`${p.idVenda}|${i}`); continue }
+          if (modo === 'of') {
+            const oid = ofDoItem(p, i, vivos)
+            ;((ofPorPainel[pa.id] ??= {})[oid] ??= []).push({ p, idx: i })
+            continue
+          }
+        }
         ;(grupos[pa.id] ??= []).push(i)
       }
     })
@@ -201,19 +220,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
         })
         regs.push(...rs)
       }
-      if (qtdMovs.length) {
-        const rs = registrosAuditoria(p, qtdMovs.map((m) => m.idx),
-          (i) => qtdMovs.find((m) => m.idx === i)?.para, q, material)
-        // a auditoria registra QUANTO andou e DE ONDE. O `de` não pode sair de
-        // etapaDoItem: com o item dividido, ela devolve a etapa mais atrasada,
-        // que não é necessariamente a coluna de onde a pessoa moveu.
-        rs.forEach((r, n) => {
-          r.qtd = qtdMovs[n]?.qtd ?? r.qtd
-          r.qtdItem = arredondaQtd(p.itens[qtdMovs[n]?.idx]?.qtd)
-          r.de = qtdMovs[n]?.de ?? r.de
-        })
-        regs.push(...rs)
-      }
+      if (qtdMovs.length) regs.push(...regsDeQtd(p, qtdMovs, q))
       for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
       await batch.commit()
       usou()
@@ -307,6 +314,52 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
     }
   }
 
+  // Auditoria de movimento por QUANTIDADE: registra QUANTO andou e DE ONDE. O
+  // `de` não pode sair de etapaDoItem: com o item dividido, ela devolve a etapa
+  // mais atrasada, que não é necessariamente a coluna de onde a pessoa moveu.
+  function regsDeQtd(p, qtdMovs, q) {
+    const rs = registrosAuditoria(p, qtdMovs.map((m) => m.idx),
+      (i) => qtdMovs.find((m) => m.idx === i)?.para, q, (i) => materialDoItem(p.itens[i], itensCad))
+    rs.forEach((r, n) => {
+      r.qtd = qtdMovs[n]?.qtd ?? r.qtd
+      r.qtdItem = arredondaQtd(p.itens[qtdMovs[n]?.idx]?.qtd)
+      r.de = qtdMovs[n]?.de ?? r.de
+    })
+    return rs
+  }
+
+  // Baixa de uma OF: vários pedidos de uma vez. Cada pedido anda com o seu log
+  // no mesmo batch; OF muito grande quebra em lotes (limite de 500 escritas),
+  // sempre inteiro por pedido — nunca um pedido movido sem o registro dele.
+  async function moverOF(o, movs, marca) {
+    if (salvando || semQuem) return
+    const porPedido = {}
+    for (const m of movs) if (m.qtd > 0) (porPedido[m.p.idVenda] ??= { p: m.p, movs: [] }).movs.push(m)
+    const lista = Object.values(porPedido)
+    if (!lista.length) return
+    setSalvando(marca)
+    try {
+      const q = quem()
+      let batch = writeBatch(db)
+      let n = 0
+      for (const { p, movs: ms } of lista) {
+        const qtdMovs = ms.map((m) => ({ idx: m.idx, de: m.de, para: m.para, qtd: m.qtd }))
+        const regs = regsDeQtd(p, qtdMovs, q).map((r) => ({ ...r, ordemId: o.id, ordemNumero: o.numero || 0 }))
+        if (n + 1 + regs.length > 450) { await batch.commit(); batch = writeBatch(db); n = 0 }
+        batch.update(doc(db, 'pedidos', p.idVenda), { etapas: mapaEtapasComQtd(p, qtdMovs, assina) })
+        for (const r of regs) batch.set(doc(collection(db, 'auditoria')), r)
+        n += 1 + regs.length
+      }
+      await batch.commit()
+      usou()
+    } catch (e) {
+      console.error('Erro ao dar baixa na OF:', e)
+      alert('Erro ao dar baixa na OF: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   // Registra um erro visto por quem está produzindo. Não move nada e não trava
   // o item — só acende o ⚠ até alguém resolver.
   async function reportarErro(p, idx, dados) {
@@ -335,6 +388,12 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
           ⚠ {aguardandoAcab} item(ns) de gráfica ainda sem <b>laminação</b> — marque na Triagem para eles entrarem no quadro.
         </div>
       )}
+      {esperandoOF.size > 0 && (
+        <div className="aviso-acab no-print">
+          ⏳ {esperandoOF.size} sacola(s) plástica(s) aguardando <b>Ordem de Fabricação</b> — só entram
+          na fila depois que o gestor soltar a OF.
+        </div>
+      )}
       {semMaterial.size > 0 && (
         <div className="aviso-acab no-print">
           ⚠ {semMaterial.size} item(ns) na montagem sem <b>material</b> no cadastro de Itens — aparecem em
@@ -361,10 +420,31 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
         {paineis.map((pa) => (
           <div key={pa.id} className="quadro-col">
             <div className="qc-head" style={pa.tipo === 'linha' ? { borderLeft: `4px solid ${MODO_COR[pa.linha]}` } : null}>
-              {pa.nome} <span className="qc-count">{porPainel[pa.id].length}</span>
+              {pa.nome} <span className="qc-count">{porPainel[pa.id].length + Object.keys(ofPorPainel[pa.id] || {}).length}</span>
             </div>
             <div className="qc-body">
-              {porPainel[pa.id].length === 0 && <div className="qc-vazio">— nada aqui —</div>}
+              {porPainel[pa.id].length === 0 && !Object.keys(ofPorPainel[pa.id] || {}).length
+                && <div className="qc-vazio">— nada aqui —</div>}
+              {Object.entries(ofPorPainel[pa.id] || {})
+                .map(([oid, its]) => ({
+                  o: ordemPorId[oid],
+                  linhas: its.map(({ p, idx }) => ({
+                    p, idx, idVenda: p.idVenda, previsao: p.previsao || '',
+                    aqui: qtdNoPainel(pa, p, idx, materialDoItem(p.itens[idx], itensCad)),
+                  })).filter((x) => x.aqui > 0),
+                }))
+                .filter((x) => x.o && x.linhas.length)
+                .sort((a, b) => (a.linhas.map((x) => x.previsao || '9999').sort()[0])
+                  .localeCompare(b.linhas.map((x) => x.previsao || '9999').sort()[0]))
+                .map(({ o, linhas }) => (
+                  <CardOFQuadro key={o.id} o={o} pa={pa} linhas={linhas} clientes={clientes} itensCad={itensCad}
+                    podeMover={podeMoverEtapa(pa.etapa)} trava={trava} salvando={salvando}
+                    qtdDigitada={qtds[`of|${o.id}|${pa.id}`]}
+                    onQtd={(v) => poeQtd(`of|${o.id}|${pa.id}`, v)}
+                    onMover={(movs) => moverOF(o, movs, `of|${o.id}|${pa.id}`).then(() => poeQtd(`of|${o.id}|${pa.id}`, ''))}
+                    onReportar={(p, idx) => setReportando({ p, idx })}
+                    problemas={problemas} />
+                ))}
               {gruposPorPainel[pa.id].map((g, gi, todos) => (
                 <div key={g.chave} className="qc-grupo">
                   {/* a data só reaparece quando muda — dentro dela, as rotas */}
@@ -514,6 +594,12 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                             {lItem === 'GRAFICA' && (
                               <span className="acab-tag">🏷 {fmtAcabamento(acabamentoDoItem(p, i))}</span>
                             )}
+                            {pa.tipo === 'linha' && producaoCfg?.ofExigida && itemPedeCor(it, itensCad)
+                              && jaEstavaNaFila(p, i) && (
+                              <span className="acab-tag" title="Já estava na fila quando a exigência de OF foi ligada">
+                                sem OF · já estava na fila
+                              </span>
+                            )}
                             {semMat && (
                               <span className="acab-tag" title="Cadastre o material deste produto em Cadastros › Itens">
                                 ⚠ sem material no cadastro
@@ -594,5 +680,93 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
         ))}
       </div>
     </>
+  )
+}
+
+// Card de uma ORDEM DE FABRICAÇÃO na coluna da linha: os pedidos juntos, como a
+// máquina trabalha. A baixa parcial completa primeiro o pedido mais urgente
+// (distribuiBaixaOF); depois da linha cada item volta a andar pelo SEU pedido.
+export function CardOFQuadro({ o, pa, linhas, clientes, itensCad, podeMover, trava, salvando,
+  qtdDigitada, onQtd, onMover, onReportar, problemas }) {
+  const ordenadas = linhas.slice().sort((a, b) => (a.previsao || '9999').localeCompare(b.previsao || '9999'))
+  const total = arredondaQtd(ordenadas.reduce((s, x) => s + x.aqui, 0))
+  const un = o.unidade || unidadeDoMaterial(materialDoItem(ordenadas[0]?.p.itens[ordenadas[0]?.idx], itensCad))
+  const prox = proximaEtapaItem(pa.etapa)
+  const digitou = qtdDigitada !== '' && qtdDigitada !== undefined
+  const aMover = digitou ? Math.min(arredondaQtd(qtdDigitada), total) : total
+  const parcial = digitou && aMover < total
+  const marca = `of|${o.id}|${pa.id}`
+  const atrasado = ordenadas.some((x) => situacaoPrazo(x.previsao) === 'atrasado')
+  const excedente = arredondaQtd(ordenadas.reduce((s, x) => {
+    const lib = (o.itens || []).find((y) => y.idVenda === x.idVenda && y.itemKey === keyDoItem(x.p, x.idx))?.qtd
+    return s + Math.max(0, x.aqui - (Number(lib) || 0))
+  }, 0))
+  const mov = (x, q) => ({ p: x.p, idx: x.idx, de: pa.etapa, para: prox, qtd: q })
+  const mont = prox === 'montagem' ? MONTAGENS.find((m) => m.id === montagemDoMaterial('plastico')) : null
+  const nmProx = mont?.nome || nomeEtapaItem(prox)
+  return (
+    <div className={`qcard qcard-of ${atrasado ? 'atrasado' : ''}`}>
+      <div className="qcard-top">
+        <span className="cliente">
+          <span className="of-nr">{fmtNumeroOF(o.numero)}</span>{' '}
+          <SeloLinha linha={o.linha} />{o.produto}<SeloCor cores={o.cores} />
+        </span>
+        <span className="q qcard-of-total">{fmtQtd(total)} {un}</span>
+      </div>
+      <div className="qcard-meta">
+        <span className="chip">{ordenadas.length} pedido(s)</span>
+        <span className="chip" title="Cor da impressão">🎨 {fmtCores(o.cores) || '—'}</span>
+        <Espera ms={Math.max(...ordenadas.map((x) => tempoNaEtapa(x.p, x.idx, pa.etapa)))} />
+      </div>
+      {excedente > 0 && (
+        <div className="qcard-entregue">
+          ⚠ Aumentou <b>{fmtQtd(excedente)} {un}</b> depois da OF — avise o gestor para cancelar e soltar de novo.
+        </div>
+      )}
+      <ul className="itens">
+        {ordenadas.map((x) => {
+          const it = x.p.itens[x.idx]
+          const atr = situacaoPrazo(x.previsao) === 'atrasado'
+          const temErro = problemaDoItem(problemas, x.p.idVenda, keyDoItem(x.p, x.idx)).length
+          return (
+            <li key={`${x.p.idVenda}|${x.idx}`}>
+              <span>
+                #{x.p.idVenda} {nomeCliente(x.p.cliente, clientes)}
+                <small className="q-de"> · {x.p.cidade || '—'} · </small>
+                <small className={atr ? 'of-atraso' : 'q-de'}>{fmtData(x.previsao)}</small>
+                {arredondaQtd(it?.qtd) > x.aqui && <small className="q-de"> · de {fmtQtd(it.qtd)}</small>}
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span className="q">{fmtQtd(x.aqui)}</span>
+                <button className={`mini-btn${temErro ? ' alerta' : ''}`} disabled={trava}
+                  title="Reportar erro neste pedido" onClick={() => onReportar(x.p, x.idx)}>⚠</button>
+                {podeMover && prox && (
+                  <button className="mini-btn" disabled={trava}
+                    title={`Concluir só o #${x.p.idVenda} (${fmtQtd(x.aqui)} ${un})`}
+                    onClick={() => onMover([mov(x, x.aqui)])}>→</button>
+                )}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {podeMover && prox && (
+        <div className="qcard-acoes no-print">
+          <input className="qtd-input" type="number" min="0" max={total}
+            step={un === 'kg' ? '0.001' : '1'} placeholder={String(total)}
+            value={qtdDigitada ?? ''} onChange={(e) => onQtd(e.target.value)}
+            title={`Quanto desta OF ficou pronto (de ${fmtQtd(total)} ${un}) — vai para os pedidos mais urgentes primeiro`} />
+          <button className="btn ok qc-avancar" disabled={trava || !(aMover > 0)}
+            onClick={() => onMover(distribuiBaixaOF(ordenadas, aMover).map((x) => mov(x, x.qtd)))}>
+            {salvando === marca
+              ? 'Salvando…'
+              : `${parcial ? `Concluir ${fmtQtd(aMover)} ${un}` : 'Concluir OF'} → ${nmProx}`}
+          </button>
+        </div>
+      )}
+      {parcial && (
+        <div className="qc-dica">vai primeiro para os pedidos com entrega mais próxima</div>
+      )}
+    </div>
   )
 }

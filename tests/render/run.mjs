@@ -100,6 +100,15 @@ const ESPERA = {
   ofGrupo: ['#11', '#10', 'BIA CALCADOS', '2 de 2 marcado(s)', 'Soltar OF com 2 item(ns)'],
   ofCard: ['OF 0012', 'Liberada', 'solta por Dono', '🖨 Ficha', 'Cancelar', 'Liberado', 'Falta', 'ANA MODAS'],
   ofHist: ['OF 0013', 'Cancelada', 'cliente desistiu'],
+  // fase C: OF no quadro + virada escalonada
+  qOfLigada: ['OF 0012', 'Concluir OF → Montagem Plástico', '#11 BIA CALCADOS', '16 kg',
+    'aguardando <b>Ordem de Fabricação</b>', 'DAVI', 'sem OF · já estava na fila'],
+  qOfDesligada: ['OF 0012', 'CAIO', 'DAVI'],
+  qOfCancelada: ['aguardando', '3 sacola(s)', 'DAVI'],   // OF cancelada: os dela voltam a esperar OF
+  qOfCresceu: ['Aumentou <b>5 kg</b> depois da OF'],
+  vDesl: ['Exigência de OF desligada', '<b>4</b> sacola(s)', 'Ligar exigência de OF'],
+  vDeslDesigner: ['Quem liga é o dono'],
+  vLig: ['Exigência de OF ligada', 'por Dono', '4 sacola(s) terminam', 'Desligar'],
   ofFicha: ['Ordem de Fabricação · OF 0012', 'SILK SCREEN', 'Preto', '16 kg', '#11', 'Conferido por'],
   // filtro por item: o card esconde o resto e AVISA (os botões grandes valem para todos)
   tFiltroPlast: ['SACOLA PLASTICA 30X40', 'Cor da impressão', '1 item(ns) oculto(s) pelo filtro'],
@@ -124,6 +133,10 @@ const PROIBE = {
   tFiltroPapel: ['SACOLA PLASTICA 30X40', 'Cor da impressão'],
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
+  qOfLigada: ['CAIO'],                          // sem OF e exigência ligada: fora do quadro
+  qOfDesligada: ['aguardando', 'já estava na fila'],   // desligada: tudo como antes
+  qOfCancelada: ['OF 0012', 'ANA MODAS', 'BIA CALCADOS'],   // nem card da OF nem avulso
+  vDeslDesigner: ['Ligar exigência'],
 }
 
 let mal = 0

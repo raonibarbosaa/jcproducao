@@ -8,7 +8,7 @@ import {
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
   paineisVisiveis, itemPertenceAoPainel, podeNoMaterial, indexaProblemas,
   qtdEmProducao, temTrabalhoNaProducao, fmtQtd,
-  coresDoItemPorChave,
+  coresDoItemPorChave, modoNaLinha, idsDeOFsVivas,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -20,7 +20,7 @@ import SeloLinha from '../components/SeloLinha.jsx'
 import SeloCor from '../components/SeloCor.jsx'
 import PostoFaixa, { usePosto } from '../components/PostoFaixa.jsx'
 
-export default function Producao({ pedidos, problemas }) {
+export default function Producao({ pedidos, problemas, ordens = [], producaoCfg = {} }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
   // o TABLET do setor: faixa de funcionários + PIN, e só o quadro
@@ -55,6 +55,7 @@ export default function Producao({ pedidos, problemas }) {
   const ehStaff = perfil === 'dono' || perfil === 'designer'
   const meusPaineis = paineisVisiveis({ perfil, setores, materiais })
   const meusMateriais = perfil === 'operador' ? (materiais || []) : []
+  const vivosOF = idsDeOFsVivas(ordens)
   const conta = {}
   for (const pa of meusPaineis) conta[pa.id] = 0
   for (const p of pedidosQuadro) {
@@ -66,6 +67,8 @@ export default function Producao({ pedidos, problemas }) {
       for (const pa of meusPaineis) {
         if (!itemPertenceAoPainel(pa, p, i, mat)) continue
         if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) continue
+        // plástico esperando OF não está na fila — o contador não pode dizer que está
+        if (pa.tipo === 'linha' && modoNaLinha(p, i, itensCad, producaoCfg, vivosOF) === 'espera') continue
         conta[pa.id]++
       }
     })
@@ -242,7 +245,7 @@ export default function Producao({ pedidos, problemas }) {
               </div>
             : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad}
                 paineis={paineisDoQuadro} problemas={indexaProblemas(problemas)}
-                posto={contaPosto ? posto : null} />}
+                posto={contaPosto ? posto : null} ordens={ordens} producaoCfg={producaoCfg} />}
         </div>
       )}
       {/* ---------- TELA (lista) ---------- */}
