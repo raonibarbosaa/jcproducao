@@ -32,9 +32,9 @@ agrupar é o que dá produtividade.
 - **Duas cores** = array com 2 ids. A **chave da cor** para agrupar é o array
   ORDENADO (`dourado+preto`), senão "Preto + Dourado" e "Dourado + Preto"
   virariam OFs diferentes.
-- **Trava:** item de plástico só sai da Triagem com a cor marcada (entra em
-  `pedidoCompleto`, como a laminação entra para a gráfica). Sem cor não há como
-  agrupar.
+- **Trava:** item de plástico só sai da Triagem com a cor marcada
+  (`statusDaTriagem` — só para pedido que ainda não tem status; ver fase A).
+  Sem cor não há como agrupar.
 - Selo de cor (bolinha com a cor + nome) colado no produto em toda tela, como o
   `SeloLinha`. Na impressão P&B vai o NOME, porque a bolinha não se distingue.
 
