@@ -767,6 +767,13 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   regrava o `pins` (a faixa do tablet mostra esses dados). Rules: `pins` +
   `ehPosto()`. `npm run test:tela` passou a cobrir Usuários (stubs de
   `firebase/app` e `firebase/auth`).
+- ✅ **Etapa 2 FEITA (16/09/2026): "🔢 Meu PIN"** no cabeçalho
+  (`src/components/MeuPin.jsx`), só para operador que NÃO é conta de posto
+  (`posto` agora vem do `AuthContext`). Pede o PIN **atual** — sessão aberta em
+  celular emprestado não pode trocar a assinatura de ninguém; esqueceu, o
+  escritório redefine. Sem PIN ou com PIN desligado, a tela explica e não
+  oferece troca (a rule também não deixa o próprio criar o doc). Sem rule nova.
+  O stub de Auth do `test:tela` aceita `globalThis.__auth` para trocar o perfil.
 - **Ordem:** (1) PIN no cadastro de Usuários + `pins` + desativar junto;
   (2) "Meu PIN" para o funcionário; (3) conta de posto abrindo só na fila;
   (4) faixa + PIN + expiração + Sair no quadro; (5) executor na auditoria e

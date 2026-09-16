@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { veAssistenteVoz } from '../utils.js'
 import Footer from './Footer.jsx'
 import VoltarAoTopo from './VoltarAoTopo.jsx'
+import MeuPin from './MeuPin.jsx'
 
 const LABEL = {
   triagem: 'Triagem',
@@ -23,7 +25,10 @@ const LABEL = {
 }
 
 export default function Layout({ abas, contadores, children }) {
-  const { nome, perfil, logout } = useAuth()
+  const { nome, perfil, posto, logout } = useAuth()
+  const [meuPin, setMeuPin] = useState(false)
+  // PIN é do FUNCIONÁRIO: a conta do tablet não tem PIN próprio
+  const temMeuPin = perfil === 'operador' && !posto
 
   return (
     <div className="app-shell">
@@ -60,6 +65,9 @@ export default function Layout({ abas, contadores, children }) {
             <b>{nome}</b>
             <span>{perfil}</span>
           </div>
+          {temMeuPin && (
+            <button className="btn-logout btn-pin" onClick={() => setMeuPin(true)}>🔢 Meu PIN</button>
+          )}
           <button className="btn-logout" onClick={logout}>Sair</button>
         </div>
       </header>
@@ -68,6 +76,8 @@ export default function Layout({ abas, contadores, children }) {
         {children}
         <Footer />
       </main>
+
+      {meuPin && <MeuPin onFechar={() => setMeuPin(false)} />}
 
       <VoltarAoTopo desviaDaVoz={veAssistenteVoz(perfil)} />
     </div>

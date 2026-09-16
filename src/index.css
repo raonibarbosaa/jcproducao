@@ -1259,3 +1259,7 @@ mark.hl {
   font-weight: 600; margin-bottom: 2px; }
 .fin-escopo small { display: block; color: var(--text-faint); font-size: 12px;
   margin-top: 7px; line-height: 1.5; }
+
+/* PIN do tablet (Meu PIN) */
+.pin-input { letter-spacing: 0.5em; font-size: 22px; text-align: center; max-width: 160px; }
+.btn-logout.btn-pin:hover { color: var(--accent); border-color: var(--accent); }

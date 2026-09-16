@@ -18,6 +18,9 @@ export function AuthProvider({ children }) {
   const [vendedorNome, setVendedorNome] = useState(null) // vínculo p/ perfil 'vendedor'
   const [setores, setSetores] = useState([])   // setores liberados p/ perfil 'operador'
   const [materiais, setMateriais] = useState([]) // materiais liberados ([] = todos)
+  // conta de POSTO: o tablet do setor, logado numa conta só (quem fez a baixa
+  // é escolhido na tela, pelo PIN)
+  const [posto, setPosto] = useState(false)
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -42,6 +45,7 @@ export function AuthProvider({ children }) {
             setVendedorNome(d.vendedorNome || null)
             setSetores(Array.isArray(d.setores) ? d.setores : [])
             setMateriais(Array.isArray(d.materiais) ? d.materiais : [])
+            setPosto(d.perfil === 'operador' && d.posto === true)
           } else {
             // ⚠️ SEM documento de perfil = SEM acesso. Antes isto virava 'dono'
             // com o comentário "fallback seguro p/ admin" — e era o contrário:
@@ -52,7 +56,7 @@ export function AuthProvider({ children }) {
             setSemPerfil(true)
             setNome(u.email)
             setVendedorNome(null)
-            setSetores([]); setMateriais([])
+            setSetores([]); setMateriais([]); setPosto(false)
           }
         } catch (e) {
           console.error('Erro ao ler perfil:', e)
@@ -62,10 +66,10 @@ export function AuthProvider({ children }) {
           setSemPerfil(true)
           setNome(u.email)
           setVendedorNome(null)
-          setSetores([]); setMateriais([])
+          setSetores([]); setMateriais([]); setPosto(false)
         }
       } else {
-        setUser(null); setPerfil(null); setSemPerfil(false); setNome(''); setVendedorNome(null); setSetores([]); setMateriais([])
+        setUser(null); setPerfil(null); setSemPerfil(false); setNome(''); setVendedorNome(null); setSetores([]); setMateriais([]); setPosto(false)
       }
       setCarregando(false)
     })
@@ -80,7 +84,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, perfil, semPerfil, nome, vendedorNome, setores, materiais, carregando, login, logout }}>
+    <AuthCtx.Provider value={{ user, perfil, semPerfil, nome, vendedorNome, setores, materiais, posto, carregando, login, logout }}>
       {children}
     </AuthCtx.Provider>
   )

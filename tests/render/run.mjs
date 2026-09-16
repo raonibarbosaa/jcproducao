@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx') } },
   },
   resolve: {
     alias: [
@@ -39,6 +39,7 @@ await build({
 const bruto = {
   ...(await import(join(OUT, 'financeiro.js'))).roda(),
   ...(await import(join(OUT, 'usuarios.js'))).roda(),
+  ...(await import(join(OUT, 'meupin.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -69,9 +70,28 @@ const ESPERA = {
   uNovo: ['Novo usuário', 'Não tem e-mail — gerar login interno', 'Criar usuário'],
   uEdit: ['Novo PIN do tablet (em branco = manter o atual)', 'redefinir quando ele esquecer', 'mostrar'],
   uEditSem: ['PIN do tablet (opcional)'],
+  pCarrega: ['Meu PIN do tablet', 'Carregando'],
+  pSem: ['ainda não tem PIN', 'Fechar'],
+  pOff: ['desligado', 'Fechar'],
+  pForm: ['PIN atual', 'PIN novo (4 números)', 'Repita o PIN novo', 'Trocar PIN', 'Cancelar'],
+  lay: ['JC Sacolas', 'Financeiro', 'Sair'],
+  layOp: ['🔢 Meu PIN', 'João', 'Sair'],
+  layPosto: ['Tablet Silk', 'Sair'],
+}
+
+// o que NÃO pode aparecer
+const PROIBE = {
+  lay: ['Meu PIN'],       // só operador que não é o tablet
+  layPosto: ['Meu PIN'],  // o tablet não tem PIN próprio
+  pSem: ['Trocar PIN'],   // sem PIN não há o que trocar
+  pOff: ['Trocar PIN'],   // desligado não troca
 }
 
 let mal = 0
+for (const [tela, alvos] of Object.entries(PROIBE)) {
+  const sobra = alvos.filter((a) => (r[tela] || '').includes(a))
+  if (sobra.length) { mal++; console.log(`✗ ${tela} — não devia ter: ${sobra.join(' | ')}`) }
+}
 for (const [tela, alvos] of Object.entries(ESPERA)) {
   const h = r[tela] || ''
   const faltam = alvos.filter((a) => !h.includes(a))
