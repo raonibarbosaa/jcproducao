@@ -1,6 +1,6 @@
 # Ordem de Fabricação (OF) + cor da impressão — desenho
 
-> Desenho fechado com o dono em 16/09/2026. **Fase A FEITA (16/09/2026);** B–D não codadas.
+> Desenho fechado com o dono em 16/09/2026. **Fases A e B FEITAS (16/09/2026);** C–D não codadas.
 > Implementar por fases (A → D), testando entre uma e outra.
 
 ## Por que existe
@@ -95,7 +95,31 @@ Desenho original:
 - ⚠️ **Conferir antes:** que o import preserva `cores` e `ofs` (hoje preserva
   `acabamentos`/`linhasItens` — o campo novo precisa ir para a mesma lista).
 
-### B — Tela "Ordens de Fabricação" (aba nova, dono + designer)
+### B — Tela "Ordens de Fabricação" ✅ FEITA (16/09/2026)
+Como ficou (`src/pages/OrdensFabricacao.jsx`; helpers em utils; testes em
+`tests/ordem.test.mjs` e `tests/render/ordens.jsx`):
+- Aba `ordens` logo depois da Triagem, para dono e designer (`ACESSO`).
+- Helpers: `itensAguardandoOF` (pedido COM status, plástico, com linha, com
+  cor, com saldo NA LINHA, sem OF viva), `agrupaParaOF`, `chaveGrupoOF`,
+  `docOF`, `situacaoDaOF`, `ofDoItem` (vínculo só vale se a OF está viva —
+  vínculo de OF cancelada não prende), `idsDeOFsVivas`, `ofsComVinculo`,
+  `proximoNumeroOF`/`fmtNumeroOF` (`OF 0012`), `plasticoSemCor`.
+- Soltar confere de novo, no clique, se nenhum item entrou em outra OF; OF +
+  vínculos num `writeBatch`. Um pedido com dois itens iguais no mesmo grupo
+  acumula no mesmo mapa `ofs`.
+- Cancelar pede motivo, grava `feitoAoCancelar` e só tira o vínculo dos itens
+  que ainda apontam para ESTA OF.
+- Situação derivada (`liberada` → `em_producao` → `concluida`); "falta" nunca
+  passa do que foi liberado — se um reimport aumentar o item, o excedente fica
+  preso ao vínculo até a OF concluir (⚠️ limitação conhecida: a fase C precisa
+  decidir se o excedente vira espera de OF nova).
+- Ficha impressa (`FichaOF`) via `print-only`, com a cor por extenso e grande.
+- Filtros: `FiltrosBar` (na espera), linha e cor (inclui as duplas que existem).
+- Rules: `ordens` read staff+operador+expedição; create/update `soltaOF()`
+  (dono/designer), create exige `criadaUid == auth.uid`; delete `false`.
+  ⚠️ Publicar ANTES do build.
+
+Desenho original:
 - **Aguardando OF:** itens de plástico triados, sem OF, com saldo na linha,
   **agrupados por linha + produto + cor**, somando a quantidade e contando os
   pedidos. Ordem: o grupo com a entrega mais urgente primeiro.

@@ -3434,3 +3434,154 @@ export function pendenteNaTriagem(p) {
   if (!pedidoCompleto(p)) return true
   return !!(p?.itens?.length) && !p.status
 }
+
+// =====================================================================
+// ORDEM DE FABRICAÇÃO (fase B) — ver ORDEM_FABRICACAO.md
+// =====================================================================
+// A OF junta itens IGUAIS de pedidos diferentes (linha + produto + cor) para
+// irem à máquina de uma vez. Guarda o retrato da liberação; o que a tela mostra
+// de "quanto falta" é sempre a quantidade VIVA, lida dos pedidos.
+export const STATUS_OF = { LIBERADA: 'liberada', CANCELADA: 'cancelada' }
+export const ofViva = (o) => o && o.status !== STATUS_OF.CANCELADA
+export const proximoNumeroOF = (ordens) =>
+  (ordens || []).reduce((m, o) => Math.max(m, Number(o.numero) || 0), 0) + 1
+export const fmtNumeroOF = (n) => `OF ${String(Number(n) || 0).padStart(4, '0')}`
+
+// A OF viva deste item, ou ''. O vínculo `p.ofs` só vale se a OF ainda está
+// viva: um vínculo que sobrou de uma OF cancelada não pode prender o item.
+export function ofDoItem(p, idx, idsVivos) {
+  const id = doMapaDoItem(p?.ofs, p, idx)
+  if (!id) return ''
+  return !idsVivos || idsVivos.has(id) ? id : ''
+}
+export const idsDeOFsVivas = (ordens) => new Set((ordens || []).filter(ofViva).map((o) => o.id))
+
+export const chaveGrupoOF = (linha, produto, cores) =>
+  `${linha}|${normaliza(produto)}|${chaveCor(cores)}`
+
+// Itens de plástico que ESTÃO PRONTOS PARA UMA OF: triados (pedido com status),
+// com linha, com cor, com saldo na linha e sem OF viva. `previsao` já vem
+// calculada (a página chama previsaoDe) — a ordem é pelo prazo.
+export function itensAguardandoOF(pedidos, itensCad, idsVivos) {
+  const out = []
+  for (const p of pedidos || []) {
+    if (!p?.status) continue
+    ;(p.itens || []).forEach((it, i) => {
+      if (!itemPedeCor(it, itensCad)) return
+      const linha = linhaDoItem(p, i)
+      if (!linha) return
+      const cores = coresDoItem(p, i)
+      if (!corOk(cores)) return
+      if (ofDoItem(p, i, idsVivos)) return
+      const qtd = qtdNaEtapa(p, i, linha)
+      if (!(qtd > 0)) return
+      out.push({
+        p, idx: i, idVenda: p.idVenda, itemKey: keyDoItem(p, i),
+        linha, produto: it.produto || '', cores, qtd,
+        unidade: unidadeDoMaterial(materialDoItem(it, itensCad)),
+        previsao: p.previsao || '',
+        chave: chaveGrupoOF(linha, it.produto, cores),
+      })
+    })
+  }
+  return out
+}
+
+// Plástico que NÃO pode entrar em OF por falta de cor — a tela mostra o
+// número para ninguém achar que a lista de espera está completa.
+export function plasticoSemCor(pedidos, itensCad) {
+  let n = 0
+  for (const p of pedidos || []) {
+    if (!p?.status) continue
+    ;(p.itens || []).forEach((it, i) => {
+      if (!itemPedeCor(it, itensCad) || corOk(coresDoItem(p, i))) return
+      const linha = linhaDoItem(p, i)
+      if (linha && qtdNaEtapa(p, i, linha) > 0) n++
+    })
+  }
+  return n
+}
+
+const ordemPrazo = (a, b) => (a.previsao || '9999').localeCompare(b.previsao || '9999')
+  || String(a.idVenda).localeCompare(String(b.idVenda), 'pt-BR', { numeric: true })
+
+// Um grupo por linha + produto + cor. O grupo com a entrega mais urgente vem
+// primeiro; dentro dele, os itens também pelo prazo (é a ordem de marcação).
+export function agrupaParaOF(itens) {
+  const mapa = {}
+  for (const x of itens || []) {
+    const g = (mapa[x.chave] ??= {
+      chave: x.chave, linha: x.linha, produto: x.produto, cores: x.cores,
+      unidade: x.unidade, itens: [], total: 0,
+    })
+    g.itens.push(x)
+    g.total = arredondaQtd(g.total + x.qtd)
+  }
+  const lista = Object.values(mapa)
+  for (const g of lista) {
+    g.itens.sort(ordemPrazo)
+    g.previsao = g.itens[0]?.previsao || ''
+    g.pedidos = new Set(g.itens.map((x) => x.idVenda)).size
+  }
+  return lista.sort((a, b) => ordemPrazo(a, b) || a.produto.localeCompare(b.produto))
+}
+
+// O documento da OF. `itens` = só os escolhidos (o gestor pode deixar um para
+// a próxima), com a quantidade do momento e o prazo, para a ficha.
+export function docOF({ numero, grupo, escolhidos, quem, agora }) {
+  const itens = (escolhidos || []).slice().sort(ordemPrazo).map((x) => ({
+    idVenda: x.idVenda, itemKey: x.itemKey, qtd: arredondaQtd(x.qtd),
+    previsao: x.previsao || '', cliente: x.p?.cliente || '', cidade: x.p?.cidade || '',
+  }))
+  return {
+    numero,
+    status: STATUS_OF.LIBERADA,
+    linha: grupo.linha,
+    material: 'plastico',
+    produto: grupo.produto,
+    produtoKey: normaliza(grupo.produto),
+    cores: limpaCores(grupo.cores),
+    unidade: grupo.unidade || '',
+    itens,
+    total: arredondaQtd(itens.reduce((s, x) => s + x.qtd, 0)),
+    criadaEm: agora || new Date().toISOString(),
+    criadaPor: quem?.nome || '',
+    criadaUid: quem?.uid || '',
+  }
+}
+
+// Mapa `ofs` do pedido com o vínculo novo (ou sem ele, com ordemId = null).
+// Substitui o mapa inteiro, como `linhasItens` — nada de merge profundo.
+export function ofsComVinculo(p, itemKey, ordemId) {
+  const m = { ...(p?.ofs || {}) }
+  if (ordemId) m[itemKey] = ordemId
+  else delete m[itemKey]
+  return m
+}
+
+// Onde a OF está AGORA, derivado dos pedidos: quanto falta na linha de cada item.
+// Concluída = nada mais na linha (ou o pedido já não existe). Em produção = algo
+// já saiu da linha depois da liberação.
+export function situacaoDaOF(o, pedidosPorId) {
+  if (!o) return null
+  if (o.status === STATUS_OF.CANCELADA) {
+    return { st: 'cancelada', falta: 0, feito: 0, total: arredondaQtd(o.total), itens: [] }
+  }
+  let falta = 0
+  const itens = (o.itens || []).map((x) => {
+    const p = pedidosPorId?.[x.idVenda]
+    const idx = p ? (p.itens || []).findIndex((_, i) => keyDoItem(p, i) === x.itemKey) : -1
+    const aqui = idx >= 0 ? Math.min(qtdNaEtapa(p, idx, o.linha), x.qtd) : 0
+    falta += aqui
+    return { ...x, p, idx, falta: arredondaQtd(aqui), sumiu: idx < 0 }
+  })
+  falta = arredondaQtd(falta)
+  const total = arredondaQtd(o.total ?? (o.itens || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0))
+  const feito = arredondaQtd(Math.max(0, total - falta))
+  const st = falta <= 0 ? 'concluida' : feito > 0 ? 'em_producao' : 'liberada'
+  return { st, falta, feito, total, itens }
+}
+
+export const NOME_SITUACAO_OF = {
+  liberada: 'Liberada', em_producao: 'Em produção', concluida: 'Concluída', cancelada: 'Cancelada',
+}

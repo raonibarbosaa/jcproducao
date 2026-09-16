@@ -8,6 +8,7 @@ import MeuPin from './MeuPin.jsx'
 
 const LABEL = {
   triagem: 'Triagem',
+  ordens: 'Ordens de Fabricação',
   producao: 'Produção',
   carga: 'Entregas',
   rota: 'Rota',

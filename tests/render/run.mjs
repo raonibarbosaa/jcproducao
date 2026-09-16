@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx') } },
   },
   resolve: {
     alias: [
@@ -42,6 +42,7 @@ const bruto = {
   ...(await import(join(OUT, 'meupin.js'))).roda(),
   ...(await import(join(OUT, 'posto.js'))).roda(),
   ...(await import(join(OUT, 'triagem.js'))).roda(),
+  ...(await import(join(OUT, 'ordens.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -93,6 +94,13 @@ const ESPERA = {
   tLegado: ['O pedido já está na produção', 'não entra numa Ordem de Fabricação', '✓ triagem salva'],
   tDuas: ['acab-pill cor-pill on', 'acab-pill on', '✓ triagem salva'],
   tSoPapel: ['Laminação', '✓ triagem salva'],
+  // Ordens de Fabricação: espera agrupada por linha + produto + cor
+  ofCasca: ['Ordens de Fabricação', 'Aguardando OF', 'OFs abertas', 'Histórico',
+    'SACOLA PLASTICA 30X40', 'Impressão: Preto', 'Impressão: Dourado + Preto', '16 kg', '2 pedido(s)', 'Soltar OF'],
+  ofGrupo: ['#11', '#10', 'BIA CALCADOS', '2 de 2 marcado(s)', 'Soltar OF com 2 item(ns)'],
+  ofCard: ['OF 0012', 'Liberada', 'solta por Dono', '🖨 Ficha', 'Cancelar', 'Liberado', 'Falta', 'ANA MODAS'],
+  ofHist: ['OF 0013', 'Cancelada', 'cliente desistiu'],
+  ofFicha: ['Ordem de Fabricação · OF 0012', 'SILK SCREEN', 'Preto', '16 kg', '#11', 'Conferido por'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
 }
 

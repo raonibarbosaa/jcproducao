@@ -209,6 +209,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ORDENS DE FABRICAÇÃO — soltam e cancelam só dono e designer (decisão do
+    // dono em 16/09/2026; o financeiro é staff, mas não mexe em produção).
+    // O chão de fábrica LÊ (o quadro vai andar por OF). Não se apaga: o número
+    // não pode se repetir, e cancelar é mudar o status.
+    function soltaOF() {
+      return temPerfil() && meu().perfil in ['dono', 'designer'];
+    }
+    match /ordens/{id} {
+      allow read: if ehStaff() || ehOperador() || ehExpedicao();
+      allow create: if soltaOF() && request.resource.data.criadaUid == request.auth.uid;
+      allow update: if soltaOF();
+      allow delete: if false;
+    }
+
     match /auditoria/{id} {
       allow read: if temPerfil() && meu().perfil == 'dono';
       // ⚠️ `porUid` TEM que ser quem está assinando: sem isso dava para gravar

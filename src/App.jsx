@@ -21,15 +21,18 @@ import Erros from './pages/Erros.jsx'
 import Carga from './pages/Carga.jsx'
 import Localizar from './pages/Localizar.jsx'
 import Financeiro from './pages/Financeiro.jsx'
+import OrdensFabricacao from './pages/OrdensFabricacao.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe } from './utils.js'
 
 // abas permitidas por perfil
 const ACESSO = {
-  designer:   ['triagem', 'producao', 'carga', 'rota', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
+  // 'ordens' logo depois da Triagem: é o passo seguinte do fluxo (quem solta
+  // as Ordens de Fabricação são dono e designer — decisão de 16/09/2026)
+  designer:   ['triagem', 'ordens', 'producao', 'carga', 'rota', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
   // 'financeiro' PRIMEIRO: é a tela de trabalho dele (contas a receber).
   financeiro: ['financeiro', 'producao', 'rota', 'entregues', 'localizar', 'cadastros'],   // cadastros: só a aba Itens (preço)
-  dono:       ['triagem', 'producao', 'carga', 'rota', 'entregues', 'financeiro', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
+  dono:       ['triagem', 'ordens', 'producao', 'carga', 'rota', 'entregues', 'financeiro', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
   // a expedição VÊ os erros (o "já foi entregue" do vendedor é o aviso de não
@@ -122,6 +125,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to={`/${primeira}`} replace />} />
         {abas.includes('triagem') && <Route path="/triagem" element={<Triagem pedidos={pedidos} />} />}
+        {abas.includes('ordens') && <Route path="/ordens" element={<OrdensFabricacao pedidos={pedidos} />} />}
         {abas.includes('producao') && <Route path="/producao" element={<Producao pedidos={pedidos} problemas={problemas} />} />}
         {abas.includes('carga') && <Route path="/carga" element={<Carga pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
