@@ -3,12 +3,14 @@ import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'fire
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora, qtdNaEtapa, qtdPendente,
   mapaEtapasComQtd, pedidoTodoEntregue, arredondaQtd, fmtQtd,
-  temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes } from '../utils.js'
+  temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, coresDoItemPorChave,
+} from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import DataEntrega from '../components/DataEntrega.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
+import SeloCor from '../components/SeloCor.jsx'
 
 export default function Rota({ pedidos }) {
   const { vendedores: cadastros, clientes, motoristas, itens: itensCad } = useCadastros()
@@ -275,7 +277,7 @@ export default function Rota({ pedidos }) {
                                 <ul className="itens">
                                   {p.itens.map((it, i) => (
                                     <li key={i}>
-                                      <span><SeloLinha linha={it._linha} />{it.produto}</span>
+                                      <span><SeloLinha linha={it._linha} />{it.produto}<SeloCor cores={coresDoItemPorChave(p, it)} /></span>
                                       <span className="q">
                                         {fmtQtd(it.qtd)}
                                         {/* produção parcial: sai só uma parte do item */}
@@ -385,7 +387,7 @@ function ImpressaoRota({ arvore, vendedoresOrd, filtros, total, motoristaSel = {
                   <table className="pr-itens"><tbody>
                     {ps.flatMap((p) => p.itens.map((it, i) => (
                       <tr key={`${p.idVenda}-${i}`}>
-                        <td><SeloLinha linha={it._linha} />{it.produto} <span className="ref">#{p.idVenda}</span></td>
+                        <td><SeloLinha linha={it._linha} />{it.produto}<SeloCor cores={coresDoItemPorChave(p, it)} /> <span className="ref">#{p.idVenda}</span></td>
                         <td className="q">
                           {fmtQtd(it.qtd)}
                           {it._qtdItem > it.qtd && <span className="ref"> de {fmtQtd(it._qtdItem)}</span>}

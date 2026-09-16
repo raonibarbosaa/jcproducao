@@ -2518,6 +2518,7 @@ export function localizacaoDoPedido(p, itensCad, agora) {
     key: keyDoItem(p, i),
     produto: it.produto || '',
     linha: linhaDoItem(p, i),
+    cores: coresDoItem(p, i),
     material: materialDoItem(it, itensCad),
     qtdItem: arredondaQtd(it.qtd),
     paradas: paradasDoItem(p, i, agora),
@@ -3362,4 +3363,74 @@ export function quemAssina({ user, nome, perfil, ip, posto, executor }) {
 // Quem fez, para quem LÊ a auditoria (registro antigo não tem executor).
 export function quemFez(r) {
   return r?.executorNome || r?.porNome || r?.porEmail || ''
+}
+
+// =====================================================================
+// COR DA IMPRESSÃO (plástico) — ver ORDEM_FABRICACAO.md
+// =====================================================================
+// Marcada na Triagem, por item, em `pedidos/{id}.cores = { <keyDoItem>: [ids] }`.
+// É a cor que agrupa as Ordens de Fabricação: 30×40 PRETO vai junto para a
+// máquina; 30×40 DOURADO é outra OF. "Duas cores" = array com DOIS ids.
+// Lista fixa, como a laminação: cor nova = uma linha a mais aqui.
+export const CORES_IMPRESSAO = [
+  { id: 'preto', nm: 'Preto', hex: '#1b1b1b' },
+  { id: 'dourado', nm: 'Dourado', hex: '#c9a227' },
+  { id: 'vermelho', nm: 'Vermelho', hex: '#d32f2f' },
+  { id: 'rosa', nm: 'Rosa', hex: '#e8559b' },
+]
+const ID_CORES = CORES_IMPRESSAO.map((c) => c.id)
+export const nomeCor = (id) => CORES_IMPRESSAO.find((c) => c.id === id)?.nm || id
+
+// só ids válidos, sem repetir, no máximo 2 — dado torto não vira cor inventada
+export function limpaCores(v) {
+  const arr = Array.isArray(v) ? v : []
+  return [...new Set(arr.filter((x) => ID_CORES.includes(x)))].slice(0, 2)
+}
+
+export function coresDoItem(p, idx) {
+  return limpaCores(doMapaDoItem(p?.cores, p, idx))
+}
+
+// Para telas que RECORTAM os itens (lista por linha, Rota): a posição muda
+// depois do recorte, mas a chave gravada no item (`it.key`) não.
+export function coresDoItemPorChave(p, it) {
+  return it?.key ? limpaCores(p?.cores?.[it.key]) : []
+}
+
+export const corOk = (cores) => limpaCores(cores).length >= 1
+
+// só plástico tem cor de impressão (decisão do dono, 16/09/2026)
+export function itemPedeCor(it, itensCad) {
+  return materialDoItem(it, itensCad) === 'plastico'
+}
+
+export function coresCompletas(p, itensCad) {
+  return (p?.itens || []).every((it, i) => !itemPedeCor(it, itensCad) || corOk(coresDoItem(p, i)))
+}
+
+// Chave de AGRUPAMENTO: ordenada, senão "Preto + Dourado" e "Dourado + Preto"
+// virariam duas Ordens de Fabricação.
+export function chaveCor(cores) {
+  return limpaCores(cores).slice().sort().join('+')
+}
+
+export function fmtCores(cores) {
+  return limpaCores(cores).map(nomeCor).join(' + ')
+}
+
+// Status que a Triagem grava. A linha continua sendo o que decide; a COR entra
+// só para quem ainda NÃO saiu da Triagem. ⚠️ Pedido de plástico triado antes de
+// a cor existir já tem status e está na produção: exigir a cor dele faria o
+// próximo "Salvar" zerar o status e o pedido SUMIR da produção.
+export function statusDaTriagem(p, itensCad, statusAnterior) {
+  if (!pedidoCompleto(p)) return ''
+  if (!coresCompletas(p, itensCad) && !statusAnterior) return ''
+  return linhaPredominante(p)
+}
+
+// "Sem definição" na Triagem: linha faltando, ou pedido com itens que ainda não
+// ganhou status (é o caso de quem só está esperando a cor).
+export function pendenteNaTriagem(p) {
+  if (!pedidoCompleto(p)) return true
+  return !!(p?.itens?.length) && !p.status
 }

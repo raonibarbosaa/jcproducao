@@ -13,6 +13,7 @@ import {
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
+import SeloCor from '../components/SeloCor.jsx'
 import Realce from '../components/Realce.jsx'
 
 // A previsão é falada pelo NÚMERO ("a previsão 15"), e `rotuloPlano` devolve só
@@ -307,7 +308,7 @@ function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor
               {itensLoc.map((it) => (
                 <li key={it.key}>
                   <div className="loc-item-nome">
-                    <SeloLinha linha={it.linha} /> {it.produto}
+                    <SeloLinha linha={it.linha} /> {it.produto}<SeloCor cores={it.cores} />
                     <small> · pedido {fmtQtd(it.qtdItem)}</small>
                   </div>
                   <div className="loc-paradas">

@@ -379,6 +379,13 @@ input, select { font-family: var(--font); }
   font-size: 10px; font-weight: 800; line-height: 1; color: #fff;
   margin-right: 6px; vertical-align: -4px; flex: none;
 }
+/* SELO DA COR da impressão (plástico) — bolinha(s) + nome, logo depois do produto */
+.selo-cor { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;
+  padding: 1px 7px 1px 4px; border: 1px solid var(--border); border-radius: 10px;
+  font-size: 10.5px; font-weight: 700; line-height: 1.4; vertical-align: 1px; white-space: nowrap; }
+.selo-cor-bola { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.35); flex: none; }
+.cor-pill { display: inline-flex; align-items: center; gap: 5px; }
 .qcard-valor small { font-weight: 400; color: var(--text-faint); font-size: 10px; }
 .quadro { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
 .quadro-col {
@@ -685,6 +692,9 @@ input, select { font-family: var(--font); }
     min-width: 16px; height: 14px; font-size: 9px; margin-right: 4px; vertical-align: -2px;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  /* cor impressa: o NOME é o que vale no P&B; a bolinha vira contorno */
+  .selo-cor { border-color: #000; color: #000; font-size: 9.5px; padding: 0 5px 0 3px; }
+  .selo-cor-bola { border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .pr-ped .top { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
   .pr-ped .top .nm { font-weight: 700; }
   .pr-ped .top .cid { color: #333; font-weight: 600; }

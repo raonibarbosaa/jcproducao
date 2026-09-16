@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx') } },
   },
   resolve: {
     alias: [
@@ -41,6 +41,7 @@ const bruto = {
   ...(await import(join(OUT, 'usuarios.js'))).roda(),
   ...(await import(join(OUT, 'meupin.js'))).roda(),
   ...(await import(join(OUT, 'posto.js'))).roda(),
+  ...(await import(join(OUT, 'triagem.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -86,6 +87,13 @@ const ESPERA = {
   teclado: ['Pedro Alves', 'Digite seu PIN', '>0<', '>9<', 'Cancelar', '⌫'],
   qTravado: ['INGRID MODAS', 'SACOLA PAPEL P02', 'Concluir → ', 'disabled=""'],
   qLivre: ['INGRID MODAS', 'Concluir → '],
+  // cor da impressão: só no plástico; novo não sai sem ela, legado continua na produção
+  tNovo: ['Cor da impressão ⚠', 'Preto', 'Dourado', 'Vermelho', 'Rosa', 'Duas cores',
+    'sem ela o pedido não sai da Triagem', 'marque a cor dos itens de plástico para concluir'],
+  tLegado: ['O pedido já está na produção', 'não entra numa Ordem de Fabricação', '✓ triagem salva'],
+  tDuas: ['acab-pill cor-pill on', 'acab-pill on', '✓ triagem salva'],
+  tSoPapel: ['Laminação', '✓ triagem salva'],
+  tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
 }
 
 // o que NÃO pode aparecer
@@ -98,6 +106,8 @@ const PROIBE = {
   fAtiva: ['Toque no seu nome'],
   fJoaos: ['Maria Silva'],   // nome único continua só com o primeiro
   qLivre: ['disabled=""'],   // com alguém ativo, nada travado
+  tSoPapel: ['Cor da impressão'],          // papel não tem cor
+  tDuas: ['Cor da impressão ⚠', 'escolha 2', 'Falta a'],  // duas escolhidas = completo
 }
 
 let mal = 0

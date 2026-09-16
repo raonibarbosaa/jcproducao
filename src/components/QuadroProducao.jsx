@@ -15,11 +15,13 @@ import {
   docProblema, problemaDoItem, problemasDoPedido, ehErroEntrega, temCorrecao,
   tempoNaEtapa, fmtDuracao, diasDe, carimbaTempos, quemAssina,
   quemFez,
+  coresDoItem,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import DataEntrega from './DataEntrega.jsx'
 import SeloLinha from './SeloLinha.jsx'
+import SeloCor from './SeloCor.jsx'
 import FecharMontagem from './FecharMontagem.jsx'
 import ReportarErro from './ReportarErro.jsx'
 
@@ -460,7 +462,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                           <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
                             <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                               {/* o selo da linha anda junto com o produto em toda etapa */}
-                              <span><SeloLinha linha={lItem} />{it.produto}</span>
+                              <span><SeloLinha linha={lItem} />{it.produto}<SeloCor cores={coresDoItem(p, i)} /></span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                                 <span className="q" title={aqui < total ? `${fmtQtd(total)} ${un} no pedido` : ''}>
                                   {fmtQtd(aqui)}

@@ -8,13 +8,15 @@ import {
   mapeiaColunas, agrupaPedidos, MODO_ORDER, MODO_NM, MODO_COR,
   fmtData, fmtMoeda, situacaoPrazo, detectaRota,
   detectaOrigem, mapeiaColunasZeus, agrupaPedidosZeus, ORIGEM_NM, nomeCliente,
-  linhaDoItem, pedidoCompleto, linhaPredominante, normaliza, achaCliente, achaItem,
+  linhaDoItem, pedidoCompleto, normaliza, achaCliente, achaItem,
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
   LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
+  CORES_IMPRESSAO, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
   filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
+import SeloCor from '../components/SeloCor.jsx'
 
 export default function Triagem({ pedidos }) {
   const { vendedores, clientes, itens, carregando: cadCarregando } = useCadastros()
@@ -198,12 +200,13 @@ export default function Triagem({ pedidos }) {
   // pedido continua pendente na Triagem).
   // updateDoc (não setDoc+merge): linhasItens/acabamentos precisam ser substituídos
   // inteiros pra que remoção de chave propague.
-  async function salvarTriagem(idVenda, { linhasItens, acabamentos }) {
+  async function salvarTriagem(idVenda, { linhasItens, acabamentos, cores }) {
     const p = pedidos.find((x) => x.idVenda === idVenda)
     if (!p) throw new Error('Pedido não encontrado: ' + idVenda)
-    const pSimulado = { ...p, linhasItens, status: '' }
-    const status = pedidoCompleto(pSimulado) ? linhaPredominante(pSimulado) : ''
-    await updateDoc(doc(db, 'pedidos', idVenda), { linhasItens, acabamentos, status })
+    const pSimulado = { ...p, linhasItens, cores, status: '' }
+    // a cor só é exigida de quem ainda não saiu da Triagem (ver statusDaTriagem)
+    const status = statusDaTriagem(pSimulado, itens, p.status)
+    await updateDoc(doc(db, 'pedidos', idVenda), { linhasItens, acabamentos, cores, status })
   }
 
   // responsável define a cidade de um pedido sem rota -> sistema recalcula a rota
@@ -263,7 +266,7 @@ export default function Triagem({ pedidos }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
   // vendedores presentes nos pedidos (select do filtro)
   const vendedoresFiltro = vendedoresDe(base)
-  const lista = filtraPedidos(soPendentes ? base.filter((p) => !pedidoCompleto(p)) : base, filtros, clientes)
+  const lista = filtraPedidos(soPendentes ? base.filter(pendenteNaTriagem) : base, filtros, clientes)
     .slice()
     .sort((a, b) => {
       // atrasados primeiro, depois sem definição, depois por id
@@ -278,7 +281,7 @@ export default function Triagem({ pedidos }) {
       <div className="toolbar">
         <h1 className="page-title">Triagem
           <small>
-            {pedidos.length} pedidos · {pedidos.filter(p=>!pedidoCompleto(p)).length} sem definição
+            {pedidos.length} pedidos · {pedidos.filter(pendenteNaTriagem).length} sem definição
             {lista.length !== pedidos.length && ` · ${lista.length} exibido(s)`}
           </small>
         </h1>
@@ -395,7 +398,7 @@ function ImpressaoTriagem({ lista, clientes, filtros }) {
                   <table className="pr-itens"><tbody>
                     {(p.itens || []).map((it, i) => (
                       <tr key={i}>
-                        <td>{it.produto} <span className="ref">{MODO_NM[linhaDoItem(p, i)] || '—'}</span></td>
+                        <td>{it.produto} <SeloCor cores={coresDoItem(p, i)} /> <span className="ref">{MODO_NM[linhaDoItem(p, i)] || '—'}</span></td>
                         <td className="q">{it.qtd}</td>
                       </tr>
                     ))}
@@ -410,7 +413,7 @@ function ImpressaoTriagem({ lista, clientes, filtros }) {
   )
 }
 
-function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
+export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const [editandoApelido, setEditandoApelido] = useState(false)
@@ -429,13 +432,16 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
   function semear() {
     const linhasItens = {}
     const acabamentos = {}
+    const cores = {}
     ;(p.itens || []).forEach((_, i) => {
       const k = keyDoItem(p, i)
       const m = linhaDoItem(p, i)
       if (m) linhasItens[k] = m
       if (temAcabamento(p, i)) acabamentos[k] = acabamentoDoItem(p, i)
+      const c = coresDoItem(p, i)
+      if (c.length) cores[k] = c
     })
-    return { linhasItens, acabamentos }
+    return { linhasItens, acabamentos, cores }
   }
   const rasc = draft || semear()
   // assinatura na ORDEM DOS ITENS (não dá pra comparar JSON: a ordem das chaves do
@@ -444,17 +450,21 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
   const assinatura = (r) => (p.itens || []).map((_, i) => {
     const k = keyDoItem(p, i)
     const a = r.acabamentos[k]
-    return `${r.linhasItens[k] || ''}:${a ? `${a.laminacao || ''}${a.furo ? 'F' : ''}` : '-'}`
+    return `${r.linhasItens[k] || ''}:${a ? `${a.laminacao || ''}${a.furo ? 'F' : ''}` : '-'}:${(r.cores[k] || []).join('+')}`
   }).join('|')
   const sujo = !!draft && assinatura(draft) !== assinatura(semear())
   // "pedido como está na tela": status zerado porque as linhas já vêm materializadas
-  const pView = { ...p, linhasItens: rasc.linhasItens, acabamentos: rasc.acabamentos, status: '' }
-  const completo = pedidoCompleto(pView)
+  const pView = { ...p, linhasItens: rasc.linhasItens, acabamentos: rasc.acabamentos, cores: rasc.cores, status: '' }
+  const faltaCor = !coresCompletas(pView, itensCad)
+  // pedido que já está na produção (tem status) não volta para a Triagem por falta de cor
+  const completo = pedidoCompleto(pView) && (!faltaCor || !!p.status)
+  // itens com "Duas cores" aberto esperando a 2ª — estado só da tela
+  const [duasAbertas, setDuasAbertas] = useState({})
 
   function editar(fn) {
     setDraft((d) => {
       const b = d || semear()
-      return fn({ linhasItens: { ...b.linhasItens }, acabamentos: { ...b.acabamentos } })
+      return fn({ linhasItens: { ...b.linhasItens }, acabamentos: { ...b.acabamentos }, cores: { ...b.cores } })
     })
   }
   // clicar de novo na mesma letra remove a linha do item
@@ -478,6 +488,37 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
     r.acabamentos[k] = { ...atual, ...patch }
     return r
   })
+
+  // Cor: um toque escolhe (outro toque na mesma limpa). Com "Duas cores" aberto,
+  // cada toque liga/desliga e cabem duas; a terceira troca a segunda.
+  const modoDuas = (i) => {
+    const k = keyDoItem(p, i)
+    return !!duasAbertas[k] || (rasc.cores[k] || []).length === 2
+  }
+  const setCor = (i, id) => editar((r) => {
+    const k = keyDoItem(p, i)
+    const atual = r.cores[k] || []
+    let nova
+    if (!modoDuas(i)) nova = atual.length === 1 && atual[0] === id ? [] : [id]
+    else if (atual.includes(id)) nova = atual.filter((x) => x !== id)
+    else nova = atual.length < 2 ? [...atual, id] : [atual[0], id]
+    if (nova.length) r.cores[k] = nova
+    else delete r.cores[k]
+    return r
+  })
+  const alternaDuas = (i) => {
+    const k = keyDoItem(p, i)
+    if (modoDuas(i)) {
+      setDuasAbertas((d) => ({ ...d, [k]: false }))
+      editar((r) => {
+        const atual = r.cores[k] || []
+        if (atual.length > 1) r.cores[k] = atual.slice(0, 1)
+        return r
+      })
+    } else {
+      setDuasAbertas((d) => ({ ...d, [k]: true }))
+    }
+  }
 
   async function salvarTriagemCard() {
     if (!draft) return
@@ -609,6 +650,10 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
           const mostraAcab = materialDoItem(it, itensCad) === 'papel' || m === 'GRAFICA'
           const acabObrig = m === 'GRAFICA'
           const acabFalta = acabObrig && !acabamentoItemOk(ac)
+          const pedeCor = itemPedeCor(it, itensCad)
+          const cores = coresDoItem(pView, i)
+          const duas = pedeCor && modoDuas(i)
+          const corFalta = pedeCor && (!corOk(cores) || (duas && cores.length < 2))
           return (
             <li key={i} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 5 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -638,6 +683,26 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
                   </span>
                 </span>
               </div>
+              {pedeCor && (
+                <div className={`acab-row no-print${corFalta ? ' falta' : ''}`}>
+                  <span className="acab-lbl">
+                    Cor da impressão{corFalta ? ' ⚠' : ''}{duas && cores.length < 2 ? ' (escolha 2)' : ''}:
+                  </span>
+                  {CORES_IMPRESSAO.map((c) => {
+                    const sel = cores.includes(c.id)
+                    return (
+                      <button key={c.id} className={`acab-pill cor-pill${sel ? ' on' : ''}`}
+                        onClick={() => setCor(i, c.id)}>
+                        <span className="selo-cor-bola" style={{ background: c.hex }} />{c.nm}
+                      </button>
+                    )
+                  })}
+                  <button className={`acab-pill${duas ? ' on' : ''}`} onClick={() => alternaDuas(i)}
+                    title="Impressão em duas cores: escolha as duas">
+                    Duas cores
+                  </button>
+                </div>
+              )}
               {mostraAcab && (
                 <>
                   <div className={`acab-row no-print${acabFalta ? ' falta' : ''}`}>
@@ -667,6 +732,15 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
       {p.itens.some((_, i) => linhaDoItem(pView, i) === 'GRAFICA') && !acabamentosCompletos(pView) && (
         <div className="acab-falta-aviso no-print">
           ⚠ Marque a <b>laminação</b> dos itens de gráfica — sem isso o pedido não entra no quadro de produção.
+        </div>
+      )}
+
+      {faltaCor && (
+        <div className="acab-falta-aviso no-print">
+          {p.status
+            ? <>⚠ Falta a <b>cor da impressão</b> dos itens de plástico. O pedido já está na produção e
+                continua lá, mas sem a cor ele não entra numa Ordem de Fabricação.</>
+            : <>⚠ Marque a <b>cor da impressão</b> dos itens de plástico — sem ela o pedido não sai da Triagem.</>}
         </div>
       )}
 
@@ -725,7 +799,11 @@ function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
           </>
         ) : (
           <span className="ts-msg">
-            {completo ? '✓ triagem salva' : 'defina a linha de todos os itens para concluir'}
+            {completo
+              ? '✓ triagem salva'
+              : (pedidoCompleto(pView)
+                  ? 'marque a cor dos itens de plástico para concluir'
+                  : 'defina a linha de todos os itens para concluir')}
           </span>
         )}
       </div>

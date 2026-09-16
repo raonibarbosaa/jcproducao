@@ -8,6 +8,7 @@ import {
   MATERIAIS, nomeDoMaterial, linhaDoItem, etapaDoItem, acabamentoDoItem, acabamentoItemOk, normSetor,
   paineisVisiveis, itemPertenceAoPainel, podeNoMaterial, indexaProblemas,
   qtdEmProducao, temTrabalhoNaProducao, fmtQtd,
+  coresDoItemPorChave,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -16,6 +17,7 @@ import DataEntrega from '../components/DataEntrega.jsx'
 import QuadroProducao from '../components/QuadroProducao.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
+import SeloCor from '../components/SeloCor.jsx'
 import PostoFaixa, { usePosto } from '../components/PostoFaixa.jsx'
 
 export default function Producao({ pedidos, problemas }) {
@@ -361,7 +363,7 @@ function CardProd({ p, clientes, selecionavel, selecionado, onToggleSel }) {
       <ul className="itens">
         {p.itens.map((it, i) => (
           <li key={i}>
-            <span><SeloLinha linha={p._linhaCard} />{it.produto}</span>
+            <span><SeloLinha linha={p._linhaCard} />{it.produto}<SeloCor cores={coresDoItemPorChave(p, it)} /></span>
             <span className="q">
               {fmtQtd(it.qtd)}
               {/* parte do item já saiu: o que falta produzir é este número, não o pedido */}
@@ -417,7 +419,7 @@ function ImpressaoProducao({ arvore, vendedoresOrd, filtros, filtroLinha, filtro
                           <table className="pr-itens"><tbody>
                             {p.itens.map((it, i) => (
                               <tr key={i}>
-                                <td><SeloLinha linha={p._linhaCard} />{it.produto}</td>
+                                <td><SeloLinha linha={p._linhaCard} />{it.produto}<SeloCor cores={coresDoItemPorChave(p, it)} /></td>
                                 <td className="q">{fmtQtd(it.qtd)}
                                   {it._qtdPedida != null && <small className="q-parcial"> de {fmtQtd(it._qtdPedida)}</small>}
                                 </td>

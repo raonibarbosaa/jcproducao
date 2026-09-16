@@ -17,6 +17,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
+> **Ordem de Fabricação + cor da impressão** (plástico agrupado por linha +
+> produto + cor antes de ir para a produção): desenho fechado em 16/09/2026;
+> **fase A (cor na Triagem) FEITA**, B–D a fazer — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md) (fases A–D).
+
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde
 > 04/09/2026 — aba `financeiro`, coleções `cobrancas` e `movimentos`, só dono e
@@ -807,14 +811,9 @@ O que os dados exigiram (medido no arquivo de 2026 — helpers e testes em utils
   filtro.
 
 ## PENDENTE — próxima sessão
-0. **CORES DE IMPRESSÃO no Silk** (pedido do dono em 16/09/2026, para a
-   próxima melhoria): preto · dourado · vermelho · rosa · **duas cores**.
-   Leitura provável: a cor da tinta do item no silk (como a laminação é o
-   acabamento da gráfica), marcada por item e visível no card do quadro.
-   ⚠️ Confirmar com o dono antes de desenhar: (a) se a lista é fechada ou
-   cadastrável; (b) se "duas cores" é uma opção própria ou a escolha de 2 cores
-   da lista (e quais); (c) quem marca (Triagem?) e se trava a entrada no quadro,
-   como a laminação.
+0. **Ordem de Fabricação + cores** — desenho FECHADO em
+   [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md). Fase A feita; próxima é a B
+   (aba Ordens de Fabricação).
 1. **Expedição controlando a aba Entregas** (pedido do dono em 12/08/2026, para depois).
    Hoje a expedição já vê a aba e faz montar → conferir → marcar saída; o que ela NÃO faz
    é confirmar a entrega, e isso foi decisão explícita do próprio dono na mesma conversa
