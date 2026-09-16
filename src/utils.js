@@ -3585,3 +3585,29 @@ export function situacaoDaOF(o, pedidosPorId) {
 export const NOME_SITUACAO_OF = {
   liberada: 'Liberada', em_producao: 'Em produção', concluida: 'Concluída', cancelada: 'Cancelada',
 }
+
+// ---------- filtros da TRIAGEM por item ----------
+// Material e "falta a cor" filtram ITENS, não só pedidos. ⚠️ O card continua
+// recebendo o pedido INTEIRO e só esconde o que não passa: o Salvar da Triagem
+// regrava `linhasItens`/`acabamentos`/`cores` inteiros, e um pedido recortado
+// apagaria a linha dos itens escondidos.
+export function itemFaltaCor(p, idx, itensCad) {
+  const it = p?.itens?.[idx]
+  return !!it && itemPedeCor(it, itensCad) && !corOk(coresDoItem(p, idx))
+}
+
+export function itemPassaNaTriagem(p, idx, itensCad, { material = '', faltaCor = false } = {}) {
+  const it = p?.itens?.[idx]
+  if (!it) return false
+  if (material && materialDoItem(it, itensCad) !== material) return false
+  if (faltaCor && !itemFaltaCor(p, idx, itensCad)) return false
+  return true
+}
+
+export function pedidoPassaNaTriagem(p, itensCad, filtro) {
+  if (!filtro?.material && !filtro?.faltaCor) return true
+  return (p?.itens || []).some((_, i) => itemPassaNaTriagem(p, i, itensCad, filtro))
+}
+
+export const itensSemCor = (p, itensCad) =>
+  (p?.itens || []).filter((_, i) => itemFaltaCor(p, i, itensCad)).length

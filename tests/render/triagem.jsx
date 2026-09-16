@@ -14,8 +14,8 @@ const base = { idVenda: '7001', cliente: 'INGRID MODAS', vendedor: 'SERGIO', rot
   linhasItens: { 'PA#1': 'GRAFICA', 'PL#1': 'PRODUCAO' },
   acabamentos: { 'PA#1': { laminacao: 'fosca', furo: false } } }
 const nada = () => {}
-const card = (p) => renderToString(<CardTriagem p={p} onSalvar={nada} onCidade={nada}
-  onExcluir={null} clientes={[]} itensCad={CAD} />)
+const card = (p, filtroItem) => renderToString(<CardTriagem p={p} onSalvar={nada} onCidade={nada}
+  onExcluir={null} clientes={[]} itensCad={CAD} filtroItem={filtroItem} />)
 
 export function roda() {
   globalThis.__auth = { perfil: 'dono', nome: 'Dono', user: { uid: 'd' } }
@@ -25,6 +25,9 @@ export function roda() {
       tLegado: card({ ...base, status: 'PRODUCAO' }),
       tDuas: card({ ...base, status: 'PRODUCAO', cores: { 'PL#1': ['preto', 'dourado'] } }),
       tSoPapel: card({ ...base, itens: [pa], linhasItens: { 'PA#1': 'GRAFICA' }, status: 'GRAFICA' }),
+      tFiltroPlast: card({ ...base, status: '' }, { material: 'plastico' }),
+      tFiltroPapel: card({ ...base, status: '' }, { material: 'papel' }),
+      tFiltroCor: card({ ...base, status: 'PRODUCAO' }, { faltaCor: true }),
       tQuadroCor: renderToString(<QuadroProducao
         pedidos={[{ ...base, status: 'PRODUCAO', cores: { 'PL#1': ['rosa'] } }]}
         clientes={[]} itensCad={CAD} problemas={{}}

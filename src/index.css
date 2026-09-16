@@ -1349,3 +1349,4 @@ mark.hl {
   .of-ficha-tab .box { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #000; }
   .of-ficha-ass { margin-top: 28px; display: flex; flex-direction: column; gap: 18px; font-size: 12px; }
 }
+.triagem-ocultos { font-size: 11.5px; color: var(--text-faint); margin: 4px 0 2px; font-style: italic; }

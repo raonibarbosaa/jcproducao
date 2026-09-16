@@ -12,6 +12,7 @@ import {
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
   LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
   CORES_IMPRESSAO, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
+  MATERIAIS, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
   filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
@@ -24,6 +25,9 @@ export default function Triagem({ pedidos }) {
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
   const [soPendentes, setSoPendentes] = useState(false)
+  // filtros por ITEM: o card esconde os itens de fora, mas recebe o pedido inteiro
+  const [filtroMaterial, setFiltroMaterial] = useState('')
+  const [soFaltaCor, setSoFaltaCor] = useState(false)
   const [filtros, setFiltros] = useState({})
   const [msg, setMsg] = useState('')
   const [importando, setImportando] = useState(false)
@@ -266,7 +270,9 @@ export default function Triagem({ pedidos }) {
   const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
   // vendedores presentes nos pedidos (select do filtro)
   const vendedoresFiltro = vendedoresDe(base)
+  const filtroItem = { material: filtroMaterial, faltaCor: soFaltaCor }
   const lista = filtraPedidos(soPendentes ? base.filter(pendenteNaTriagem) : base, filtros, clientes)
+    .filter((p) => pedidoPassaNaTriagem(p, itens, filtroItem))
     .slice()
     .sort((a, b) => {
       // atrasados primeiro, depois sem definição, depois por id
@@ -276,12 +282,15 @@ export default function Triagem({ pedidos }) {
       return String(a.idVenda).localeCompare(String(b.idVenda))
     })
 
+  const semCorTotal = pedidos.reduce((s, p) => s + itensSemCor(p, itens), 0)
+
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Triagem
           <small>
             {pedidos.length} pedidos · {pedidos.filter(pendenteNaTriagem).length} sem definição
+            {semCorTotal > 0 && ` · ${semCorTotal} item(ns) sem cor`}
             {lista.length !== pedidos.length && ` · ${lista.length} exibido(s)`}
           </small>
         </h1>
@@ -290,6 +299,15 @@ export default function Triagem({ pedidos }) {
           <input type="checkbox" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />
           Só sem definição
         </label>
+        <label className="filter-pill" title="Itens de plástico sem a cor da impressão (inclui os que já estão na produção)">
+          <input type="checkbox" checked={soFaltaCor} onChange={(e) => setSoFaltaCor(e.target.checked)} />
+          Só falta cor
+        </label>
+        <select className="btn" value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)}
+          title="Mostra só os itens deste material">
+          <option value="">Todos os materiais</option>
+          {MATERIAIS.map((m) => <option key={m.id} value={m.id}>Só {m.nome}</option>)}
+        </select>
         <input ref={fileRef} type="file" accept=".xls,.xlsx" hidden onChange={importar} />
         <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={importando}>
           {importando ? 'Importando…' : '↑ Importar planilha'}
@@ -335,18 +353,20 @@ export default function Triagem({ pedidos }) {
             ? 'Importe a planilha do Posseidon ou da Zeus para começar.'
             : resumoFiltros(filtros)
               ? 'Nenhum pedido com esses filtros.'
+              : (filtroMaterial || soFaltaCor)
+                ? (soFaltaCor ? 'Nenhum item de plástico sem cor — tudo marcado!' : 'Nenhum pedido com esse material.')
               : 'Nada pendente — tudo categorizado!'}
         </div>
       ) : (
         <div className="cards screen-only">
           {lista.map((p) => (
             <CardTriagem key={p.idVenda} p={p} onSalvar={salvarTriagem} clientes={clientes} itensCad={itens}
-              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} />
+              onCidade={definirCidade} onExcluir={ehDono ? excluirPedido : null} filtroItem={filtroItem} />
           ))}
         </div>
       )}
 
-      <ImpressaoTriagem lista={lista} clientes={clientes} filtros={filtros} />
+      <ImpressaoTriagem lista={lista} clientes={clientes} filtros={filtros} itensCad={itens} filtroItem={filtroItem} />
 
       {resultadoImportacao && (
         <ModalImportacao
@@ -361,9 +381,12 @@ export default function Triagem({ pedidos }) {
 }
 
 // ============================ IMPRESSÃO DA TRIAGEM ============================
-function ImpressaoTriagem({ lista, clientes, filtros }) {
+function ImpressaoTriagem({ lista, clientes, filtros, itensCad, filtroItem }) {
   const hoje = new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-  const resumo = resumoFiltros(filtros)
+  // a folha diz o recorte de itens: impressa filtrada, ela é PARTE do pedido
+  const nmMat = MATERIAIS.find((m) => m.id === filtroItem?.material)?.nome
+  const resumo = [resumoFiltros(filtros), nmMat && `só ${nmMat}`, filtroItem?.faltaCor && 'só itens sem cor']
+    .filter(Boolean).join(' · ')
   const arvore = {}
   for (const p of lista) {
     const v = p.vendedor || '—'
@@ -396,7 +419,7 @@ function ImpressaoTriagem({ lista, clientes, filtros }) {
                     <span className="cid">({p.cidade || '—'})</span>
                   </div>
                   <table className="pr-itens"><tbody>
-                    {(p.itens || []).map((it, i) => (
+                    {(p.itens || []).map((it, i) => !itemPassaNaTriagem(p, i, itensCad, filtroItem) ? null : (
                       <tr key={i}>
                         <td>{it.produto} <SeloCor cores={coresDoItem(p, i)} /> <span className="ref">{MODO_NM[linhaDoItem(p, i)] || '—'}</span></td>
                         <td className="q">{it.qtd}</td>
@@ -413,7 +436,7 @@ function ImpressaoTriagem({ lista, clientes, filtros }) {
   )
 }
 
-export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad }) {
+export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensCad, filtroItem }) {
   const [editandoCidade, setEditandoCidade] = useState(false)
   const [cidadeNova, setCidadeNova] = useState('')
   const [editandoApelido, setEditandoApelido] = useState(false)
@@ -456,6 +479,7 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
   // "pedido como está na tela": status zerado porque as linhas já vêm materializadas
   const pView = { ...p, linhasItens: rasc.linhasItens, acabamentos: rasc.acabamentos, cores: rasc.cores, status: '' }
   const faltaCor = !coresCompletas(pView, itensCad)
+  const ocultos = (p.itens || []).filter((_, i) => !itemPassaNaTriagem(p, i, itensCad, filtroItem)).length
   // pedido que já está na produção (tem status) não volta para a Triagem por falta de cor
   const completo = pedidoCompleto(pView) && (!faltaCor || !!p.status)
   // itens com "Duas cores" aberto esperando a 2ª — estado só da tela
@@ -643,6 +667,9 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
 
       <ul className="itens">
         {p.itens.map((it, i) => {
+          // filtrado pelo que está SALVO: marcar a cor não pode sumir com o item
+          // antes do Salvar
+          if (!itemPassaNaTriagem(p, i, itensCad, filtroItem)) return null
           const m = linhaDoItem(pView, i)
           const ac = acabamentoDoItem(pView, i)
           // acabamento aparece em TODO item de papel (qualquer linha) e em qualquer
@@ -728,6 +755,11 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
           )
         })}
       </ul>
+      {ocultos > 0 && (
+        <div className="triagem-ocultos no-print">
+          + {ocultos} item(ns) oculto(s) pelo filtro — os botões grandes abaixo valem para TODOS os itens
+        </div>
+      )}
 
       {p.itens.some((_, i) => linhaDoItem(pView, i) === 'GRAFICA') && !acabamentosCompletos(pView) && (
         <div className="acab-falta-aviso no-print">

@@ -101,6 +101,10 @@ const ESPERA = {
   ofCard: ['OF 0012', 'Liberada', 'solta por Dono', '🖨 Ficha', 'Cancelar', 'Liberado', 'Falta', 'ANA MODAS'],
   ofHist: ['OF 0013', 'Cancelada', 'cliente desistiu'],
   ofFicha: ['Ordem de Fabricação · OF 0012', 'SILK SCREEN', 'Preto', '16 kg', '#11', 'Conferido por'],
+  // filtro por item: o card esconde o resto e AVISA (os botões grandes valem para todos)
+  tFiltroPlast: ['SACOLA PLASTICA 30X40', 'Cor da impressão', '1 item(ns) oculto(s) pelo filtro'],
+  tFiltroPapel: ['SACOLA PAPEL P02', 'Laminação', '1 item(ns) oculto(s)'],
+  tFiltroCor: ['SACOLA PLASTICA 30X40', 'oculto(s) pelo filtro'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
 }
 
@@ -116,6 +120,10 @@ const PROIBE = {
   qLivre: ['disabled=""'],   // com alguém ativo, nada travado
   tSoPapel: ['Cor da impressão'],          // papel não tem cor
   tDuas: ['Cor da impressão ⚠', 'escolha 2', 'Falta a'],  // duas escolhidas = completo
+  tFiltroPlast: ['SACOLA PAPEL P02', 'Laminação'],
+  tFiltroPapel: ['SACOLA PLASTICA 30X40', 'Cor da impressão'],
+  tFiltroCor: ['SACOLA PAPEL P02'],
+  tNovo: ['oculto(s)'],   // sem filtro, nada escondido
 }
 
 let mal = 0

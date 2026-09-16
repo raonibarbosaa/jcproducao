@@ -6,6 +6,7 @@
 import {
   CORES_IMPRESSAO, limpaCores, coresDoItem, coresDoItemPorChave, corOk, itemPedeCor,
   coresCompletas, chaveCor, fmtCores, statusDaTriagem, pendenteNaTriagem, keyDoItem,
+  itemFaltaCor, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
 } from '../src/utils.js'
 import { t, ok, resultado } from './_harness.mjs'
 
@@ -65,5 +66,21 @@ ok('já na produção não é pendente', !pendenteNaTriagem({ ...semCor, status:
 ok('linha faltando é pendente', pendenteNaTriagem({ ...ped, linhasItens: {}, status: '' }))
 ok('Zeus sem itens com status não é pendente', !pendenteNaTriagem({ status: 'PRODUCAO' }))
 ok('Zeus sem itens e sem status é pendente', pendenteNaTriagem({ status: '' }))
+
+// ---------- filtros da Triagem ----------
+const misto = { ...ped, cores: {} }       // papel + plástico sem cor
+ok('plástico sem cor falta', itemFaltaCor(misto, 1, CAD))
+ok('papel nunca "falta cor"', !itemFaltaCor(misto, 0, CAD))
+ok('plástico com cor não falta', !itemFaltaCor(ped, 1, CAD))
+t('conta os sem cor', [itensSemCor(misto, CAD), itensSemCor(ped, CAD)], [1, 0])
+t('só plástico: esconde o papel', [0, 1].map((i) => itemPassaNaTriagem(misto, i, CAD, { material: 'plastico' })), [false, true])
+t('só papel: esconde o plástico', [0, 1].map((i) => itemPassaNaTriagem(misto, i, CAD, { material: 'papel' })), [true, false])
+t('falta cor: só o plástico sem cor', [0, 1].map((i) => itemPassaNaTriagem(misto, i, CAD, { faltaCor: true })), [false, true])
+t('sem filtro passa tudo', [0, 1].map((i) => itemPassaNaTriagem(misto, i, CAD, {})), [true, true])
+ok('pedido já com cor sai do filtro "falta cor"', !pedidoPassaNaTriagem(ped, CAD, { faltaCor: true }))
+ok('pedido sem cor entra', pedidoPassaNaTriagem(misto, CAD, { faltaCor: true }))
+ok('só papel + falta cor não combina nunca', !pedidoPassaNaTriagem(misto, CAD, { material: 'papel', faltaCor: true }))
+ok('pedido só de papel some no filtro plástico', !pedidoPassaNaTriagem({ itens: [pa] }, CAD, { material: 'plastico' }))
+ok('sem filtro, todo pedido passa', pedidoPassaNaTriagem({ itens: [pa] }, CAD, {}))
 
 export default resultado('cores')

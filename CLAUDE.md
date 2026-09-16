@@ -333,6 +333,14 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   na mão zera o aviso. Só o Salvar chama `salvarTriagem()` no pai, que grava
   `linhasItens`/`acabamentos`/`status` num único `updateDoc` (status = `linhaPredominante`
   quando `pedidoCompleto`). Cidade e apelido continuam gravando na hora.
+- **Filtro por ITEM na Triagem (16/09/2026):** "Só falta cor" (plástico sem cor
+  da impressão, inclusive o que já está na produção) e "Só <material>".
+  `itemPassaNaTriagem`/`pedidoPassaNaTriagem`/`itensSemCor` (utils). ⚠️ O card
+  recebe o pedido INTEIRO e só esconde os itens (`filtroItem`): o Salvar regrava
+  os mapas inteiros, e um pedido recortado apagaria a linha dos escondidos. O
+  filtro olha o que está SALVO — marcar a cor não some com o item antes do
+  Salvar. O card avisa "N item(ns) oculto(s)" (os botões grandes valem para
+  todos) e a impressão respeita o recorte e o declara no cabeçalho.
 - **Filtros na Triagem:** `FiltrosBar` (cliente/apelido, nº pedido, vendedor, período de
   entrega) igual Produção/Rota; combina com "Só sem definição", conta "N exibido(s)" no
   título e o resumo entra no cabeçalho da impressão.
