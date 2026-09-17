@@ -1,13 +1,14 @@
 import { renderToString } from 'react-dom/server'
-import OF, { GrupoEspera, CardOF, HistoricoOF, FichaOF, PainelVirada } from '../../src/pages/OrdensFabricacao.jsx'
+import OF, { BlocoEspera, CardOF, HistoricoOF, FichaOF, PainelVirada } from '../../src/pages/OrdensFabricacao.jsx'
 import QuadroProducao from '../../src/components/QuadroProducao.jsx'
 import { PAINEIS_QUADRO } from '../../src/utils.js'
-import { itensAguardandoOF, agrupaParaOF, docOF, situacaoDaOF, carimbaKeys } from '../../src/utils.js'
+import { itensAguardandoOF, agrupaParaOF, blocosParaOF, docOF, situacaoDaOF, carimbaKeys } from '../../src/utils.js'
 
 const PL = 'SACOLA PLASTICA 30X40'
-const ped = (id, cliente, qtd, previsao, cores) => {
+const P2 = 'SACOLA PLASTICA 40X50 REC'
+const ped = (id, cliente, qtd, previsao, cores, produto = PL) => {
   const p = carimbaKeys({ idVenda: id, cliente, cidade: 'ITABAIANA', vendedor: 'SERGIO', rota: 'ROTA 01',
-    status: 'PRODUCAO', previsao, itens: [{ produto: PL, qtd }] })
+    status: 'PRODUCAO', previsao, itens: [{ produto, qtd }] })
   p.linhasItens = { [p.itens[0].key]: 'PRODUCAO' }
   p.cores = { [p.itens[0].key]: cores }
   return p
@@ -16,19 +17,26 @@ const pedidos = [
   ped('10', 'ANA MODAS', 10, '2026-09-20', ['preto']),
   ped('11', 'BIA CALCADOS', 6, '2026-09-18', ['preto']),
   ped('12', 'CAIO', 3, '2026-09-19', ['dourado', 'preto']),
+  ped('14', 'EVA STORE', 4, '2026-09-21', ['preto'], P2),   // outro TAMANHO, mesma cor: mesmo bloco
 ]
-const CAD = [{ produto: PL, tipo: 'plastico', unidade: 'kg' }]
-const grupos = agrupaParaOF(itensAguardandoOF(pedidos, CAD, new Set()))
-const g = grupos.find((x) => x.cores.length === 1)
-const o = { id: 'o1', ...docOF({ numero: 12, grupo: g, escolhidos: g.itens, quem: { nome: 'Dono', uid: 'd' } }) }
+const CAD = [{ produto: PL, tipo: 'plastico', unidade: 'kg' }, { produto: P2, tipo: 'plastico', unidade: 'kg' }]
+const blocos = blocosParaOF(agrupaParaOF(itensAguardandoOF(pedidos, CAD, new Set())))
+const b = blocos.find((x) => x.cores.length === 1)   // Silk · Preto: 2 produtos
+const g = b.grupos.find((x) => x.produto === PL)
+// OF de um produto só (o caso antigo) e OF com os dois produtos do bloco
+const o = { id: 'o1', ...docOF({ numero: 12, grupo: b, escolhidos: g.itens, quem: { nome: 'Dono', uid: 'd' } }) }
+const oMulti = { id: 'o3', ...docOF({ numero: 14, grupo: b, escolhidos: b.itens, quem: { nome: 'Dono', uid: 'd' } }) }
 const porId = Object.fromEntries(pedidos.map((p) => [p.idVenda, p]))
 const cancelada = { ...o, id: 'o2', numero: 13, status: 'cancelada', motivo: 'cliente desistiu',
   canceladaPor: 'Dono', canceladaEm: '2026-09-16T12:00:00.000Z' }
 const nada = () => {}
 const silk = PAINEIS_QUADRO.filter((x) => x.etapa === 'PRODUCAO')
-// 10 e 11 na OF; 12 (duas cores) sem OF; 13 já estava na fila no dia da virada
+// 10 e 11 na OF; 12 (duas cores) e 14 sem OF; 13 já estava na fila no dia da virada
 const comOF = pedidos.map((p) => (['10', '11'].includes(p.idVenda)
   ? { ...p, ofs: { [p.itens[0].key]: 'o1' } } : p))
+// 10, 11 e 14 na OF de dois produtos
+const comMulti = pedidos.map((p) => (['10', '11', '14'].includes(p.idVenda)
+  ? { ...p, ofs: { [p.itens[0].key]: 'o3' } } : p))
 const legado = { ...ped('13', 'DAVI', 7, '2026-09-22', ['rosa']) }
 legado.semOF = { [legado.itens[0].key]: true }
 const quadro = (cfg, lista = [...comOF, legado], ords = [o]) => renderToString(
@@ -40,8 +48,12 @@ export function roda() {
   try {
     return {
       ofCasca: renderToString(<OF pedidos={pedidos} />),
-      ofGrupo: renderToString(<GrupoEspera g={g} clientes={[]} onSoltar={nada} abertoInicial />),
+      ofBloco: renderToString(<BlocoEspera b={b} clientes={[]} onSoltar={nada} abertoInicial />),
+      ofBlocoFechado: renderToString(<BlocoEspera b={b} clientes={[]} onSoltar={nada} />),
       ofCard: renderToString(<CardOF o={o} s={situacaoDaOF(o, porId)} clientes={[]} onFicha={nada} onCancelar={nada} abertoInicial />),
+      ofCardMulti: renderToString(<CardOF o={oMulti} s={situacaoDaOF(oMulti, porId)} clientes={[]} onFicha={nada} onCancelar={nada} abertoInicial />),
+      qOfMulti: quadro({ ofExigida: true }, [...comMulti, legado], [oMulti]),
+      ofFichaMulti: renderToString(<FichaOF o={oMulti} s={situacaoDaOF(oMulti, porId)} clientes={[]} />),
       ofHist: renderToString(<HistoricoOF lista={[{ o: cancelada, s: situacaoDaOF(cancelada, porId) }]} onFicha={nada} />),
       qOfLigada: quadro({ ofExigida: true }),
       qOfDesligada: quadro({}),

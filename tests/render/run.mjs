@@ -95,17 +95,25 @@ const ESPERA = {
   tLegado: ['O pedido já está na produção', 'não entra numa Ordem de Fabricação', '✓ triagem salva'],
   tDuas: ['acab-pill cor-pill on', 'acab-pill on', '✓ triagem salva'],
   tSoPapel: ['Laminação', '✓ triagem salva'],
-  // Ordens de Fabricação: espera agrupada por linha + produto + cor
+  // Ordens de Fabricação: espera em BLOCOS por linha + cor, com os produtos dentro
   ofCasca: ['Ordens de Fabricação', 'Aguardando OF', 'OFs abertas', 'Histórico',
-    'SACOLA PLASTICA 30X40', 'Impressão: Preto', 'Impressão: Dourado + Preto', '16 kg', '2 pedido(s)', 'Soltar OF'],
-  ofGrupo: ['#11', '#10', 'BIA CALCADOS', '2 de 2 marcado(s)', 'Soltar OF com 2 item(ns)'],
-  ofCard: ['OF 0012', 'Liberada', 'solta por Dono', '🖨 Ficha', 'Cancelar', 'Liberado', 'Falta', 'ANA MODAS'],
+    'SACOLA PLASTICA 30X40', 'SACOLA PLASTICA 40X50 REC', 'Impressão: Preto', 'Impressão: Dourado + Preto',
+    '20 kg', '2 produto(s)', '3 pedido(s)', 'Soltar OF'],
+  ofBloco: ['SACOLA PLASTICA 30X40', 'SACOLA PLASTICA 40X50 REC', '#11', '#10', '#14', 'BIA CALCADOS', 'EVA STORE',
+    '2 de 2 produto(s)', '3 de 3 item(ns)', '20 kg', 'Soltar OF com 2 produto(s)'],
+  ofBlocoFechado: ['SACOLA PLASTICA 30X40 · <b>16 kg</b>', 'SACOLA PLASTICA 40X50 REC · <b>4 kg</b>', '▸ Soltar OF…'],
+  ofCard: ['OF 0012', 'SACOLA PLASTICA 30X40', 'Liberada', 'solta por Dono', '🖨 Ficha', 'Cancelar', 'Liberado', 'Falta', 'ANA MODAS'],
+  ofCardMulti: ['OF 0014', '2 produtos', 'SACOLA PLASTICA 30X40', 'SACOLA PLASTICA 40X50 REC', 'EVA STORE', '20 kg', 'of-sub'],
+  qOfMulti: ['OF 0014', '2 produtos', 'SACOLA PLASTICA 30X40', 'SACOLA PLASTICA 40X50 REC', '#14 EVA STORE',
+    'Concluir produto → Montagem Plástico', 'Concluir OF inteira (2 produtos) → Montagem Plástico', '20 kg'],
+  ofFichaMulti: ['Ordem de Fabricação · OF 0014', 'Preto', 'SACOLA PLASTICA 30X40', 'SACOLA PLASTICA 40X50 REC',
+    '#14', 'EVA STORE', '20 kg', '4 kg', 'of-ficha-bloco'],
   ofHist: ['OF 0013', 'Cancelada', 'cliente desistiu'],
   // fase C: OF no quadro + virada escalonada
   qOfLigada: ['OF 0012', 'Concluir OF → Montagem Plástico', '#11 BIA CALCADOS', '16 kg',
     'aguardando <b>Ordem de Fabricação</b>', 'DAVI', 'sem OF · já estava na fila'],
   qOfDesligada: ['OF 0012', 'CAIO', 'DAVI'],
-  qOfCancelada: ['aguardando', '3 sacola(s)', 'DAVI'],   // OF cancelada: os dela voltam a esperar OF
+  qOfCancelada: ['aguardando', '4 sacola(s)', 'DAVI'],   // OF cancelada: os dela voltam a esperar OF (10, 11, 12 e 14)
   qOfCresceu: ['Aumentou <b>5 kg</b> depois da OF'],
   vDesl: ['Exigência de OF desligada', '<b>4</b> sacola(s)', 'Ligar exigência de OF'],
   vDeslDesigner: ['Quem liga é o dono'],
@@ -140,7 +148,9 @@ const PROIBE = {
   tFiltroPapel: ['SACOLA PLASTICA 30X40', 'Cor da impressão'],
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
-  qOfLigada: ['CAIO'],                          // sem OF e exigência ligada: fora do quadro
+  qOfLigada: ['CAIO', 'Concluir produto', 'OF inteira'],   // sem OF e exigência ligada: fora do quadro; 1 produto = só "Concluir OF"
+  ofBlocoFechado: ['#11', 'Soltar OF com'],     // fechado: só os chips dos produtos
+  ofCard: ['2 produtos'],                       // um produto: o nome, não a contagem
   qOfDesligada: ['aguardando', 'já estava na fila'],   // desligada: tudo como antes
   qOfCancelada: ['OF 0012', 'ANA MODAS', 'BIA CALCADOS'],   // nem card da OF nem avulso
   vDeslDesigner: ['Ligar exigência'],

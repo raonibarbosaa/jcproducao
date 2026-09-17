@@ -2,6 +2,51 @@
 
 > Desenho fechado com o dono em 16/09/2026. **Fases A, B e C FEITAS (16/09/2026);** D (relatórios) a fazer.
 > Implementar por fases (A → D), testando entre uma e outra.
+> **17/09/2026: a OF passou a juntar VÁRIOS PRODUTOS da mesma cor** — ver a seção
+> "A OF é a impressão de uma COR" abaixo.
+
+## A OF é a impressão de uma COR (17/09/2026)
+> No primeiro dia de uso as OF 0001 e 0002 nasceram com UM pedido cada: a chave
+> era linha + produto (nome inteiro) + cor, e "BOCA PALHAÇO 20X30" e "BOCA
+> PALHAÇO 20X30 REC" nunca caíam juntas. O dono cancelou as duas e pediu o
+> desenho novo.
+
+- **Decisões do dono (17/09/2026):** (1) a OF **pode misturar tamanhos e
+  modelos**, mas **nunca cores** — trocar tinta é o que custa, trocar o tamanho
+  não; (2) a baixa no quadro é **por produto**; (3) as OF 0001/0002 foram
+  canceladas antes da mudança (nada a migrar).
+- **Chave da OF = linha + cor** (`chaveOF`). Silk e Clichê continuam separados
+  (máquina diferente). Dentro do bloco o gestor **escolhe os produtos** —
+  o sistema não impõe tamanho igual.
+- **Espera em BLOCOS** (`blocosParaOF` sobre `agrupaParaOF`): um card por linha
+  + cor, fechado mostra os chips dos produtos com o kg de cada; aberto vira a
+  marcação — cada PRODUTO com checkbox (todos marcados, segurar é a exceção) e
+  "▸ pedidos" para desmarcar pedido a pedido. Os produtos vêm **ordenados pelo
+  tamanho** (`tamanhoDoProduto` lê o `NNxNN` do nome do Posseidon;
+  `ordemProdutoOF`), para os parecidos ficarem vizinhos. Componente:
+  `BlocoEspera` (o `GrupoEspera` saiu).
+- **Doc `ordens/{id}`:** `produto`/`produtoKey` saíram do cabeçalho; entrou
+  `produtos: [{produto, produtoKey, qtd}]` (resumo) e **cada item de `itens`
+  leva `produto`**. Leitura por `produtosDaOF(o)` / `produtoDoItemOF(o, x)`,
+  que **entendem o doc antigo** (uma OF = um produto) sem migração.
+  `fmtProdutosOF` dá o nome quando é um só e "N produtos" quando são vários.
+  `situacaoDaOF` ganhou `produtos` (a mesma lista quebrada por produto, com
+  total/falta/feito/excedente cada). Rules: nada novo.
+- **Ficha impressa:** cabeçalho com linha, COR grande, nº de produtos e total;
+  depois **um bloco por produto** (`.of-ficha-bloco`, nome + subtotal) com os
+  pedidos e o quadradinho. Sai do RETRATO (`o.itens`, via
+  `itensPorProdutoOF`), então a ficha de OF cancelada ainda mostra o que tinha.
+- **Quadro (`CardOFQuadro`):** um bloco por produto, cada um com o próprio
+  campo de quantidade e "Concluir produto → Montagem Plástico" (parcial
+  completa o pedido mais urgente DAQUELE produto); com 2+ produtos aparece
+  "Concluir OF inteira". Um produto só continua "Concluir OF". Os campos ficam
+  em `qtds` com a chave `of|<ordem>|<painel>|<produtoKey>` e `limpaQtds` zera
+  todos os da OF depois da baixa.
+- Testes: `tests/ordem.test.mjs` (blocos, ordem por tamanho, doc com vários
+  produtos, leitura do doc antigo, situação por produto) e `tests/render/ordens.jsx`
+  (bloco aberto/fechado, card e ficha com 2 produtos, quadro com baixa por
+  produto).
+
 
 ## Por que existe
 Hoje a produção anda **por pedido**: a fila do Silk mostra um card por pedido.
@@ -57,6 +102,8 @@ agrupar é o que dá produtividade.
 - **Agrupamento = linha + produto + cor.** O tamanho já vem no nome do produto
   do Posseidon (`SACOLA PLASTICA 30X40`), então produto já separa tamanho. Plástico
   pode ir para o Silk ou para o Clichê — a linha entra na chave para não misturar.
+  ⚠️ **Superado em 17/09/2026:** o grupo (produto) continua existindo como
+  linha de marcação, mas a OF é o BLOCO linha + cor com vários produtos.
 - **"Em produção" e "concluída" são DERIVADOS, não gravados:** concluída = nenhum
   item da OF tem mais quantidade na linha. Assim o operador não precisa escrever
   em `ordens` (a rule dele continua só `etapas`) e o status nunca discorda do

@@ -558,6 +558,13 @@ input, select { font-family: var(--font); }
 .qcard-valor { font-size: 14px; font-weight: 800; color: var(--text); margin-top: 7px; }
 .qcard-log { font-size: 11px; color: var(--text-faint); margin-top: 7px; }
 .qcard-acoes { display: flex; gap: 6px; margin-top: 9px; align-items: center; }
+/* card da OF no quadro: um bloco por produto, cada um com a sua baixa */
+.qcard-of-prod { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.qcard-of-prod-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; }
+.qcard-of-prod-top .q { font-family: var(--mono); }
+.qcard-of-prod .itens { border-top: none; margin-top: 2px; padding-top: 0; }
+.qcard-of-prod .qcard-acoes { margin-top: 6px; }
+.qcard-of-tudo { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .qc-avancar { flex: 1; justify-content: center; font-size: 13px; padding: 9px; }
 
 /* total de linha na impressão da Produção */
@@ -1339,6 +1346,17 @@ mark.hl {
 .of-st-concluida { border-color: var(--ok, #4caf50); color: var(--ok, #4caf50); }
 .of-st-cancelada { border-color: var(--danger); color: var(--danger); }
 .of-cancelada { opacity: 0.6; }
+/* bloco da espera (linha + cor): produtos com checkbox, pedidos de cada um atrás do ▸ */
+.of-prod-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.of-prod-chips .chip b { color: var(--text); font-family: var(--mono); }
+.of-prods { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.of-prod-row { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.of-prod-row.of-fora { opacity: 0.5; }
+.of-prod-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.of-prod-top label { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.of-prod-top label input { width: 18px; height: 18px; }
+.of-prod-row .of-tab { margin-top: 8px; }
+.of-tab tr.of-sub td { background: var(--surface); font-weight: 700; cursor: default; }
 
 @media print {
   .of-ficha-prod { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 18px;
@@ -1348,6 +1366,10 @@ mark.hl {
   .of-ficha-tab th { text-align: left; font-size: 10.5px; border-bottom: 1px solid #000; }
   .of-ficha-tab .box { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #000; }
   .of-ficha-ass { margin-top: 28px; display: flex; flex-direction: column; gap: 18px; font-size: 12px; }
+  .of-ficha-bloco { margin-top: 14px; break-inside: avoid; }
+  .of-ficha-bloco h2 { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 15px; margin: 0 0 4px; padding-bottom: 3px; border-bottom: 2px solid #000; }
+  .of-ficha-bloco h2 span:last-child { font-family: var(--mono); font-size: 14px; }
 }
 .triagem-ocultos { font-size: 11.5px; color: var(--text-faint); margin: 4px 0 2px; font-style: italic; }
 .of-virada { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;

@@ -3592,11 +3592,107 @@ export function agrupaParaOF(itens) {
   return lista.sort((a, b) => ordemPrazo(a, b) || a.produto.localeCompare(b.produto))
 }
 
+// ---------- a OF junta VÁRIOS produtos da mesma cor (17/09/2026) ----------
+// A OF é a IMPRESSÃO de uma cor numa linha: trocar tinta é o que custa, trocar
+// o tamanho da sacola não. Por isso a chave da OF é linha + cor, e dentro dela
+// o gestor escolhe QUAIS produtos (tamanhos, modelos, REC) entram — decisão do
+// dono em 17/09/2026: "pode misturar tamanhos, não pode misturar cores".
+export const chaveOF = (linha, cores) => `${linha}|${chaveCor(cores)}`
+
+// Tamanho no nome do produto do Posseidon ("BOCA PALHAÇO 30X40 REC" → [30, 40]).
+// Serve só para ORDENAR: os produtos parecidos ficam vizinhos na marcação.
+export function tamanhoDoProduto(nome) {
+  const m = String(nome || '').match(/(\d+)\s*[xX]\s*(\d+)/)
+  return m ? [Number(m[1]), Number(m[2])] : null
+}
+export function ordemProdutoOF(a, b) {
+  const ta = tamanhoDoProduto(a)
+  const tb = tamanhoDoProduto(b)
+  if (ta && tb && (ta[0] !== tb[0] || ta[1] !== tb[1])) return (ta[0] - tb[0]) || (ta[1] - tb[1])
+  if (!!ta !== !!tb) return ta ? -1 : 1
+  return String(a || '').localeCompare(String(b || ''), 'pt-BR')
+}
+
+// BLOCOS da espera: um por linha + cor, com os grupos (produtos) dentro. É o
+// bloco que vira OF; o grupo é a linha de marcação. O mais urgente primeiro.
+export function blocosParaOF(grupos) {
+  const mapa = {}
+  for (const g of grupos || []) {
+    const chave = chaveOF(g.linha, g.cores)
+    const b = (mapa[chave] ??= {
+      chave, linha: g.linha, cores: g.cores, unidade: g.unidade, grupos: [], total: 0,
+    })
+    b.grupos.push(g)
+    b.total = arredondaQtd(b.total + g.total)
+  }
+  const lista = Object.values(mapa)
+  for (const b of lista) {
+    b.grupos.sort((x, y) => ordemProdutoOF(x.produto, y.produto) || x.chave.localeCompare(y.chave))
+    b.itens = b.grupos.flatMap((g) => g.itens)
+    const datas = b.itens.map((x) => x.previsao || '').filter(Boolean).sort()
+    b.previsao = datas[0] || ''
+    b.pedidos = new Set(b.itens.map((x) => x.idVenda)).size
+  }
+  return lista.sort((a, b) => (a.previsao || '9999').localeCompare(b.previsao || '9999')
+    || a.chave.localeCompare(b.chave))
+}
+
+// Resumo por produto de uma lista de itens da OF: [{ produto, produtoKey, qtd }].
+function resumoProdutosOF(itens) {
+  const mapa = {}
+  for (const x of itens || []) {
+    const produto = x.produto || ''
+    const key = normaliza(produto)
+    const r = (mapa[key] ??= { produto, produtoKey: key, qtd: 0 })
+    r.qtd = arredondaQtd(r.qtd + (Number(x.qtd) || 0))
+  }
+  return Object.values(mapa).sort((a, b) => ordemProdutoOF(a.produto, b.produto))
+}
+
+// Os produtos de uma OF. Doc novo tem `produtos`; o antigo (uma OF = um produto)
+// tinha `produto` no cabeçalho e nada no item — continua lendo, sem migração.
+export function produtosDaOF(o) {
+  if (Array.isArray(o?.produtos) && o.produtos.length) return o.produtos
+  if (o?.produto) {
+    return [{ produto: o.produto, produtoKey: o.produtoKey || normaliza(o.produto), qtd: arredondaQtd(o.total) }]
+  }
+  return resumoProdutosOF(o?.itens)
+}
+export const produtoDoItemOF = (o, x) => x?.produto || o?.produto || ''
+// Para o cabeçalho: o nome quando é um produto só, a contagem quando são vários.
+export function fmtProdutosOF(o) {
+  const ps = produtosDaOF(o)
+  return ps.length === 1 ? ps[0].produto : `${ps.length} produtos`
+}
+
+// Itens da OF quebrados por produto, na ordem de tamanho. `itens` pode ser o
+// retrato (`o.itens`, para a ficha) ou a lista viva (situação).
+export function itensPorProdutoOF(o, itens) {
+  const mapa = {}
+  for (const x of itens || []) {
+    const produto = produtoDoItemOF(o, x)
+    const key = normaliza(produto)
+    const g = (mapa[key] ??= { produto, produtoKey: key, itens: [], total: 0, falta: 0, feito: 0, excedente: 0 })
+    g.itens.push(x)
+    g.total = arredondaQtd(g.total + (Number(x.qtd) || 0))
+    g.falta = arredondaQtd(g.falta + (Number(x.falta) || 0))
+    g.excedente = arredondaQtd(g.excedente + (Number(x.excedente) || 0))
+  }
+  const lista = Object.values(mapa)
+  for (const g of lista) {
+    g.itens.sort(ordemPrazo)
+    g.feito = arredondaQtd(Math.max(0, g.total - g.falta))
+  }
+  return lista.sort((a, b) => ordemProdutoOF(a.produto, b.produto))
+}
+
 // O documento da OF. `itens` = só os escolhidos (o gestor pode deixar um para
-// a próxima), com a quantidade do momento e o prazo, para a ficha.
+// a próxima), com a quantidade do momento e o prazo, para a ficha. `grupo` é
+// o que dá linha, cor e unidade (o bloco da espera, ou um grupo de produto).
 export function docOF({ numero, grupo, escolhidos, quem, agora }) {
   const itens = (escolhidos || []).slice().sort(ordemPrazo).map((x) => ({
-    idVenda: x.idVenda, itemKey: x.itemKey, qtd: arredondaQtd(x.qtd),
+    idVenda: x.idVenda, itemKey: x.itemKey, produto: x.produto || grupo?.produto || '',
+    qtd: arredondaQtd(x.qtd),
     previsao: x.previsao || '', cliente: x.p?.cliente || '', cidade: x.p?.cidade || '',
   }))
   return {
@@ -3604,8 +3700,7 @@ export function docOF({ numero, grupo, escolhidos, quem, agora }) {
     status: STATUS_OF.LIBERADA,
     linha: grupo.linha,
     material: 'plastico',
-    produto: grupo.produto,
-    produtoKey: normaliza(grupo.produto),
+    produtos: resumoProdutosOF(itens),
     cores: limpaCores(grupo.cores),
     unidade: grupo.unidade || '',
     itens,
@@ -3631,7 +3726,7 @@ export function ofsComVinculo(p, itemKey, ordemId) {
 export function situacaoDaOF(o, pedidosPorId) {
   if (!o) return null
   if (o.status === STATUS_OF.CANCELADA) {
-    return { st: 'cancelada', falta: 0, feito: 0, total: arredondaQtd(o.total), itens: [], excedente: 0 }
+    return { st: 'cancelada', falta: 0, feito: 0, total: arredondaQtd(o.total), itens: [], produtos: [], excedente: 0 }
   }
   let falta = 0
   let excedente = 0
@@ -3646,14 +3741,19 @@ export function situacaoDaOF(o, pedidosPorId) {
     const exc = arredondaQtd(Math.max(0, aqui - (Number(x.qtd) || 0)))
     falta += aqui
     excedente += exc
-    return { ...x, p, idx, falta: arredondaQtd(aqui), excedente: exc, sumiu: idx < 0 }
+    return {
+      ...x, p, idx, produto: produtoDoItemOF(o, x),
+      falta: arredondaQtd(aqui), excedente: exc, sumiu: idx < 0,
+    }
   })
   falta = arredondaQtd(falta)
   excedente = arredondaQtd(excedente)
   const total = arredondaQtd(o.total ?? (o.itens || []).reduce((s, x) => s + (Number(x.qtd) || 0), 0))
   const feito = arredondaQtd(Math.max(0, total - falta))
   const st = falta <= 0 ? 'concluida' : feito > 0 ? 'em_producao' : 'liberada'
-  return { st, falta, feito, total, itens, excedente }
+  // `produtos`: a mesma lista quebrada por produto — a baixa no quadro e a
+  // ficha impressa são por produto, porque é o produto que muda na máquina.
+  return { st, falta, feito, total, itens, produtos: itensPorProdutoOF(o, itens), excedente }
 }
 
 export const NOME_SITUACAO_OF = {

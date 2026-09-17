@@ -17,10 +17,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > [`PRODUCAO_SISTEMA.md`](PRODUCAO_SISTEMA.md) (como isso entra no sistema: setores,
 > acabamentos por item, permissões/perfil Operador, fases A–D).
 
-> **Ordem de Fabricação + cor da impressão** (plástico agrupado por linha +
-> produto + cor antes de ir para a produção): desenho fechado em 16/09/2026;
-> **fases A (cor na Triagem), B (aba Ordens de Fabricação) e C (quadro por OF,
-> virada escalonada) FEITAS**; D (relatórios) a fazer — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md) (fases A–D).
+> **Ordem de Fabricação + cor da impressão** (plástico agrupado antes de ir
+> para a produção): desenho fechado em 16/09/2026; **fases A (cor na Triagem),
+> B (aba Ordens de Fabricação) e C (quadro por OF, virada escalonada) FEITAS**;
+> D (relatórios) a fazer. **17/09/2026: a OF é a impressão de UMA COR numa
+> linha e junta VÁRIOS produtos** (tamanhos/modelos escolhidos pelo gestor;
+> cor nunca mistura; baixa no quadro por produto; ficha impressa com um bloco
+> por produto) — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md).
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

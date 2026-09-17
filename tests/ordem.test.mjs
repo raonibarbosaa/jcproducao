@@ -1,12 +1,14 @@
 // Ordem de Fabricação (fase B). O que se protege aqui:
 //  - só entra na espera o plástico triado, com cor, com saldo na LINHA e sem OF viva;
 //  - agrupa por linha + produto + cor (duas cores em qualquer ordem = mesmo grupo);
+//  - a OF é por linha + COR e junta vários produtos (bloco), nunca duas cores;
 //  - OF cancelada solta o item (vínculo velho não prende);
 //  - a situação da OF sai da quantidade VIVA dos pedidos;
 //  - o número nunca se repete.
 import {
   itensAguardandoOF, agrupaParaOF, docOF, situacaoDaOF, ofDoItem, idsDeOFsVivas,
   proximoNumeroOF, fmtNumeroOF, ofsComVinculo, plasticoSemCor, chaveGrupoOF, STATUS_OF,
+  chaveOF, blocosParaOF, tamanhoDoProduto, ordemProdutoOF, produtosDaOF, fmtProdutosOF, itensPorProdutoOF,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
 
@@ -66,9 +68,11 @@ ok('mesma sacola em outra linha não mistura',
 // ---------- documento ----------
 const of = docOF({ numero: 7, grupo: silkPreto, escolhidos: silkPreto.itens,
   quem: { nome: 'Dono', uid: 'd' }, agora: '2026-09-16T10:00:00.000Z' })
-t('cabeçalho', [of.numero, of.status, of.linha, of.material, of.produto, of.cores, of.unidade, of.total],
-  [7, 'liberada', 'PRODUCAO', 'plastico', PL, ['preto'], 'kg', 16])
-t('itens com retrato da liberação', of.itens.map((x) => [x.idVenda, x.qtd, x.cliente]), [['11', 6, 'BIA'], ['10', 10, 'ANA']])
+t('cabeçalho', [of.numero, of.status, of.linha, of.material, of.cores, of.unidade, of.total],
+  [7, 'liberada', 'PRODUCAO', 'plastico', ['preto'], 'kg', 16])
+t('um produto só no resumo', of.produtos, [{ produto: PL, produtoKey: 'SACOLA PLASTICA 30X40', qtd: 16 }])
+t('itens com retrato da liberação (e o produto em cada um)',
+  of.itens.map((x) => [x.idVenda, x.qtd, x.cliente, x.produto]), [['11', 6, 'BIA', PL], ['10', 10, 'ANA', PL]])
 t('quem soltou', [of.criadaPor, of.criadaUid], ['Dono', 'd'])
 const soUm = docOF({ numero: 8, grupo: silkPreto, escolhidos: [silkPreto.itens[1]], quem: {} })
 t('o gestor pode deixar pedido para depois', [soUm.itens.length, soUm.total], [1, 10])
@@ -108,6 +112,57 @@ const cresceu = situacaoDaOF(of, { 10: aMais, 11: b })
 t('reimport aumentou: a falta mostra o que ESTÁ na linha (nada invisível)', cresceu.falta, 21)
 t('e avisa o excedente', [cresceu.excedente, cresceu.itens.find((x) => x.idVenda === '10').excedente], [5, 5])
 t('sem aumento, sem aviso', situacaoDaOF(of, porId).excedente, 0)
+
+// ---------- BLOCO por cor: vários produtos na mesma OF ----------
+const P2 = 'SACOLA PLASTICA 40X50'
+const P3 = 'SACOLA PLASTICA CAMISETA 30X40 REC'
+const f = comCor(pedido({ id: '18', cliente: 'FLA', previsao: '2026-09-17',
+  itens: [{ produto: P2, qtd: 8, linha: 'PRODUCAO' }] }), 0, ['preto'])
+const g2 = comCor(pedido({ id: '19', cliente: 'GIL', previsao: '2026-09-28',
+  itens: [{ produto: P3, qtd: 5, linha: 'PRODUCAO' }] }), 0, ['preto'])
+const rosa = comCor(pedido({ id: '20', cliente: 'HUGO', previsao: '2026-09-10',
+  itens: [{ produto: P2, qtd: 1, linha: 'PRODUCAO' }] }), 0, ['rosa'])
+const blocos = blocosParaOF(agrupaParaOF(itensAguardandoOF([...todos, f, g2, rosa], CAD, new Set())))
+t('um bloco por linha + cor', blocos.map((x) => x.chave).sort(),
+  [chaveOF('GLICHE', ['preto']), chaveOF('PRODUCAO', ['dourado', 'preto']), chaveOF('PRODUCAO', ['preto']), chaveOF('PRODUCAO', ['rosa'])].sort())
+const bPreto = blocos.find((x) => x.chave === chaveOF('PRODUCAO', ['preto']))
+t('o bloco Silk Preto junta os 3 produtos', bPreto.grupos.map((x) => x.produto), [PL, P3, P2])
+t('e soma tudo', [bPreto.total, bPreto.pedidos, bPreto.previsao], [29, 4, '2026-09-17'])
+ok('rosa NÃO entra no bloco preto (cor nunca mistura)', !bPreto.itens.some((x) => x.idVenda === '20'))
+t('blocos pelo prazo mais urgente', blocos[0].chave, chaveOF('PRODUCAO', ['rosa']))
+t('cor dupla é bloco próprio', blocos.find((x) => x.chave === chaveOF('PRODUCAO', ['dourado', 'preto'])).pedidos, 2)
+
+// ordem dos produtos: pelo tamanho, os parecidos vizinhos
+t('tamanho no nome', [tamanhoDoProduto('SACOLA PLÁSTICA BOCA PALHAÇO 30X40 REC'), tamanhoDoProduto('SACOLA PLASTICA CAMISETA 60 x 80'), tamanhoDoProduto('SACOLA PP')],
+  [[30, 40], [60, 80], null])
+t('30X40 antes de 40X50, e o sem tamanho no fim',
+  ['SACOLA 40X50', 'SACOLA PP', 'CAMISETA 30X40 REC', 'BOCA PALHACO 30X40'].sort(ordemProdutoOF),
+  ['BOCA PALHACO 30X40', 'CAMISETA 30X40 REC', 'SACOLA 40X50', 'SACOLA PP'])
+
+// OF com dois produtos: o gestor desmarcou o terceiro
+const escolhidos = bPreto.itens.filter((x) => x.produto !== P3)
+const ofMulti = docOF({ numero: 9, grupo: bPreto, escolhidos, quem: { nome: 'Dono', uid: 'd' } })
+t('resumo por produto, na ordem de tamanho', ofMulti.produtos, [
+  { produto: PL, produtoKey: 'SACOLA PLASTICA 30X40', qtd: 16 },
+  { produto: P2, produtoKey: 'SACOLA PLASTICA 40X50', qtd: 8 },
+])
+t('total do bloco escolhido', [ofMulti.total, ofMulti.itens.length, ofMulti.cores], [24, 3, ['preto']])
+ok('sem `produto` no cabeçalho: a OF não é mais de um produto só', !('produto' in ofMulti))
+t('produtosDaOF lê o doc novo', produtosDaOF(ofMulti).map((x) => x.produto), [PL, P2])
+t('fmtProdutosOF: vários', fmtProdutosOF(ofMulti), '2 produtos')
+t('fmtProdutosOF: um só', fmtProdutosOF(of), PL)
+// doc ANTIGO (uma OF = um produto): continua lendo, sem migração
+const antiga = { numero: 1, produto: PL, produtoKey: 'SACOLA PLASTICA 30X40', total: 5, itens: [{ idVenda: '10', itemKey: k(a, 0), qtd: 5 }] }
+t('OF antiga vira lista de um produto', produtosDaOF(antiga), [{ produto: PL, produtoKey: 'SACOLA PLASTICA 30X40', qtd: 5 }])
+t('item antigo herda o produto do cabeçalho', itensPorProdutoOF(antiga, antiga.itens).map((x) => [x.produto, x.total]), [[PL, 5]])
+// situação por produto
+const sMulti = situacaoDaOF(ofMulti, { 10: a, 11: bAndou, 18: f })
+t('por produto: 30X40 em produção, 40X50 inteiro na linha',
+  sMulti.produtos.map((x) => [x.produto, x.total, x.falta, x.feito]), [[PL, 16, 10, 6], [P2, 8, 8, 0]])
+t('e a OF inteira', [sMulti.st, sMulti.total, sMulti.falta], ['em_producao', 24, 18])
+const ficha = itensPorProdutoOF(ofMulti, ofMulti.itens)
+t('ficha: itens por produto, pelo prazo dentro do produto', ficha.map((x) => [x.produto, x.itens.map((y) => y.idVenda)]),
+  [[PL, ['11', '10']], [P2, ['18']]])
 
 // ---------- virada: o que já estava na fila não espera OF ----------
 const aLegado = { ...a, semOF: { [k(a, 0)]: true } }

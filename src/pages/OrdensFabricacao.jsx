@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { collection, doc, setDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -7,18 +7,21 @@ import {
   MODO_ORDER, MODO_NM, coresCadastradas, chaveCor, fmtCores,
   previsaoDe, filtraPedidos, vendedoresDe, nomeCliente, fmtData, fmtDataHora, fmtQtd,
   situacaoPrazo, keyDoItem, marcacaoDaVirada,
-  itensAguardandoOF, agrupaParaOF, docOF, situacaoDaOF, idsDeOFsVivas, ofDoItem,
+  itensAguardandoOF, agrupaParaOF, blocosParaOF, docOF, situacaoDaOF, idsDeOFsVivas, ofDoItem,
   proximoNumeroOF, fmtNumeroOF, ofsComVinculo, plasticoSemCor, STATUS_OF, NOME_SITUACAO_OF,
+  produtosDaOF, fmtProdutosOF, itensPorProdutoOF,
 } from '../utils.js'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 import SeloCor from '../components/SeloCor.jsx'
 
-// ORDENS DE FABRICAÇÃO — o gestor junta sacolas plásticas IGUAIS (linha +
-// produto + cor) de pedidos diferentes e solta uma OF para a máquina.
-// Nesta fase a OF é o DOCUMENTO (espera → soltar → ficha → cancelar); o quadro
-// da produção passa a andar por OF na fase C. Ver ORDEM_FABRICACAO.md.
+// ORDENS DE FABRICAÇÃO — a OF é a IMPRESSÃO de uma COR numa linha. A espera
+// vem em BLOCOS (linha + cor) e, dentro de cada bloco, os PRODUTOS (tamanho,
+// modelo, REC) com os pedidos de cada um. O gestor marca os produtos e os
+// pedidos que vão agora e solta UMA OF com tudo; a ficha sai agrupada por
+// produto para o operador. Cor nunca mistura; tamanho, sim (decisão do dono em
+// 17/09/2026). Ver ORDEM_FABRICACAO.md.
 export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = '', producaoCfg = {} }) {
   const { user, nome, perfil } = useAuth()
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
@@ -45,8 +48,8 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
   const vivos = useMemo(() => idsDeOFsVivas(ordens), [ordens])
 
   const filtrados = filtraPedidos(base, filtros, clientes)
-  const grupos = agrupaParaOF(itensAguardandoOF(filtrados, itensCad, vivos))
-    .filter((g) => (!linha || g.linha === linha) && (!cor || chaveCor(g.cores) === cor))
+  const blocos = blocosParaOF(agrupaParaOF(itensAguardandoOF(filtrados, itensCad, vivos)))
+    .filter((b) => (!linha || b.linha === linha) && (!cor || chaveCor(b.cores) === cor))
   const semCor = plasticoSemCor(base, itensCad)
 
   const situacoes = ordens.map((o) => ({ o, s: situacaoDaOF(o, porId) }))
@@ -65,7 +68,8 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
       .map((k) => ({ id: k, nm: fmtCores(k.split('+')) })),
   ]
 
-  async function soltar(grupo, escolhidos) {
+  // `bloco` = linha + cor; `escolhidos` = os itens marcados, de um ou mais produtos.
+  async function soltar(bloco, escolhidos) {
     if (!escolhidos.length || salvando) return
     // conferido de novo aqui: outra tela pode ter soltado a mesma sacola agora
     const livres = escolhidos.filter((x) => {
@@ -79,13 +83,15 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
     }
     const numero = proximoNumeroOF(ordens)
     const total = fmtQtd(livres.reduce((s, x) => s + x.qtd, 0))
-    if (!confirm(`Soltar ${fmtNumeroOF(numero)}?\n\n${MODO_NM[grupo.linha]} · ${grupo.produto} · ${fmtCores(grupo.cores)}\n`
-      + `${livres.length} item(ns) de ${new Set(livres.map((x) => x.idVenda)).size} pedido(s) · ${total} ${grupo.unidade}`)) return
-    setSalvando(grupo.chave)
+    const prods = [...new Set(livres.map((x) => x.produto))]
+    if (!confirm(`Soltar ${fmtNumeroOF(numero)}?\n\n${MODO_NM[bloco.linha]} · impressão ${fmtCores(bloco.cores)}\n`
+      + prods.map((x) => `  • ${x}`).join('\n') + '\n\n'
+      + `${livres.length} item(ns) de ${new Set(livres.map((x) => x.idVenda)).size} pedido(s) · ${total} ${bloco.unidade}`)) return
+    setSalvando(bloco.chave)
     try {
       const batch = writeBatch(db)
       const ref = doc(collection(db, 'ordens'))
-      batch.set(ref, docOF({ numero, grupo, escolhidos: livres, quem: { nome, uid: user?.uid } }))
+      batch.set(ref, docOF({ numero, grupo: bloco, escolhidos: livres, quem: { nome, uid: user?.uid } }))
       // um pedido pode ter dois itens iguais no mesmo grupo: o mapa acumula
       const mapas = {}
       for (const x of livres) {
@@ -183,7 +189,7 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
   }
 
   const abas = [
-    { id: 'espera', label: '⏳ Aguardando OF', badge: grupos.length },
+    { id: 'espera', label: '⏳ Aguardando OF', badge: blocos.length },
     { id: 'abertas', label: '🏭 OFs abertas', badge: abertas.length },
     { id: 'historico', label: '📚 Histórico', badge: 0 },
   ]
@@ -193,7 +199,7 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
     <>
       <div className="toolbar no-print">
         <h1 className="page-title">Ordens de Fabricação
-          <small>plástico agrupado por linha, produto e cor</small>
+          <small>plástico por linha e cor — o gestor escolhe os produtos que vão juntos</small>
         </h1>
         <div className="spacer" />
         <select className="btn" value={linha} onChange={(e) => setLinha(e.target.value)}>
@@ -226,15 +232,15 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
         )}
 
         {aba === 'espera' && (
-          grupos.length === 0
+          blocos.length === 0
             ? <div className="empty"><div className="big">🧾</div>
                 Nenhuma sacola plástica esperando OF{linha || cor || Object.values(filtros).some(Boolean) ? ' com esses filtros' : ''}.
               </div>
             : <div className="of-lista">
-                {grupos.map((g) => (
-                  <GrupoEspera key={g.chave} g={g} clientes={clientes}
-                    salvando={salvando === g.chave} ocupado={!!salvando}
-                    onSoltar={(esc) => soltar(g, esc)} />
+                {blocos.map((b) => (
+                  <BlocoEspera key={b.chave} b={b} clientes={clientes}
+                    salvando={salvando === b.chave} ocupado={!!salvando}
+                    onSoltar={(esc) => soltar(b, esc)} />
                 ))}
               </div>
         )}
@@ -288,62 +294,114 @@ export function PainelVirada({ cfg, ehDono, nFoto, ocupado, onLigar, onDesligar 
   )
 }
 
-function CabecalhoOF({ linha, produto, cores }) {
+// Cabeçalho de uma OF: linha, o produto (ou quantos são) e a cor.
+function CabecalhoOF({ o }) {
   return (
     <span className="of-prod">
-      <SeloLinha linha={linha} />{produto}<SeloCor cores={cores} />
+      <SeloLinha linha={o.linha} />{fmtProdutosOF(o)}<SeloCor cores={o.cores} />
     </span>
   )
 }
 
-// Um grupo da espera. Fechado mostra o tamanho do bolo; aberto vira a lista de
-// marcação — todos marcados, pelo prazo. Soltar leva só os marcados.
-export function GrupoEspera({ g, clientes, salvando, ocupado, onSoltar, abertoInicial = false }) {
+// Um BLOCO da espera (linha + cor). Fechado mostra o tamanho do bolo e os
+// produtos que tem; aberto vira a lista de marcação: cada PRODUTO com
+// checkbox (todos marcados — segurar é a exceção) e, se quiser, os pedidos de
+// cada um. Soltar leva os produtos marcados, com os pedidos marcados de cada.
+export function BlocoEspera({ b, clientes, salvando, ocupado, onSoltar, abertoInicial = false }) {
   const [aberto, setAberto] = useState(abertoInicial)
-  const [fora, setFora] = useState({})   // chaves desmarcadas
+  const [foraProd, setForaProd] = useState({})   // chave do grupo desmarcado
+  const [foraItem, setForaItem] = useState({})   // pedido×item desmarcado
+  const [abertos, setAbertos] = useState({})     // grupos com a lista de pedidos à vista
   const chave = (x) => `${x.idVenda}|${x.itemKey}`
-  const escolhidos = g.itens.filter((x) => !fora[chave(x)])
+  const escolhidosDe = (g) => (foraProd[g.chave] ? [] : g.itens.filter((x) => !foraItem[chave(x)]))
+  const escolhidos = b.grupos.flatMap(escolhidosDe)
+  const prodsEsc = b.grupos.filter((g) => escolhidosDe(g).length).length
   const totalEsc = escolhidos.reduce((s, x) => s + x.qtd, 0)
-  const atrasado = situacaoPrazo(g.previsao) === 'atrasado'
+  const atrasado = situacaoPrazo(b.previsao) === 'atrasado'
+  const veLista = (g) => abertoInicial || !!abertos[g.chave]
   return (
     <div className={`card of-card${atrasado ? ' atrasado' : ''}`}>
       <div className="of-topo" onClick={() => setAberto((v) => !v)} role="button">
-        <CabecalhoOF linha={g.linha} produto={g.produto} cores={g.cores} />
-        <span className="of-num">{fmtQtd(g.total)} {g.unidade}</span>
+        <span className="of-prod">
+          <SeloLinha linha={b.linha} />Impressão <SeloCor cores={b.cores} />
+        </span>
+        <span className="of-num">{fmtQtd(b.total)} {b.unidade}</span>
       </div>
       <div className="meta-row">
-        <span className="chip">{MODO_NM[g.linha]}</span>
-        <span className="chip">{g.pedidos} pedido(s)</span>
-        <span className={`chip${atrasado ? ' rota-warn' : ''}`}>📅 mais urgente {fmtData(g.previsao)}</span>
+        <span className="chip">{MODO_NM[b.linha]}</span>
+        <span className="chip">{b.grupos.length} produto(s)</span>
+        <span className="chip">{b.pedidos} pedido(s)</span>
+        <span className={`chip${atrasado ? ' rota-warn' : ''}`}>📅 mais urgente {fmtData(b.previsao)}</span>
         <button className="btn" onClick={() => setAberto((v) => !v)}>
           {aberto ? '▾ fechar' : '▸ Soltar OF…'}
         </button>
       </div>
+      {!aberto && (
+        <div className="of-prod-chips">
+          {b.grupos.map((g) => (
+            <span key={g.chave} className="chip">{g.produto} · <b>{fmtQtd(g.total)} {b.unidade}</b></span>
+          ))}
+        </div>
+      )}
       {aberto && (
         <>
-          <table className="of-tab">
-            <thead><tr><th /><th>Pedido</th><th>Cliente</th><th>Entrega</th><th className="q">Qtd</th></tr></thead>
-            <tbody>
-              {g.itens.map((x) => {
-                const on = !fora[chave(x)]
-                return (
-                  <tr key={chave(x)} className={on ? '' : 'of-fora'}
-                    onClick={() => setFora((f) => ({ ...f, [chave(x)]: on }))}>
-                    <td><input type="checkbox" checked={on} readOnly /></td>
-                    <td>#{x.idVenda}</td>
-                    <td>{nomeCliente(x.p?.cliente, clientes)}<small> · {x.p?.cidade || '—'}</small></td>
-                    <td className={situacaoPrazo(x.previsao) === 'atrasado' ? 'of-atraso' : ''}>{fmtData(x.previsao)}</td>
-                    <td className="q">{fmtQtd(x.qtd)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="of-prods">
+            {b.grupos.map((g) => {
+              const on = !foraProd[g.chave]
+              const esc = escolhidosDe(g)
+              const totG = esc.reduce((s, x) => s + x.qtd, 0)
+              const atrG = situacaoPrazo(g.previsao) === 'atrasado'
+              return (
+                <div key={g.chave} className={`of-prod-row${on ? '' : ' of-fora'}`}>
+                  <div className="of-prod-top">
+                    <label>
+                      <input type="checkbox" checked={on}
+                        onChange={() => setForaProd((f) => ({ ...f, [g.chave]: on }))} />
+                      <b>{g.produto}</b>
+                    </label>
+                    <span className="chip">{g.pedidos} pedido(s)</span>
+                    <span className={`chip${atrG ? ' rota-warn' : ''}`}>📅 {fmtData(g.previsao)}</span>
+                    <span className="of-num">
+                      {on && esc.length < g.itens.length
+                        ? <>{fmtQtd(totG)} <small>de {fmtQtd(g.total)}</small></>
+                        : fmtQtd(g.total)} {b.unidade}
+                    </span>
+                    <button className="btn" onClick={() => setAbertos((a) => ({ ...a, [g.chave]: !veLista(g) }))}>
+                      {veLista(g) ? '▾ pedidos' : '▸ pedidos'}
+                    </button>
+                  </div>
+                  {veLista(g) && (
+                    <table className="of-tab">
+                      <thead><tr><th /><th>Pedido</th><th>Cliente</th><th>Entrega</th><th className="q">Qtd</th></tr></thead>
+                      <tbody>
+                        {g.itens.map((x) => {
+                          const onI = on && !foraItem[chave(x)]
+                          return (
+                            <tr key={chave(x)} className={onI ? '' : 'of-fora'}
+                              onClick={() => on && setForaItem((f) => ({ ...f, [chave(x)]: onI }))}>
+                              <td><input type="checkbox" checked={onI} readOnly /></td>
+                              <td>#{x.idVenda}</td>
+                              <td>{nomeCliente(x.p?.cliente, clientes)}<small> · {x.p?.cidade || '—'}</small></td>
+                              <td className={situacaoPrazo(x.previsao) === 'atrasado' ? 'of-atraso' : ''}>{fmtData(x.previsao)}</td>
+                              <td className="q">{fmtQtd(x.qtd)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )
+            })}
+          </div>
           <div className="of-pe">
-            <span>{escolhidos.length} de {g.itens.length} marcado(s) · <b>{fmtQtd(totalEsc)} {g.unidade}</b></span>
+            <span>
+              {prodsEsc} de {b.grupos.length} produto(s) · {escolhidos.length} de {b.itens.length} item(ns)
+              {' · '}<b>{fmtQtd(totalEsc)} {b.unidade}</b>
+            </span>
             <button className="btn ok" disabled={!escolhidos.length || ocupado}
               onClick={() => onSoltar(escolhidos)}>
-              {salvando ? 'Soltando…' : `Soltar OF com ${escolhidos.length} item(ns)`}
+              {salvando ? 'Soltando…' : `Soltar OF com ${prodsEsc} produto(s)`}
             </button>
           </div>
         </>
@@ -358,7 +416,7 @@ export function CardOF({ o, s, clientes, ocupado, onFicha, onCancelar, abertoIni
     <div className={`card of-card of-${s.st}`}>
       <div className="of-topo" onClick={() => setAberto((v) => !v)} role="button">
         <span className="of-nr">{fmtNumeroOF(o.numero)}</span>
-        <CabecalhoOF linha={o.linha} produto={o.produto} cores={o.cores} />
+        <CabecalhoOF o={o} />
         <span className="of-num">
           {s.feito > 0 ? <>falta {fmtQtd(s.falta)} <small>de {fmtQtd(s.total)}</small></> : fmtQtd(s.total)} {o.unidade}
         </span>
@@ -382,16 +440,25 @@ export function CardOF({ o, s, clientes, ocupado, onFicha, onCancelar, abertoIni
         <table className="of-tab">
           <thead><tr><th>Pedido</th><th>Cliente</th><th>Entrega</th><th className="q">Liberado</th><th className="q">Falta</th></tr></thead>
           <tbody>
-            {s.itens.map((x) => (
-              <tr key={`${x.idVenda}|${x.itemKey}`} className={x.falta <= 0 ? 'of-fora' : ''}>
-                <td>#{x.idVenda}</td>
-                <td>{nomeCliente(x.cliente, clientes)}<small> · {x.cidade || '—'}</small></td>
-                <td>{fmtData(x.previsao)}</td>
-                <td className="q">{fmtQtd(x.qtd)}</td>
-                <td className="q">{x.sumiu ? 'saiu' : fmtQtd(x.falta)}
-                  {x.excedente > 0 && <small className="of-atraso"> +{fmtQtd(x.excedente)}</small>}
-                </td>
-              </tr>
+            {s.produtos.map((pr) => (
+              <Fragment key={pr.produtoKey}>
+                <tr className="of-sub">
+                  <td colSpan={3}>{pr.produto}</td>
+                  <td className="q">{fmtQtd(pr.total)}</td>
+                  <td className="q">{fmtQtd(pr.falta)}</td>
+                </tr>
+                {pr.itens.map((x) => (
+                  <tr key={`${x.idVenda}|${x.itemKey}`} className={x.falta <= 0 ? 'of-fora' : ''}>
+                    <td>#{x.idVenda}</td>
+                    <td>{nomeCliente(x.cliente, clientes)}<small> · {x.cidade || '—'}</small></td>
+                    <td>{fmtData(x.previsao)}</td>
+                    <td className="q">{fmtQtd(x.qtd)}</td>
+                    <td className="q">{x.sumiu ? 'saiu' : fmtQtd(x.falta)}
+                      {x.excedente > 0 && <small className="of-atraso"> +{fmtQtd(x.excedente)}</small>}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -410,7 +477,11 @@ export function HistoricoOF({ lista, onFicha }) {
           {lista.map(({ o, s }) => (
             <tr key={o.id}>
               <td>{fmtNumeroOF(o.numero)}</td>
-              <td><CabecalhoOF linha={o.linha} produto={o.produto} cores={o.cores} /></td>
+              <td><CabecalhoOF o={o} />
+                {produtosDaOF(o).length > 1 && (
+                  <div className="of-motivo">{produtosDaOF(o).map((x) => x.produto).join(' · ')}</div>
+                )}
+              </td>
               <td className="q">{fmtQtd(s.total)} {o.unidade}</td>
               <td><span className={`chip of-st-${s.st}`}>{NOME_SITUACAO_OF[s.st]}</span></td>
               <td>{o.criadaPor || '—'}<small> · {fmtDataHora(o.criadaEm)}</small></td>
@@ -428,9 +499,13 @@ export function HistoricoOF({ lista, onFicha }) {
   )
 }
 
-// A ficha que vai para a máquina. A COR vem por extenso e grande: é ela, junto
-// com o tamanho, que decide a tinta e o ajuste — e a impressora é P&B.
+// A ficha que vai para a máquina. A COR vem por extenso e grande: é ela que
+// decide a tinta — e a impressora é P&B. Depois, UM BLOCO POR PRODUTO (tamanho
+// / modelo), cada um com os pedidos e o subtotal: o operador ajusta a máquina
+// por produto e confere pedido a pedido. Usa o RETRATO da liberação
+// (`o.itens`): a ficha de uma OF cancelada ainda mostra o que ela tinha.
 export function FichaOF({ o, s, clientes }) {
+  const blocos = itensPorProdutoOF(o, o.itens)
   return (
     <div className="print-only">
       <div className="pr-head">
@@ -443,25 +518,30 @@ export function FichaOF({ o, s, clientes }) {
       </div>
       <div className="of-ficha-prod">
         <div><span>Linha</span><b>{MODO_NM[o.linha]}</b></div>
-        <div><span>Produto</span><b>{o.produto}</b></div>
         <div><span>Cor da impressão</span><b>{fmtCores(o.cores) || '—'}</b></div>
+        <div><span>Produtos</span><b>{blocos.length}</b></div>
         <div><span>Total</span><b>{fmtQtd(s.total)} {o.unidade}</b></div>
       </div>
-      <table className="pr-itens of-ficha-tab">
-        <thead><tr><th /><th>Pedido</th><th>Cliente</th><th>Cidade</th><th>Entrega</th><th className="q">Qtd</th></tr></thead>
-        <tbody>
-          {(o.itens || []).map((x) => (
-            <tr key={`${x.idVenda}|${x.itemKey}`}>
-              <td><span className="box" /></td>
-              <td>#{x.idVenda}</td>
-              <td>{nomeCliente(x.cliente, clientes)}</td>
-              <td>{x.cidade || '—'}</td>
-              <td>{fmtData(x.previsao)}</td>
-              <td className="q">{fmtQtd(x.qtd)} {o.unidade}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {blocos.map((pr) => (
+        <div key={pr.produtoKey} className="of-ficha-bloco">
+          <h2><span>{pr.produto}</span><span>{fmtQtd(pr.total)} {o.unidade}</span></h2>
+          <table className="pr-itens of-ficha-tab">
+            <thead><tr><th /><th>Pedido</th><th>Cliente</th><th>Cidade</th><th>Entrega</th><th className="q">Qtd</th></tr></thead>
+            <tbody>
+              {pr.itens.map((x) => (
+                <tr key={`${x.idVenda}|${x.itemKey}`}>
+                  <td><span className="box" /></td>
+                  <td>#{x.idVenda}</td>
+                  <td>{nomeCliente(x.cliente, clientes)}</td>
+                  <td>{x.cidade || '—'}</td>
+                  <td>{fmtData(x.previsao)}</td>
+                  <td className="q">{fmtQtd(x.qtd)} {o.unidade}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
       <div className="of-ficha-ass">
         <div>Impresso por: ____________________ Data: ___/___</div>
         <div>Conferido por: ____________________</div>
