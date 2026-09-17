@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx') } },
   },
   resolve: {
     alias: [
@@ -43,6 +43,7 @@ const bruto = {
   ...(await import(join(OUT, 'posto.js'))).roda(),
   ...(await import(join(OUT, 'triagem.js'))).roda(),
   ...(await import(join(OUT, 'ordens.js'))).roda(),
+  ...(await import(join(OUT, 'cores.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -109,6 +110,12 @@ const ESPERA = {
   vDesl: ['Exigência de OF desligada', '<b>4</b> sacola(s)', 'Ligar exigência de OF'],
   vDeslDesigner: ['Quem liga é o dono'],
   vLig: ['Exigência de OF ligada', 'por Dono', '4 sacola(s) terminam', 'Desligar'],
+  // cadastro de cores
+  cAba: ['10 cor(es) · 10 ativa(s)', '+ Nova cor', 'Azul BB', 'azul-bb', 'cores de fábrica', 'Desativar', '↑', '↓'],
+  cNova: ['Nova cor', 'Cor (para a bolinha na tela)', 'type="color"'],
+  cEdit: ['Editar cor', 'Azul Médio', 'azul-medio', 'não muda ao renomear'],
+  // Triagem lê o cadastro: cor nova aparece, inativa em uso continua marcada
+  cTriagem: ['Verde Limão', 'Preto', 'Rosa Choque', 'acab-pill cor-pill on'],
   ofFicha: ['Ordem de Fabricação · OF 0012', 'SILK SCREEN', 'Preto', '16 kg', '#11', 'Conferido por'],
   // filtro por item: o card esconde o resto e AVISA (os botões grandes valem para todos)
   tFiltroPlast: ['SACOLA PLASTICA 30X40', 'Cor da impressão', '1 item(ns) oculto(s) pelo filtro'],
@@ -137,6 +144,7 @@ const PROIBE = {
   qOfDesligada: ['aguardando', 'já estava na fila'],   // desligada: tudo como antes
   qOfCancelada: ['OF 0012', 'ANA MODAS', 'BIA CALCADOS'],   // nem card da OF nem avulso
   vDeslDesigner: ['Ligar exigência'],
+  cTriagem: ['Dourado', 'Laranja'],   // fora do cadastro: não viram botão
 }
 
 let mal = 0

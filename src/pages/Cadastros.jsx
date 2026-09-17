@@ -4,7 +4,8 @@ import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO } from '../utils.js'
+import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO,
+  coresDoCadastro, slugCor, problemaDaCor } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -16,6 +17,8 @@ const ABAS_CADASTRO = [
   // valer para cobrar a quantidade realmente produzida
   { id: 'itens',      label: 'Itens',      perfis: ['designer', 'dono', 'financeiro'] },
   { id: 'motoristas', label: 'Motoristas', perfis: ['designer', 'dono'] },
+  // cores da impressão do plástico (Triagem e Ordens de Fabricação)
+  { id: 'cores',      label: 'Cores',      perfis: ['designer', 'dono'] },
   { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
 ]
 
@@ -30,6 +33,7 @@ export default function Cadastros() {
       {aba === 'clientes'   && <AbaClientes />}
       {aba === 'itens'      && <AbaItens />}
       {aba === 'motoristas' && <AbaMotoristas />}
+      {aba === 'cores'      && <AbaCores />}
       {aba === 'vendedores' && <AbaVendedores />}
     </>
   )
@@ -366,6 +370,139 @@ function FormMotorista({ inicial, onSalvar, onCancelar }) {
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn primary" onClick={salvar}>Salvar</button>
         <button className="btn" onClick={onCancelar}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ABA CORES — cor da impressão do plástico
+// ============================================================
+// O id nasce do nome e NUNCA muda (é o que fica gravado nos pedidos e nas
+// OFs); renomear muda só o nome. Não há excluir: cor desativada some dos
+// botões da Triagem, mas continua aparecendo nos pedidos que já a usam.
+export function AbaCores() {
+  const { cores: brutas } = useCadastros()
+  // cadastro vazio = as cores de fábrica; o primeiro salvamento as grava
+  const cores = coresDoCadastro(brutas)
+  const [editando, setEditando] = useState(null) // id em edição, ou 'nova'
+  const [msg, setMsg] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvarTudo(lista, aviso) {
+    setSalvando(true)
+    try {
+      await setDoc(REF(), { cores: lista }, { merge: true })
+      if (aviso) setMsg(aviso)
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
+      throw e
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function salvarCor({ nm, hex }) {
+    const lista = editando === 'nova'
+      ? [...cores, { id: slugCor(nm), nm: nm.trim(), hex, ativo: true }]
+      : cores.map((c) => (c.id === editando ? { ...c, nm: nm.trim(), hex } : c))
+    await salvarTudo(lista, 'Cor salva.')
+    setEditando(null)
+  }
+  const alternar = (id) => salvarTudo(cores.map((c) => (c.id === id ? { ...c, ativo: !c.ativo } : c)))
+  function mover(i, d) {
+    const j = i + d
+    if (j < 0 || j >= cores.length) return
+    const lista = [...cores]
+    ;[lista[i], lista[j]] = [lista[j], lista[i]]
+    salvarTudo(lista)
+  }
+
+  const ativas = cores.filter((c) => c.ativo).length
+  return (
+    <>
+      <div className="toolbar">
+        <h1 className="page-title">Cadastros
+          <small>{cores.length} cor(es) · {ativas} ativa(s)</small>
+        </h1>
+        <div className="spacer" />
+        <button className="btn primary" onClick={() => setEditando('nova')}>+ Nova cor</button>
+      </div>
+
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '0 0 14px', maxWidth: 720 }}>
+        Cores da <b>impressão do plástico</b>. Aparecem na Triagem, nesta ordem, e agrupam as
+        Ordens de Fabricação. Cor <b>inativa</b> sai dos botões, mas continua nos pedidos que já a usam.
+        {(!brutas || !brutas.length) && <> Estas são as cores de fábrica — o primeiro ajuste grava a lista.</>}
+      </div>
+
+      {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
+
+      {editando !== null && (
+        <PainelEdicao>
+          <FormCor lista={cores}
+            inicial={editando === 'nova' ? null : cores.find((c) => c.id === editando)}
+            salvando={salvando}
+            onSalvar={salvarCor}
+            onCancelar={() => setEditando(null)} />
+        </PainelEdicao>
+      )}
+
+      <div className="cor-lista">
+        {cores.map((c, i) => (
+          <div key={c.id} className={`cor-linha${c.ativo ? '' : ' inativa'}`}>
+            <span className="cor-amostra" style={{ background: c.hex }} />
+            <span className="cor-nome">{c.nm}<small> · {c.id}</small></span>
+            {!c.ativo && <span className="chip rota-warn">inativa</span>}
+            <span className="cor-acoes">
+              <button className="mini-btn" disabled={salvando || i === 0} title="Subir" onClick={() => mover(i, -1)}>↑</button>
+              <button className="mini-btn" disabled={salvando || i === cores.length - 1} title="Descer" onClick={() => mover(i, 1)}>↓</button>
+              <button className="modo-btn" disabled={salvando} onClick={() => setEditando(c.id)}>Editar</button>
+              <button className="modo-btn" disabled={salvando} onClick={() => alternar(c.id)}>
+                {c.ativo ? 'Desativar' : 'Reativar'}
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+export function FormCor({ lista, inicial, salvando, onSalvar, onCancelar }) {
+  const [nm, setNm] = useState(inicial?.nm || '')
+  const [hex, setHex] = useState(inicial?.hex || '#888888')
+  const [erro, setErro] = useState('')
+  async function salvar() {
+    const p = problemaDaCor({ nm, hex }, lista, inicial?.id)
+    if (p) { setErro(p); return }
+    try { await onSalvar({ nm, hex }) } catch { /* o aviso já apareceu */ }
+  }
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18, borderLeftColor: 'var(--accent)' }}>
+      <h3 style={{ marginBottom: 12 }}>{inicial ? 'Editar cor' : 'Nova cor'}</h3>
+      {erro && <div className="login-err" style={{ marginBottom: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="field" style={{ flex: 1, minWidth: 180 }}>
+          <label>Nome</label>
+          <input value={nm} autoFocus onChange={(e) => { setNm(e.target.value); setErro('') }} placeholder="Verde Limão" />
+        </div>
+        <div className="field" style={{ flex: '0 0 auto' }}>
+          <label>Cor (para a bolinha na tela)</label>
+          <input type="color" value={hex} onChange={(e) => setHex(e.target.value)} className="cor-picker" />
+        </div>
+        <div style={{ paddingBottom: 12 }}>
+          <span className="selo-cor"><span className="selo-cor-bola" style={{ background: hex }} />
+            <span className="selo-cor-nm">{nm.trim() || 'prévia'}</span></span>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: -4 }}>
+        {inicial
+          ? <>Código <b>{inicial.id}</b> — não muda ao renomear (é o que está gravado nos pedidos).</>
+          : (nm.trim() && <>Código que vai para os pedidos: <b>{slugCor(nm)}</b></>)}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="btn primary" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+        <button className="btn" onClick={onCancelar} disabled={salvando}>Cancelar</button>
       </div>
     </div>
   )

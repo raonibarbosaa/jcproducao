@@ -11,7 +11,7 @@ import {
   linhaDoItem, pedidoCompleto, normaliza, achaCliente, achaItem,
   TIPOS_ITEM, UNIDADES_ITEM, previsaoDe,
   LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
-  CORES_IMPRESSAO, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
+  coresAtivas, nomeCor, hexCor, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
   MATERIAIS, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
   filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem,
 } from '../utils.js'
@@ -715,7 +715,10 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
                   <span className="acab-lbl">
                     Cor da impressão{corFalta ? ' ⚠' : ''}{duas && cores.length < 2 ? ' (escolha 2)' : ''}:
                   </span>
-                  {CORES_IMPRESSAO.map((c) => {
+                  {/* as ativas + a inativa que este item já usa (senão sumiria
+                      da tela uma cor que está gravada no pedido) */}
+                  {[...coresAtivas(), ...cores.filter((id) => !coresAtivas().some((c) => c.id === id))
+                    .map((id) => ({ id, nm: nomeCor(id), hex: hexCor(id) }))].map((c) => {
                     const sel = cores.includes(c.id)
                     return (
                       <button key={c.id} className={`acab-pill cor-pill${sel ? ' on' : ''}`}

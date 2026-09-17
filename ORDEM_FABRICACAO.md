@@ -27,8 +27,17 @@ agrupar é o que dá produtividade.
 `{ <keyDoItem>: ['preto'] | ['preto', 'dourado'] }` — mapa por **chave do item**
 (`keyDoItem`), igual a `acabamentos` e `linhasItens`: o import sobrescreve
 `itens`, e mapa por posição levaria a cor para o item errado.
-- `CORES_IMPRESSAO` (utils) = lista fixa `{id, nm, hex}`, como `LAMINACOES`.
-  Cor nova = uma linha a mais na constante.
+- **Cadastro de cores (17/09/2026):** Cadastros › Cores (dono/designer),
+  gravado em `config/cadastros.cores = [{id, nm, hex, ativo}]`. Vazio = as de
+  fábrica (`CORES_PADRAO`); o primeiro ajuste grava a lista. O `id` nasce do
+  nome (`slugCor`) e NUNCA muda — renomear muda só `nm`. Sem excluir: inativa
+  sai dos botões da Triagem, mas continua nos pedidos (e o card mostra a
+  inativa que o item já usa). A lista chega às telas por um REGISTRO no utils
+  (`definirCores`, chamado pelo `CadastrosProvider`; leitura por
+  `coresCadastradas`/`coresAtivas`/`nomeCor`/`hexCor`).
+  ⚠️ `limpaCores` aceita qualquer id BEM FORMADO, mesmo fora do cadastro: se
+  filtrasse pelo cadastro, um Salvar da Triagem antes de o cadastro carregar
+  regravaria o pedido SEM a cor. Id desconhecido aparece pelo próprio id.
 - **Duas cores** = array com 2 ids. A **chave da cor** para agrupar é o array
   ORDENADO (`dourado+preto`), senão "Preto + Dourado" e "Dourado + Preto"
   virariam OFs diferentes.

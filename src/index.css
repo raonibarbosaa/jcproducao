@@ -1356,3 +1356,14 @@ mark.hl {
 .of-virada b { color: var(--text); }
 .of-virada.on { border-style: solid; border-color: var(--ok, #4caf50); }
 .of-virada .btn { margin-left: auto; }
+
+/* ---------- Cadastros › Cores ---------- */
+.cor-lista { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.cor-linha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.cor-linha.inativa { opacity: 0.55; }
+.cor-amostra { width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7); flex: none; }
+.cor-nome { font-weight: 700; flex: 1; min-width: 140px; }
+.cor-nome small { font-weight: 400; color: var(--text-faint); font-family: var(--mono); }
+.cor-acoes { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+.cor-picker { width: 64px; height: 40px; padding: 2px; cursor: pointer; }

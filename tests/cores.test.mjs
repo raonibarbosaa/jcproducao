@@ -7,6 +7,8 @@ import {
   CORES_IMPRESSAO, limpaCores, coresDoItem, coresDoItemPorChave, corOk, itemPedeCor,
   coresCompletas, chaveCor, fmtCores, statusDaTriagem, pendenteNaTriagem, keyDoItem,
   itemFaltaCor, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
+  CORES_PADRAO, coresDoCadastro, definirCores, coresCadastradas, coresAtivas, nomeCor, hexCor,
+  slugCor, problemaDaCor,
 } from '../src/utils.js'
 import { t, ok, resultado } from './_harness.mjs'
 
@@ -23,7 +25,8 @@ t('azul médio com id composto agrupa certo', chaveCor(['tiffany', 'azul-medio']
 t('e por extenso', fmtCores(['laranja', 'azul-medio']), 'Laranja + Azul Médio')
 
 // ---------- limpeza ----------
-t('id inválido some', limpaCores(['preto', 'azul']), ['preto'])
+t('id mal formado some', limpaCores(['preto', 'Azul Claro!', '', 7]), ['preto'])
+t('⚠️ id bem formado que o cadastro não conhece FICA (nada de perda no Salvar)', limpaCores(['preto', 'verde-limao']), ['preto', 'verde-limao'])
 t('repetida conta uma vez', limpaCores(['rosa', 'rosa']), ['rosa'])
 t('no máximo duas', limpaCores(['preto', 'dourado', 'rosa']), ['preto', 'dourado'])
 t('lixo vira vazio', limpaCores('preto'), [])
@@ -85,5 +88,33 @@ ok('pedido sem cor entra', pedidoPassaNaTriagem(misto, CAD, { faltaCor: true }))
 ok('só papel + falta cor não combina nunca', !pedidoPassaNaTriagem(misto, CAD, { material: 'papel', faltaCor: true }))
 ok('pedido só de papel some no filtro plástico', !pedidoPassaNaTriagem({ itens: [pa] }, CAD, { material: 'plastico' }))
 ok('sem filtro, todo pedido passa', pedidoPassaNaTriagem({ itens: [pa] }, CAD, {}))
+
+// ---------- cadastro de cores ----------
+t('cadastro vazio = cores de fábrica', coresDoCadastro([]).map((c) => c.id), CORES_PADRAO.map((c) => c.id))
+t('lista gravada manda', coresDoCadastro([{ id: 'preto', nm: 'Preto', hex: '#000000' }, { id: 'verde', nm: 'Verde', hex: '#00ff00', ativo: false }])
+  .map((c) => [c.id, c.ativo]), [['preto', true], ['verde', false]])
+t('lixo e repetido saem', coresDoCadastro([{ id: 'x y', nm: 'X' }, { id: 'a', nm: '' }, { id: 'b', nm: 'B', hex: 'azul' }, { id: 'b', nm: 'B2' }])
+  .map((c) => [c.id, c.hex]), [['b', '#888888']])
+
+definirCores([{ id: 'preto', nm: 'Preto', hex: '#000000' }, { id: 'verde-limao', nm: 'Verde Limão', hex: '#aaff00' },
+  { id: 'rosa', nm: 'Rosa Choque', hex: '#ff0099', ativo: false }])
+t('registro: todas', coresCadastradas().map((c) => c.id), ['preto', 'verde-limao', 'rosa'])
+t('registro: só ativas (botões da Triagem)', coresAtivas().map((c) => c.id), ['preto', 'verde-limao'])
+t('nome vem do cadastro (renomeada)', nomeCor('rosa'), 'Rosa Choque')
+t('cor nova por extenso', fmtCores(['verde-limao', 'preto']), 'Verde Limão + Preto')
+t('hex do cadastro', hexCor('verde-limao'), '#aaff00')
+t('fora do cadastro, mas de fábrica: usa a de fábrica', nomeCor('dourado'), 'Dourado')
+t('desconhecida aparece pelo id arrumado', nomeCor('azul-petroleo'), 'Azul Petroleo')
+definirCores([])
+t('volta às de fábrica', nomeCor('rosa'), 'Rosa')
+
+t('código da cor', slugCor('Azul Médio'), 'azul-medio')
+t('código sem sujeira', slugCor('  Verde  Limão!! '), 'verde-limao')
+t('nome vazio', problemaDaCor({ nm: ' ', hex: '#000000' }, []), 'Informe o nome da cor.')
+t('sem letra', problemaDaCor({ nm: '!!', hex: '#000000' }, []), 'O nome precisa ter letras ou números.')
+t('hex ruim', problemaDaCor({ nm: 'Verde', hex: 'verde' }, []), 'Escolha a cor no seletor.')
+ok('nome repetido (sem acento/caixa)', problemaDaCor({ nm: 'azul medio', hex: '#000000' }, CORES_PADRAO).includes('Azul Médio'))
+t('renomear a própria cor não acusa repetição', problemaDaCor({ nm: 'Azul Médio', hex: '#111111' }, CORES_PADRAO, 'azul-medio'), '')
+t('cor nova ok', problemaDaCor({ nm: 'Verde Limão', hex: '#aaff00' }, CORES_PADRAO), '')
 
 export default resultado('cores')

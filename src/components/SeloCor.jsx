@@ -1,4 +1,4 @@
-import { CORES_IMPRESSAO, fmtCores, limpaCores } from '../utils.js'
+import { fmtCores, hexCor, limpaCores } from '../utils.js'
 
 // Cor da impressão do plástico, colada no produto como o SeloLinha: bolinha(s)
 // com a cor + o nome. O NOME vai junto de propósito — na impressora P&B a
@@ -11,7 +11,7 @@ export default function SeloCor({ cores }) {
     <span className="selo-cor" title={`Impressão: ${fmtCores(lista)}`}>
       {lista.map((id) => (
         <span key={id} className="selo-cor-bola"
-          style={{ background: CORES_IMPRESSAO.find((c) => c.id === id)?.hex }} />
+          style={{ background: hexCor(id) }} />
       ))}
       <span className="selo-cor-nm">{fmtCores(lista)}</span>
     </span>

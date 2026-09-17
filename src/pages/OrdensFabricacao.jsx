@@ -4,7 +4,7 @@ import { db } from '../firebase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import {
-  MODO_ORDER, MODO_NM, CORES_IMPRESSAO, chaveCor, fmtCores,
+  MODO_ORDER, MODO_NM, coresCadastradas, chaveCor, fmtCores,
   previsaoDe, filtraPedidos, vendedoresDe, nomeCliente, fmtData, fmtDataHora, fmtQtd,
   situacaoPrazo, keyDoItem, marcacaoDaVirada,
   itensAguardandoOF, agrupaParaOF, docOF, situacaoDaOF, idsDeOFsVivas, ofDoItem,
@@ -57,7 +57,8 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
 
   // cores que aparecem (simples e duplas), para o filtro
   const opcoesCor = [
-    ...CORES_IMPRESSAO.map((c) => ({ id: c.id, nm: c.nm })),
+    // todas do cadastro, inclusive as inativas: o histórico ainda as usa
+    ...coresCadastradas().map((c) => ({ id: c.id, nm: c.nm })),
     ...[...new Set([...itensAguardandoOF(base, itensCad, vivos).map((x) => chaveCor(x.cores)),
       ...ordens.map((o) => chaveCor(o.cores))])]
       .filter((k) => k.includes('+'))

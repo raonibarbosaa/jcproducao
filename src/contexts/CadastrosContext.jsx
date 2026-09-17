@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useAuth } from './AuthContext.jsx'
+import { definirCores } from '../utils.js'
 
 const CadCtx = createContext(null)
 export const useCadastros = () => useContext(CadCtx)
@@ -15,6 +16,8 @@ export function CadastrosProvider({ children }) {
   const [motoristas, setMotoristas] = useState([])
   // parâmetros de logística (hoje só a capacidade do caminhão, em kg)
   const [logistica, setLogistica] = useState({})
+  // cores da impressão (Cadastros › Cores); [] = as de fábrica
+  const [cores, setCores] = useState([])
   const [carregando, setCarregando] = useState(true)
 
   useEffect(() => {
@@ -40,12 +43,17 @@ export function CadastrosProvider({ children }) {
         setItens(Array.isArray(d.itens) ? d.itens : [])
         setMotoristas(Array.isArray(d.motoristas) ? d.motoristas : [])
         setLogistica(d.logistica && typeof d.logistica === 'object' ? d.logistica : {})
+        // o registro do utils vem ANTES do setState: quem renderizar já vê a lista nova
+        definirCores(d.cores)
+        setCores(Array.isArray(d.cores) ? d.cores : [])
       } else {
         setVendedores([])
         setClientes([])
         setItens([])
         setMotoristas([])
         setLogistica({})
+        definirCores([])
+        setCores([])
       }
       setCarregando(false)
     }, (e) => {
@@ -56,7 +64,7 @@ export function CadastrosProvider({ children }) {
   }, [user?.uid])
 
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, logistica, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, logistica, cores, carregando }}>
       {children}
     </CadCtx.Provider>
   )

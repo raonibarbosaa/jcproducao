@@ -3371,29 +3371,82 @@ export function quemFez(r) {
 // Marcada na Triagem, por item, em `pedidos/{id}.cores = { <keyDoItem>: [ids] }`.
 // É a cor que agrupa as Ordens de Fabricação: 30×40 PRETO vai junto para a
 // máquina; 30×40 DOURADO é outra OF. "Duas cores" = array com DOIS ids.
-// Lista fixa, como a laminação: cor nova = uma linha a mais aqui.
-export const CORES_IMPRESSAO = [
+//
+// A LISTA vem do cadastro (Cadastros › Cores, `config/cadastros.cores`). Estas
+// são as cores de fábrica: valem enquanto o cadastro estiver vazio e são a base
+// do primeiro salvamento.
+export const CORES_PADRAO = [
   { id: 'preto', nm: 'Preto', hex: '#1b1b1b' },
   { id: 'dourado', nm: 'Dourado', hex: '#c9a227' },
   { id: 'vermelho', nm: 'Vermelho', hex: '#d32f2f' },
   { id: 'rosa', nm: 'Rosa', hex: '#e8559b' },
-  // branca e prata acrescentadas a pedido do dono (17/09/2026)
   { id: 'branca', nm: 'Branca', hex: '#f4f4f4' },
   { id: 'prata', nm: 'Prata', hex: '#aeb4bb' },
-  // laranja, tiffany e azul médio acrescentadas a pedido do dono (17/09/2026)
   { id: 'laranja', nm: 'Laranja', hex: '#f57c00' },
   { id: 'tiffany', nm: 'Tiffany', hex: '#0abab5' },
   { id: 'azul-medio', nm: 'Azul Médio', hex: '#1f6fd6' },
-  // "Azul BB" = azul bebê, no nome usado na fábrica (17/09/2026)
+  // "Azul BB" = azul bebê, no nome usado na fábrica
   { id: 'azul-bb', nm: 'Azul BB', hex: '#9ccbf0' },
 ]
-const ID_CORES = CORES_IMPRESSAO.map((c) => c.id)
-export const nomeCor = (id) => CORES_IMPRESSAO.find((c) => c.id === id)?.nm || id
 
-// só ids válidos, sem repetir, no máximo 2 — dado torto não vira cor inventada
+const RE_ID_COR = /^[a-z0-9][a-z0-9-]{0,39}$/
+const RE_HEX = /^#[0-9a-f]{6}$/i
+
+// Lista do cadastro, limpa. Vazia → as de fábrica.
+export function coresDoCadastro(lista) {
+  const ok = (Array.isArray(lista) ? lista : [])
+    .filter((c) => c && RE_ID_COR.test(String(c.id || '')) && String(c.nm || '').trim())
+    .map((c) => ({
+      id: c.id, nm: String(c.nm).trim(),
+      hex: RE_HEX.test(String(c.hex || '')) ? c.hex : '#888888',
+      ativo: c.ativo !== false,
+    }))
+  const vistos = new Set()
+  const unicas = ok.filter((c) => (vistos.has(c.id) ? false : vistos.add(c.id)))
+  return unicas.length ? unicas : CORES_PADRAO.map((c) => ({ ...c, ativo: true }))
+}
+
+// Registro do módulo: o CadastrosProvider chama `definirCores` quando o
+// cadastro chega. Passar a lista por parâmetro a cada `fmtCores` espalharia o
+// cadastro por dezenas de telas e impressões.
+let coresAtuais = coresDoCadastro([])
+export function definirCores(lista) { coresAtuais = coresDoCadastro(lista) }
+export const coresCadastradas = () => coresAtuais
+export const coresAtivas = () => coresAtuais.filter((c) => c.ativo !== false)
+// compatibilidade: quem ainda lê a lista como constante recebe a de fábrica
+export const CORES_IMPRESSAO = CORES_PADRAO
+
+const corPorId = (id) => coresAtuais.find((c) => c.id === id) || CORES_PADRAO.find((c) => c.id === id)
+// id que o cadastro não conhece (cor apagada à mão no banco, cadastro ainda
+// carregando) aparece pelo próprio id, arrumado — nunca some
+export const nomeCor = (id) => corPorId(id)?.nm
+  || String(id || '').split('-').map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(' ')
+export const hexCor = (id) => corPorId(id)?.hex || '#888888'
+
+// ⚠️ Só ids BEM FORMADOS, sem repetir, no máximo 2 — mas SEM exigir que estejam
+// no cadastro. Filtrar pelo cadastro faria o Salvar da Triagem, rodando antes
+// de o cadastro carregar, regravar o pedido SEM a cor: perda silenciosa.
 export function limpaCores(v) {
   const arr = Array.isArray(v) ? v : []
-  return [...new Set(arr.filter((x) => ID_CORES.includes(x)))].slice(0, 2)
+  return [...new Set(arr.filter((x) => typeof x === 'string' && RE_ID_COR.test(x)))].slice(0, 2)
+}
+
+// "Azul Médio" → "azul-medio". O id é o que vai para os pedidos: nasce do nome
+// e NUNCA muda — renomear a cor muda só o nome.
+export function slugCor(nome) {
+  return normaliza(nome).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+}
+
+// Problema no formulário do cadastro, ou ''.
+export function problemaDaCor({ nm, hex }, lista, idEditando) {
+  const nome = String(nm || '').trim()
+  if (!nome) return 'Informe o nome da cor.'
+  if (!slugCor(nome)) return 'O nome precisa ter letras ou números.'
+  if (!RE_HEX.test(String(hex || ''))) return 'Escolha a cor no seletor.'
+  const repetida = (lista || []).find((c) => c.id !== idEditando
+    && (normaliza(c.nm) === normaliza(nome) || (!idEditando && c.id === slugCor(nome))))
+  if (repetida) return `Já existe a cor "${repetida.nm}".`
+  return ''
 }
 
 export function coresDoItem(p, idx) {
