@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, doc, writeBatch, setDoc } from 'firebase/firestore'
+import { collection, doc, writeBatch, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
   etapaDoItem, proximaEtapaItem, etapaAnteriorItem, nomeEtapaItem,
@@ -17,7 +17,7 @@ import {
   quemFez,
   coresDoItem,
   idsDeOFsVivas, modoNaLinha, ofDoItem, jaEstavaNaFila, itemPedeCor, distribuiBaixaOF, fmtNumeroOF, fmtCores,
-  fmtProdutosOF, ordemProdutoOF, normaliza,
+  fmtProdutosOF, ordemProdutoOF, normaliza, semOFSem,
 } from '../utils.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -363,6 +363,25 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
     }
   }
 
+  // Tira a marca "já estava na fila" de UM item: ele passa a obedecer a regra
+  // geral (com cor vai para a espera de OF; sem cor, para a Triagem). Só staff
+  // — `semOF` é update de staff nas rules. O item some desta coluna na hora.
+  async function trazerParaOF(p, idx) {
+    if (salvando) return
+    const key = keyDoItem(p, idx)
+    if (!confirm(`Levar "${p.itens[idx]?.produto}" do pedido #${p.idVenda} para a Ordem de Fabricação?\n\n`
+      + 'Ele sai desta fila agora e volta pelo card da OF quando o gestor soltar.')) return
+    setSalvando(`of-legado|${p.idVenda}|${idx}`)
+    try {
+      await updateDoc(doc(db, 'pedidos', p.idVenda), { semOF: semOFSem(p, [key, String(idx)]) })
+    } catch (e) {
+      console.error('Erro ao levar para OF:', e)
+      alert('Não foi possível levar para a OF: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   // Registra um erro visto por quem está produzindo. Não move nada e não trava
   // o item — só acende o ⚠ até alguém resolver.
   async function reportarErro(p, idx, dados) {
@@ -601,6 +620,11 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
                               && jaEstavaNaFila(p, i) && (
                               <span className="acab-tag" title="Já estava na fila quando a exigência de OF foi ligada">
                                 sem OF · já estava na fila
+                                {ehStaff && (
+                                  <button className="mini-btn of-levar" disabled={!!salvando}
+                                    title="Tirar a marca e levar este item para a Ordem de Fabricação"
+                                    onClick={() => trazerParaOF(p, i)}>→ OF</button>
+                                )}
                               </span>
                             )}
                             {semMat && (

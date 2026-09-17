@@ -3831,6 +3831,34 @@ export function marcacaoDaVirada(pedidos, itensCad, idsVivos) {
   return out
 }
 
+// O CAMINHO DE VOLTA da virada (17/09/2026): o dono quis levar para OF pedidos
+// que a foto tinha marcado como "já estava na fila" (os do Sérgio para 01/11,
+// lançados antes da exigência). Tirar a marca é só isso — o item volta a
+// obedecer a regra geral: com cor entra na espera de OF, sem cor cai no
+// aviso "sem cor" da aba de OFs e precisa da Triagem.
+// `legadosSemOF` = as sacolas marcadas que AINDA estão na linha, sem OF viva.
+export function legadosSemOF(pedidos, itensCad, idsVivos) {
+  const out = []
+  for (const p of pedidos || []) {
+    if (!p?.status) continue
+    ;(p.itens || []).forEach((it, i) => {
+      if (!itemPedeCor(it, itensCad) || !jaEstavaNaFila(p, i)) return
+      const linha = linhaDoItem(p, i)
+      if (!linha || !(qtdNaEtapa(p, i, linha) > 0)) return
+      if (ofDoItem(p, i, idsVivos)) return
+      out.push({ p, idx: i, idVenda: p.idVenda, itemKey: keyDoItem(p, i), temCor: corOk(coresDoItem(p, i)) })
+    })
+  }
+  return out
+}
+// O mapa `semOF` do pedido sem estas chaves (substitui o mapa inteiro, como
+// `linhasItens`). Aceita a chave antiga por posição, que `doMapaDoItem` lê.
+export function semOFSem(p, keys) {
+  const m = { ...(p?.semOF || {}) }
+  for (const k of keys || []) delete m[k]
+  return m
+}
+
 // Baixa PARCIAL de uma OF: completa o pedido mais urgente antes de passar ao
 // próximo. `linhas` = [{ idVenda, idx, aqui, previsao }] (qualquer ordem).
 // Devolve só quem recebe alguma coisa, com a quantidade arredondada.

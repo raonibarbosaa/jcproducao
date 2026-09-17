@@ -48,6 +48,7 @@ export function roda() {
   try {
     return {
       ofCasca: renderToString(<OF pedidos={pedidos} />),
+      ofCascaLegado: renderToString(<OF pedidos={[...pedidos, legado]} producaoCfg={{ ofExigida: true }} />),
       ofBloco: renderToString(<BlocoEspera b={b} clientes={[]} onSoltar={nada} abertoInicial />),
       ofBlocoFechado: renderToString(<BlocoEspera b={b} clientes={[]} onSoltar={nada} />),
       ofCard: renderToString(<CardOF o={o} s={situacaoDaOF(o, porId)} clientes={[]} onFicha={nada} onCancelar={nada} abertoInicial />),

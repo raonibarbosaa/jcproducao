@@ -111,7 +111,8 @@ const ESPERA = {
   ofHist: ['OF 0013', 'Cancelada', 'cliente desistiu'],
   // fase C: OF no quadro + virada escalonada
   qOfLigada: ['OF 0012', 'Concluir OF → Montagem Plástico', '#11 BIA CALCADOS', '16 kg',
-    'aguardando <b>Ordem de Fabricação</b>', 'DAVI', 'sem OF · já estava na fila'],
+    'aguardando <b>Ordem de Fabricação</b>', 'DAVI', 'sem OF · já estava na fila', '→ OF'],
+  ofCascaLegado: ['1 sacola(s) plástica(s)', 'já estava na fila', '→ Trazer para a OF'],
   qOfDesligada: ['OF 0012', 'CAIO', 'DAVI'],
   qOfCancelada: ['aguardando', '4 sacola(s)', 'DAVI'],   // OF cancelada: os dela voltam a esperar OF (10, 11, 12 e 14)
   qOfCresceu: ['Aumentou <b>5 kg</b> depois da OF'],

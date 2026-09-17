@@ -4,7 +4,7 @@
 //  - a baixa parcial completa o pedido mais urgente primeiro, sem passar do total.
 import {
   precisaDeOF, modoNaLinha, marcacaoDaVirada, distribuiBaixaOF, jaEstavaNaFila,
-  mapaEtapasComQtd, qtdNaEtapa,
+  mapaEtapasComQtd, qtdNaEtapa, legadosSemOF, semOFSem, itensAguardandoOF,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
 
@@ -75,5 +75,19 @@ for (const x of distribuiBaixaOF(naOF, 8)) {
 t('P2 (urgente) foi inteiro para a montagem', [qtdNaEtapa(depois.P2, 0, 'montagem'), qtdNaEtapa(depois.P2, 0, 'PRODUCAO')], [6, 0])
 t('P1 levou só o resto (2) e 8 continuam na linha', [qtdNaEtapa(depois.P1, 0, 'montagem'), qtdNaEtapa(depois.P1, 0, 'PRODUCAO')], [2, 8])
 t('quem assinou fica na etapa', depois.P1.etapas[k(pa1, 0)].por, 'Pedro')
+
+// ---------- caminho de volta: tirar a marca "já estava na fila" ----------
+const legCor = { ...legado, cores: { [k(p, 0)]: ['preto'] } }
+const legNaMont = { ...legado, etapas: { [k(p, 0)]: { montagem: 10 } } }
+const legComOF = { ...legado, ofs: { [k(p, 0)]: 'o1' } }
+const legs = legadosSemOF([p, legado, legCor, legNaMont, legComOF], CAD, vivos)
+t('só o marcado que ainda está na linha e sem OF', legs.map((x) => [x.idVenda, x.temCor]), [['20', false], ['20', true]])
+ok('papel não entra', !legs.some((x) => x.idx === 1))
+const solto = { ...legCor, semOF: semOFSem(legCor, [k(legCor, 0), '0']) }
+ok('sem a marca, deixa de ser legado', !jaEstavaNaFila(solto, 0))
+t('e com cor cai na espera de OF na hora', itensAguardandoOF([solto], CAD, vivos).length, 1)
+t('ligada: passa a esperar OF (some da coluna)', modoNaLinha(solto, 0, CAD, LIG, vivos), 'espera')
+t('a marca dos outros itens fica', semOFSem({ semOF: { A: true, B: true } }, ['A']), { B: true })
+t('marca antiga por posição também sai', semOFSem({ semOF: { 0: true } }, [k(p, 0), '0']), {})
 
 export default resultado('ofquadro')

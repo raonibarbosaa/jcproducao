@@ -1378,6 +1378,9 @@ mark.hl {
 .of-virada b { color: var(--text); }
 .of-virada.on { border-style: solid; border-color: var(--ok, #4caf50); }
 .of-virada .btn { margin-left: auto; }
+.of-legado { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.of-legado .btn { margin-left: auto; }
+.acab-tag .of-levar { margin-left: 6px; font-size: 11px; padding: 0 6px; height: 20px; vertical-align: middle; }
 
 /* ---------- Cadastros › Cores ---------- */
 .cor-lista { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }

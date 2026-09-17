@@ -42,6 +42,17 @@
   "Concluir OF inteira". Um produto só continua "Concluir OF". Os campos ficam
   em `qtds` com a chave `of|<ordem>|<painel>|<produtoKey>` e `limpaQtds` zera
   todos os da OF depois da baixa.
+- **Caminho de VOLTA da virada (`legadosSemOF` / `semOFSem`):** no primeiro
+  dia o dono quis levar para OF pedidos que a foto tinha marcado "já estava na
+  fila" (os do Sérgio para 01/11, lançados antes da exigência). Na aba de OFs,
+  com os filtros da tela (vendedor, período, linha…), um aviso conta as
+  marcadas e o botão **"→ Trazer para a OF"** tira a marca em lote (chunk 450).
+  No quadro, a etiqueta "sem OF · já estava na fila" ganhou um **"→ OF"** por
+  item, só para dono/designer. Tirar a marca é só isso: o item volta à regra
+  geral — com cor entra na espera na hora (e SOME da coluna, porque a
+  exigência está ligada); sem cor cai no aviso "sem cor" e precisa da Triagem.
+  A confirmação avisa quantas estão sem cor e, sem filtro, que vai levar TODAS.
+  Rules: nada novo (`semOF` já é update de staff).
 - Testes: `tests/ordem.test.mjs` (blocos, ordem por tamanho, doc com vários
   produtos, leitura do doc antigo, situação por produto) e `tests/render/ordens.jsx`
   (bloco aberto/fechado, card e ficha com 2 produtos, quadro com baixa por

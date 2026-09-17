@@ -9,7 +9,7 @@ import {
   situacaoPrazo, keyDoItem, marcacaoDaVirada,
   itensAguardandoOF, agrupaParaOF, blocosParaOF, docOF, situacaoDaOF, idsDeOFsVivas, ofDoItem,
   proximoNumeroOF, fmtNumeroOF, ofsComVinculo, plasticoSemCor, STATUS_OF, NOME_SITUACAO_OF,
-  produtosDaOF, fmtProdutosOF, itensPorProdutoOF,
+  produtosDaOF, fmtProdutosOF, itensPorProdutoOF, legadosSemOF, semOFSem, linhaDoItem,
 } from '../utils.js'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import SubTabs from '../components/SubTabs.jsx'
@@ -51,6 +51,11 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
   const blocos = blocosParaOF(agrupaParaOF(itensAguardandoOF(filtrados, itensCad, vivos)))
     .filter((b) => (!linha || b.linha === linha) && (!cor || chaveCor(b.cores) === cor))
   const semCor = plasticoSemCor(base, itensCad)
+  // marcadas "já estava na fila" na virada, dentro dos filtros da tela: o dono
+  // pode trazê-las para a OF (caminho de volta da virada, 17/09/2026)
+  const legados = legadosSemOF(filtrados, itensCad, vivos)
+    .filter((x) => !linha || linhaDoItem(x.p, x.idx) === linha)
+  const temFiltro = !!(linha || Object.values(filtros).some(Boolean))
 
   const situacoes = ordens.map((o) => ({ o, s: situacaoDaOF(o, porId) }))
     .sort((a, b) => (Number(b.o.numero) || 0) - (Number(a.o.numero) || 0))
@@ -140,6 +145,36 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
     }
   }
 
+  // Tira a marca "já estava na fila" das sacolas filtradas. Com cor elas caem
+  // na espera na hora; sem cor, no aviso "sem cor" — e precisam da Triagem.
+  async function trazerParaOF() {
+    if (salvando || !legados.length) return
+    const semCorN = legados.filter((x) => !x.temCor).length
+    const pedidosN = new Set(legados.map((x) => x.idVenda)).size
+    if (!confirm(`Levar ${legados.length} sacola(s) de ${pedidosN} pedido(s) para a Ordem de Fabricação?\n\n`
+      + (temFiltro ? 'Só as que estão nos filtros desta tela.\n' : '⚠ TODAS as marcadas na virada — a tela está sem filtro.\n')
+      + (semCorN ? `\n${semCorN} dela(s) ainda estão SEM COR: só entram na espera depois de marcar a cor na Triagem.\n` : '')
+      + '\nElas saem do quadro agora e voltam pelo card da OF quando você soltar.')) return
+    setSalvando('legado')
+    try {
+      const porPedido = {}
+      for (const x of legados) (porPedido[x.idVenda] ??= { p: x.p, keys: [] }).keys.push(x.itemKey, String(x.idx))
+      const ids = Object.keys(porPedido)
+      for (let i = 0; i < ids.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const id of ids.slice(i, i + 450)) {
+          batch.update(doc(db, 'pedidos', id), { semOF: semOFSem(porPedido[id].p, porPedido[id].keys) })
+        }
+        await batch.commit()
+      }
+    } catch (e) {
+      console.error('Erro ao trazer para OF:', e)
+      alert('Não foi possível trazer para a OF: ' + (e.code || e.message))
+    } finally {
+      setSalvando('')
+    }
+  }
+
   // VIRADA ESCALONADA: tira a foto do que está na fila agora (essas terminam
   // como estão) e SÓ DEPOIS liga a exigência — na ordem contrária, por alguns
   // segundos a fila inteira de plástico sumiria do quadro.
@@ -223,6 +258,15 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
 
         {erroOrdens && (
           <div className="aviso-acab">⚠ Não foi possível ler as ordens ({erroOrdens}).</div>
+        )}
+        {aba === 'espera' && legados.length > 0 && (
+          <div className="aviso-acab of-legado">
+            ⏸ {legados.length} sacola(s) plástica(s){temFiltro ? ' nos pedidos filtrados' : ''} marcada(s)
+            <b> "já estava na fila"</b> na virada — terminam sem OF, fora desta espera.
+            <button className="btn" disabled={!!salvando} onClick={trazerParaOF}>
+              {salvando === 'legado' ? 'Levando…' : '→ Trazer para a OF'}
+            </button>
+          </div>
         )}
         {aba === 'espera' && semCor > 0 && (
           <div className="aviso-acab">
