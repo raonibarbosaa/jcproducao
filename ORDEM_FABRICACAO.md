@@ -15,7 +15,7 @@ agrupar é o que dá produtividade.
 ## Decisões do dono (16/09/2026)
 | Tema | Decisão |
 |---|---|
-| Cores | **Preto · Dourado · Vermelho · Rosa · Duas cores**, só em item de **plástico**, marcadas na **Triagem** |
+| Cores | **Preto · Dourado · Vermelho · Rosa · Branca · Prata · Duas cores** (branca e prata em 17/09/2026), só em item de **plástico**, marcadas na **Triagem** |
 | "Duas cores" | Escolhe **quais duas** (ex.: Preto + Dourado). Preto+Dourado e Preto+Vermelho são OFs diferentes |
 | Alcance da OF | **Só na impressão** (a linha). Ao concluir, cada item volta a andar pelo SEU pedido na Montagem (volumes e embalagem por pedido, como hoje) |
 | Quem solta | **Dono e designer** (sem perfil novo) |
