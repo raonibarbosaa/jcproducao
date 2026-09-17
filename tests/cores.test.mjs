@@ -17,7 +17,7 @@ const CAD = [
 const pl = { produto: 'SACOLA PLASTICA 30X40', qtd: 10, key: 'SACOLA PLASTICA 30X40#1' }
 const pa = { produto: 'SACOLA PAPEL P02', qtd: 100, key: 'SACOLA PAPEL P02#1' }
 
-t('as cores do dono', CORES_IMPRESSAO.map((c) => c.id), ['preto', 'dourado', 'vermelho', 'rosa', 'branca', 'prata', 'laranja', 'tiffany', 'azul-medio'])
+t('as cores do dono', CORES_IMPRESSAO.map((c) => c.id), ['preto', 'dourado', 'vermelho', 'rosa', 'branca', 'prata', 'laranja', 'tiffany', 'azul-medio', 'azul-bb'])
 t('branca e prata por extenso', fmtCores(['branca', 'prata']), 'Branca + Prata')
 t('azul médio com id composto agrupa certo', chaveCor(['tiffany', 'azul-medio']), 'azul-medio+tiffany')
 t('e por extenso', fmtCores(['laranja', 'azul-medio']), 'Laranja + Azul Médio')

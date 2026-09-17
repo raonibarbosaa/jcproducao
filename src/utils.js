@@ -3384,6 +3384,8 @@ export const CORES_IMPRESSAO = [
   { id: 'laranja', nm: 'Laranja', hex: '#f57c00' },
   { id: 'tiffany', nm: 'Tiffany', hex: '#0abab5' },
   { id: 'azul-medio', nm: 'Azul Médio', hex: '#1f6fd6' },
+  // "Azul BB" = azul bebê, no nome usado na fábrica (17/09/2026)
+  { id: 'azul-bb', nm: 'Azul BB', hex: '#9ccbf0' },
 ]
 const ID_CORES = CORES_IMPRESSAO.map((c) => c.id)
 export const nomeCor = (id) => CORES_IMPRESSAO.find((c) => c.id === id)?.nm || id
