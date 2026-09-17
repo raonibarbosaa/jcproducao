@@ -3380,6 +3380,10 @@ export const CORES_IMPRESSAO = [
   // branca e prata acrescentadas a pedido do dono (17/09/2026)
   { id: 'branca', nm: 'Branca', hex: '#f4f4f4' },
   { id: 'prata', nm: 'Prata', hex: '#aeb4bb' },
+  // laranja, tiffany e azul médio acrescentadas a pedido do dono (17/09/2026)
+  { id: 'laranja', nm: 'Laranja', hex: '#f57c00' },
+  { id: 'tiffany', nm: 'Tiffany', hex: '#0abab5' },
+  { id: 'azul-medio', nm: 'Azul Médio', hex: '#1f6fd6' },
 ]
 const ID_CORES = CORES_IMPRESSAO.map((c) => c.id)
 export const nomeCor = (id) => CORES_IMPRESSAO.find((c) => c.id === id)?.nm || id

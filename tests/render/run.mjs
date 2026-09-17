@@ -89,7 +89,7 @@ const ESPERA = {
   qTravado: ['INGRID MODAS', 'SACOLA PAPEL P02', 'Concluir → ', 'disabled=""'],
   qLivre: ['INGRID MODAS', 'Concluir → '],
   // cor da impressão: só no plástico; novo não sai sem ela, legado continua na produção
-  tNovo: ['Cor da impressão ⚠', 'Preto', 'Dourado', 'Vermelho', 'Rosa', 'Branca', 'Prata', 'Duas cores',
+  tNovo: ['Cor da impressão ⚠', 'Preto', 'Dourado', 'Vermelho', 'Rosa', 'Branca', 'Prata', 'Laranja', 'Tiffany', 'Azul Médio', 'Duas cores',
     'sem ela o pedido não sai da Triagem', 'marque a cor dos itens de plástico para concluir'],
   tLegado: ['O pedido já está na produção', 'não entra numa Ordem de Fabricação', '✓ triagem salva'],
   tDuas: ['acab-pill cor-pill on', 'acab-pill on', '✓ triagem salva'],
