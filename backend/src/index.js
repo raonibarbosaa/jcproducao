@@ -101,13 +101,19 @@ app.listen(cfg.porta, async () => {
   assinaCadastros()
   assinaPedidos()
   assinaFilaEnvio()
+  // Heartbeat a cada minuto. Enquanto a instância não existir (a Evolution
+  // demora ~30 s para subir, e o backend sobe antes), tenta criá-la de novo a
+  // cada batida — na primeira subida a criação falhava e ficava por isso.
+  let avisouInstancia = false
   const bate = async () => {
-    const e = await estadoInstancia()
-    await heartbeat({ estado: e.ok ? (e.data || 'sem-instancia') : 'evolution-fora', instancia: cfg.wa.instancia, versao: '0.1.0' })
+    let e = await estadoInstancia()
+    if (e.ok && e.data === null) {
+      const c = await criarInstancia()
+      if (c.ok) { console.log(`[wa] instância ${c.data.criada ? 'criada' : 'já existia'} · estado ${c.data.estado}`); e = { ok: true, data: c.data.estado } }
+      else if (!avisouInstancia) { console.log(`[wa] instância ainda não: ${c.erro}`); avisouInstancia = true }
+    }
+    await heartbeat({ estado: e.ok ? (e.data || 'sem-instancia') : 'evolution-fora', instancia: cfg.wa.instancia, versao: '0.1.1' })
   }
   await bate()
   setInterval(bate, 60_000)
-  // garante a instância (idempotente); o QR é lido depois em /wa/qr
-  const c = await criarInstancia()
-  console.log(c.ok ? `[wa] instância ${c.data.criada ? 'criada' : 'já existia'} · estado ${c.data.estado}` : `[wa] instância: ${c.erro}`)
 })

@@ -32,17 +32,20 @@ export function assinaCadastros() {
 
 // Números de pedido conhecidos (para a sugestão de vínculo não casar "2026").
 // Pedido entregue por inteiro some de `pedidos`, então junta `entregues`.
+// ⚠️ `select()` NÃO funciona com onSnapshot no Admin SDK ("'select' clauses
+// are not supported for real-time queries") — ouve a coleção inteira: a
+// leitura completa acontece UMA vez por subida; depois só chegam as mudanças.
 let pedidosConhecidos = new Set()
 export const getPedidosConhecidos = () => pedidosConhecidos
 export function assinaPedidos() {
   const ids = { pedidos: new Set(), entregues: new Set() }
   const junta = () => { pedidosConhecidos = new Set([...ids.pedidos, ...ids.entregues]) }
-  db().collection('pedidos').select('idVenda').onSnapshot(
-    (s) => { ids.pedidos = new Set(s.docs.map((d) => String(d.get('idVenda') || d.id))); junta() },
+  db().collection('pedidos').onSnapshot(
+    (s) => { ids.pedidos = new Set(s.docs.map((d) => String(d.get('idVenda') || d.id))); junta(); console.log(`[pedidos] ${ids.pedidos.size} na fábrica`) },
     (e) => console.error('[pedidos] onSnapshot', e.message),
   )
-  db().collection('entregues').select('idVenda').onSnapshot(
-    (s) => { ids.entregues = new Set(s.docs.map((d) => String(d.get('idVenda') || d.id.split('-')[0]))); junta() },
+  db().collection('entregues').onSnapshot(
+    (s) => { ids.entregues = new Set(s.docs.map((d) => String(d.get('idVenda') || d.id.split('-')[0]))); junta(); console.log(`[entregues] ${ids.entregues.size} remessas`) },
     (e) => console.error('[entregues] onSnapshot', e.message),
   )
 }
