@@ -1,0 +1,16 @@
+{
+  "name": "jc-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Backend da JC Sacolas na VPS: webhook do WhatsApp (Evolution API), fila de envio e heartbeat. Ver ../WHATSAPP.md",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/receber.js && node --check src/enviar.js && node --check src/evolution.js && node --check src/midia.js && node --check src/firestore.js && node --check src/config.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2"
+  }
+}

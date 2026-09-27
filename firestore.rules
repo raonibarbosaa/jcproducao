@@ -173,6 +173,57 @@ service cloud.firestore {
       allow update, delete: if ehStaff();
     }
 
+    // ---------- WHATSAPP — central de conversas. Ver WHATSAPP.md ----------
+    // Quem ATENDE = staff + usuário com `atende: true` (eixo novo, como
+    // `setores`). Vendedor NÃO lê conversa (decisão de 27/09/2026: ele só
+    // registra a demanda). Operador e expedição: nada.
+    // As conversas e mensagens NASCEM no backend da VPS (Admin SDK, fora das
+    // rules); o navegador só lê, marca lida e vincula ao pedido/demanda.
+    function atende() {
+      return ehStaff() || (temPerfil() && meu().get('atende', false) == true);
+    }
+    match /contatos/{tel} {
+      allow read: if atende();
+      allow create, update: if atende();
+      allow delete: if ehStaff();
+    }
+    match /conversas/{tel} {
+      allow read: if atende();
+      // responsável, status, etiquetas, não lidas, demanda em curso — nunca o
+      // telefone nem o resumo (esses são do backend)
+      allow update: if atende()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['responsavelUid', 'responsavelNome', 'status', 'etiquetas', 'naoLidas', 'demandaAbertaId', 'lidaEm', 'lidaPor']);
+      allow create, delete: if false;
+      match /mensagens/{id} {
+        allow read: if atende();
+        // ⚠️ texto NÃO se edita (append-only, como a auditoria): só o vínculo
+        allow update: if atende()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['idVenda', 'demandaId', 'lida']);
+        allow create, delete: if false;
+      }
+    }
+    // Fila de envio: o navegador cria com status 'pendente' e em nome de quem
+    // está logado; só o backend muda o status. O token da Evolution nunca chega
+    // ao navegador — é por isso que existe fila em vez de chamada direta.
+    match /enviar/{id} {
+      allow read: if atende();
+      allow create: if atende()
+        && request.resource.data.porUid == request.auth.uid
+        && request.resource.data.status == 'pendente';
+      allow update, delete: if false;
+    }
+    // Demanda = a unidade que se mede (motivo, pedido, quem atendeu, tempos).
+    // Vendedor cria (registro manual do que atendeu no celular dele) e lê as
+    // dos próprios pedidos; quem atende cria e resolve.
+    match /demandas/{id} {
+      allow read: if atende() || (ehVendedor() && resource.data.vendedor == meuVendedor());
+      allow create: if (atende() || ehVendedor())
+        && request.resource.data.abertaPorUid == request.auth.uid;
+      allow update: if atende();
+      allow delete: if false;
+    }
+
     // Auditoria: log APPEND-ONLY de quem moveu cada item no quadro.
     // Escreve quem pode mover (staff, operador, expedição) — o registro vai no
     // mesmo writeBatch da mudança de etapa. Lê SÓ o dono. Ninguém edita nem

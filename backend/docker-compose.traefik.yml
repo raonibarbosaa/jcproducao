@@ -1,0 +1,26 @@
+# JC Sacolas · sobreposição para a VPS que já tem Traefik nas portas 80/443
+# (padrão copiado da Agência 100K, que roda na mesma máquina).
+#
+# O Portainer valida cada arquivo da stack SOZINHO antes de juntar: por isso o
+# serviço repete `image` e a rede `internal` — sem isso ele recusa com
+# "service backend has neither an image nor a build context".
+services:
+  backend:
+    image: jcproducao-backend
+    networks: [internal, traefik-public]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik-public
+      traefik.http.routers.jcproducao-api.rule: Host(`${API_DOMAIN:-api.jcproducao.totalicontabilidade.com.br}`)
+      traefik.http.routers.jcproducao-api.entrypoints: websecure
+      traefik.http.routers.jcproducao-api.tls.certresolver: letsencrypt
+      traefik.http.routers.jcproducao-api.middlewares: jcproducao-hsts
+      traefik.http.services.jcproducao-api.loadbalancer.server.port: "3000"
+      traefik.http.middlewares.jcproducao-hsts.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.jcproducao-hsts.headers.stsIncludeSubdomains: "true"
+
+networks:
+  internal:
+  # criada pelo Traefik desta VPS; não é gerenciada por este compose
+  traefik-public:
+    external: true

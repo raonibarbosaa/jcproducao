@@ -25,6 +25,17 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > cor nunca mistura; baixa no quadro por produto; ficha impressa com um bloco
 > por produto) — ver [`ORDEM_FABRICACAO.md`](ORDEM_FABRICACAO.md).
 
+> **WhatsApp / central de atendimento** (conversas ligadas a cliente e pedido,
+> DEMANDAS com motivo, cruzamentos de atrito por cliente/vendedor/rota/setor):
+> desenho aberto em 27/09/2026 em [`WHATSAPP.md`](WHATSAPP.md). **Nada
+> **Fase 0 (backend) ESCRITA em 27/09/2026, falta publicar** — pasta
+> `backend/` (Node + Evolution API v2.3.7 não oficial, por QR code; stack
+> `jcproducao` no Portainer da VPS `totali`, atrás do Traefik; Admin SDK, sem
+> Blaze); helpers na seção WHATSAPP de `utils.js`; rules já no arquivo (publicar
+> antes do build da Fase 1). Site segue no Pages. Passo a passo em
+> `backend/README.md`. ⚠️ Deploy do backend é pelo Portainer, nunca
+> `docker compose up` na VPS.
+
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde
 > 04/09/2026 — aba `financeiro`, coleções `cobrancas` e `movimentos`, só dono e

@@ -3874,3 +3874,226 @@ export function distribuiBaixaOF(linhas, qtd) {
   }
   return out
 }
+
+// ============================================================
+// WHATSAPP — central de conversas (ver WHATSAPP.md)
+// Helpers PUROS, usados pelo navegador E pelo backend da VPS (backend/ importa
+// este arquivo): o que é "um número de pedido" ou "o mesmo telefone" tem que
+// ser a mesma resposta nos dois lados, senão a conversa liga ao cliente no
+// servidor e não acha no navegador.
+// ============================================================
+
+export const somenteDigitos = (v) => String(v || '').replace(/\D/g, '')
+
+// Forma canônica do telefone: só dígitos, com DDI 55 quando é brasileiro sem
+// DDI, e COM o nono dígito. ⚠️ O WhatsApp devolve linhas antigas sem o nono
+// dígito (5579 8888-0000 em vez de 5579 9 8888-0000) — sem normalizar, o mesmo
+// cliente vira dois contatos.
+export function chaveTelefone(v) {
+  let d = somenteDigitos(v)
+  if (!d) return ''
+  if ((d.length === 10 || d.length === 11) && !d.startsWith('55')) d = '55' + d
+  if (d.startsWith('55') && d.length === 12) {
+    const ddd = d.slice(2, 4)
+    const resto = d.slice(4)
+    if (/^[6-9]/.test(resto)) d = `55${ddd}9${resto}`
+  }
+  return d
+}
+
+// Do JID do WhatsApp (5579999990000@s.whatsapp.net) para a chave. Grupo,
+// status e @lid não têm telefone — devolve null e quem chama ignora.
+export function telefoneDoJid(jid) {
+  if (!jid) return null
+  const j = String(jid)
+  if (j.endsWith('@g.us') || j === 'status@broadcast' || j.endsWith('@broadcast') || j.endsWith('@lid')) return null
+  const d = somenteDigitos(j.split('@')[0].split(':')[0])
+  return d.length >= 8 ? chaveTelefone(d) : null
+}
+
+export function fmtTelefone(v) {
+  const d = chaveTelefone(v)
+  if (!d) return ''
+  if (d.startsWith('55') && d.length === 13) return `+55 (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`
+  if (d.startsWith('55') && d.length === 12) return `+55 (${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`
+  return `+${d}`
+}
+
+export const TIPOS_CONTATO = ['cliente', 'vendedor', 'motorista', 'fornecedor', 'outro']
+
+// Quem é este número, pelos cadastros (`config/cadastros`): clientes[].telefones,
+// vendedores[].telefone, motoristas[].telefone. Devolve null quando ninguém tem
+// o número — a conversa aparece como "contato não identificado — vincular".
+// Ordem: vendedor e motorista ANTES do cliente — o vendedor às vezes está
+// cadastrado também como telefone de um cliente (ele que passou o número), e
+// nesse caso quem fala é o vendedor.
+export function resolveContato(telefone, cad) {
+  const t = chaveTelefone(telefone)
+  if (!t) return null
+  const igual = (x) => chaveTelefone(x) === t
+  const v = (cad?.vendedores || []).find((x) => igual(x?.telefone))
+  if (v) return { tipo: 'vendedor', vendedorNome: v.nome || '' }
+  const m = (cad?.motoristas || []).find((x) => igual(x?.telefone))
+  if (m) return { tipo: 'motorista', motoristaNome: m.nome || '' }
+  const c = (cad?.clientes || []).find((x) => (x?.telefones || []).some(igual) || igual(x?.telefone))
+  if (c) return { tipo: 'cliente', clienteRazao: c.razao || '', clienteNome: c.nome || c.razao || '' }
+  return null
+}
+
+// Números de pedido citados no texto ("o 5458", "#5458", "pedido 5.458").
+// 4 ou 5 dígitos abaixo de LIMITE_SERIE_CURTA (a numeração da casa); com a
+// lista dos pedidos conhecidos, devolve só os que existem — "2026" e "1500"
+// aparecem em qualquer frase e não são pedido.
+export function numerosDePedidoNoTexto(texto, conhecidos = null) {
+  const s = String(texto || '').replace(/(\d)\.(\d{3})\b/g, '$1$2')
+  const set = conhecidos ? new Set([...conhecidos].map(String)) : null
+  const out = []
+  // sem zero à esquerda e sem dígito/hífen colado: "99999-0000" é telefone, não o pedido 0000
+  for (const m of s.matchAll(/(?<![\d-])#?([1-9]\d{3,4})(?![\d-])/g)) {
+    const n = m[1]
+    if (Number(n) >= LIMITE_SERIE_CURTA) continue
+    if (set && !set.has(n)) continue
+    if (!out.includes(n)) out.push(n)
+  }
+  return out
+}
+
+// ---------- eventos da Evolution API (canal não oficial, por QR code) ----------
+// Payload de `messages.upsert`: { event, instance, data: { key: { remoteJid,
+// fromMe, id }, pushName, message: {...}, messageTimestamp } }. As chaves de
+// `message` dizem o tipo. Tudo defensivo: o formato muda entre versões e um
+// campo que falta não pode derrubar o webhook.
+
+const TIPOS_MSG_WA = [
+  ['conversation', 'texto'], ['extendedTextMessage', 'texto'],
+  ['imageMessage', 'imagem'], ['videoMessage', 'video'], ['audioMessage', 'audio'],
+  ['documentMessage', 'documento'], ['documentWithCaptionMessage', 'documento'],
+  ['stickerMessage', 'figurinha'], ['locationMessage', 'localizacao'],
+  ['contactMessage', 'contato'], ['contactsArrayMessage', 'contato'],
+  ['reactionMessage', 'reacao'], ['ptvMessage', 'video'],
+]
+export const TIPOS_COM_MIDIA = ['imagem', 'video', 'audio', 'documento', 'figurinha']
+
+// desembrulha ephemeral/viewOnce/documentWithCaption, que envolvem a mensagem real
+function miolo(msg) {
+  let m = msg || {}
+  for (let i = 0; i < 4; i++) {
+    const w = m.ephemeralMessage || m.viewOnceMessage || m.viewOnceMessageV2 || m.documentWithCaptionMessage || m.editedMessage
+    if (!w?.message) break
+    m = w.message
+  }
+  return m
+}
+
+export function tipoDaMensagemWa(message) {
+  const m = miolo(message)
+  for (const [k, tipo] of TIPOS_MSG_WA) if (m[k] != null) return tipo
+  return 'outro'
+}
+
+export function textoDaMensagemWa(message) {
+  const m = miolo(message)
+  const t = m.conversation
+    || m.extendedTextMessage?.text
+    || m.imageMessage?.caption || m.videoMessage?.caption || m.documentMessage?.caption
+    || m.reactionMessage?.text
+    || (m.locationMessage ? `📍 ${m.locationMessage.name || ''} ${m.locationMessage.address || ''}`.trim() : '')
+    || (m.contactMessage ? `👤 ${m.contactMessage.displayName || 'contato'}` : '')
+    || ''
+  return String(t).trim()
+}
+
+export function midiaDaMensagemWa(message) {
+  const m = miolo(message)
+  const x = m.imageMessage || m.videoMessage || m.audioMessage || m.documentMessage || m.stickerMessage || m.ptvMessage
+  if (!x) return null
+  return { mime: x.mimetype || '', nomeArquivo: x.fileName || '', segundos: Number(x.seconds) || 0 }
+}
+
+function isoDoTimestampWa(ts) {
+  const n = typeof ts === 'object' && ts ? Number(ts.low ?? ts.seconds) : Number(ts)
+  if (!(n > 0)) return new Date().toISOString()
+  return new Date(n > 1e12 ? n : n * 1000).toISOString()
+}
+
+// Normaliza QUALQUER evento do webhook para uma forma pequena e estável.
+// evento ∈ mensagem | status | conexao | ignorado.
+export function normalizaEventoWa(payload) {
+  const ev = String(payload?.event || '').toLowerCase().replace(/_/g, '.')
+  const d = payload?.data || {}
+  const instancia = payload?.instance || ''
+  if (ev === 'connection.update') {
+    return { evento: 'conexao', instancia, estado: d.state || d.status || '', motivo: d.statusReason ?? null }
+  }
+  if (ev === 'messages.update') {
+    const lista = Array.isArray(d) ? d : [d]
+    return {
+      evento: 'status', instancia,
+      itens: lista.map((x) => ({ waId: x?.keyId || x?.key?.id || '', status: String(x?.status || '').toLowerCase() })).filter((x) => x.waId),
+    }
+  }
+  if (ev !== 'messages.upsert') return { evento: 'ignorado', motivo: `evento ${payload?.event || '?'}` }
+  const key = d.key || {}
+  const telefone = telefoneDoJid(key.remoteJid)
+  if (!telefone) return { evento: 'ignorado', motivo: 'grupo/status/lid' }
+  if (d.messageStubType || (!d.message && !d.messageType)) return { evento: 'ignorado', motivo: 'sem conteúdo' }
+  const tipo = tipoDaMensagemWa(d.message)
+  if (tipo === 'reacao') return { evento: 'ignorado', motivo: 'reação' }
+  const midia = midiaDaMensagemWa(d.message)
+  return {
+    evento: 'mensagem', instancia,
+    waId: key.id || '',
+    telefone,
+    de: key.fromMe ? 'nos' : 'cliente',
+    nome: key.fromMe ? '' : String(d.pushName || '').trim(),
+    tipo, texto: textoDaMensagemWa(d.message),
+    temMidia: TIPOS_COM_MIDIA.includes(tipo),
+    mime: midia?.mime || '', nomeArquivo: midia?.nomeArquivo || '', segundos: midia?.segundos || 0,
+    quando: isoDoTimestampWa(d.messageTimestamp),
+  }
+}
+
+// Documento em conversas/{tel}/mensagens/{waId}. `waId` é o id do doc de
+// propósito: o webhook pode repetir o mesmo evento, e repetir o id não duplica.
+export function docMensagemWa(ev, extra = {}) {
+  return {
+    de: ev.de, tipo: ev.tipo, texto: ev.texto || '',
+    porUid: '', porNome: ev.de === 'nos' ? (extra.porNome || '📱 celular') : (ev.nome || ''),
+    waId: ev.waId, statusWa: ev.de === 'nos' ? 'enviada' : 'recebida',
+    midiaPath: '', midiaMime: ev.mime || '', nomeArquivo: ev.nomeArquivo || '', segundos: ev.segundos || 0,
+    idVenda: '', idVendasSugeridos: extra.idVendasSugeridos || [], demandaId: '',
+    quando: ev.quando,
+    ...extra,
+  }
+}
+
+// Campos da conversa que mudam a cada mensagem. `naoLidas` é incrementado por
+// quem grava (FieldValue.increment no backend), por isso não sai daqui.
+export function resumoConversaWa(ev, contato) {
+  const prefixo = ev.tipo === 'texto' ? '' : `[${ev.tipo}] `
+  return {
+    telefone: ev.telefone,
+    contatoNome: contato?.clienteNome || contato?.vendedorNome || contato?.motoristaNome || ev.nome || '',
+    tipo: contato?.tipo || '',
+    clienteRazao: contato?.clienteRazao || '',
+    vendedorNome: contato?.vendedorNome || '',
+    motoristaNome: contato?.motoristaNome || '',
+    ultimaMsg: (prefixo + (ev.texto || '')).slice(0, 160),
+    ultimaEm: ev.quando,
+    ultimaDe: ev.de,
+  }
+}
+
+// Assinatura de quem escreve pelo sistema — padrão da Agência 100K:
+// `*Nome:*` + linha em branco + texto. No celular do cliente fica claro quem
+// falou, já que o número é um só para o escritório inteiro.
+export const assinaTextoWa = (nome, texto) => (nome ? `*${nome}:*\n\n${texto}` : texto)
+
+// O backend da VPS carimba `config/backend.vivoEm` a cada minuto. Passou de
+// `limiteMin` sem carimbo, a tela avisa — webhook que cai em silêncio é
+// mensagem de cliente que ninguém vê.
+export function backendVivo(vivoEm, agora = new Date(), limiteMin = 3) {
+  const t = vivoEm ? new Date(vivoEm).getTime() : 0
+  if (!(t > 0)) return false
+  return (agora.getTime() - t) <= limiteMin * 60 * 1000
+}

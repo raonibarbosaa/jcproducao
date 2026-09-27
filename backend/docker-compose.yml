@@ -1,0 +1,118 @@
+# JC Sacolas · backend na VPS "totali" (mesma máquina da Agência 100K).
+# Stack do Portainer a partir do repositório: NOME DA STACK = jcproducao (exatamente —
+# é o nome do projeto compose e o prefixo dos volumes).
+#   Compose path:      backend/docker-compose.yml
+#   Additional files:  backend/docker-compose.traefik.yml
+#   Variáveis:         as de backend/.env.example (o Portainer não cria .env: cada
+#                      variável entra explicitamente abaixo, via ${VAR:-})
+#
+# Três serviços, todos só na rede interna (nenhuma porta publicada):
+#   db        Postgres da Evolution API (sessão do WhatsApp)
+#   whatsapp  Evolution API v2.3.7 (a 2.4 passou a exigir licença) — o número por QR code
+#   backend   Node: recebe o webhook, grava no Firestore (Admin SDK), envia a fila `enviar`
+# O HTTPS vem do Traefik desta VPS, pelo arquivo de sobreposição docker-compose.traefik.yml.
+
+x-logs: &logs
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logs
+    networks: [internal]
+
+  whatsapp:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    environment:
+      SERVER_URL: http://whatsapp:8080
+      TZ: ${TZ:-America/Sao_Paulo}
+      LANGUAGE: pt-BR
+      LOG_LEVEL: ERROR,WARN,INFO
+      TELEMETRY_ENABLED: "false"
+      AUTHENTICATION_API_KEY: ${WA_API_KEY:?defina WA_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD:-}@db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: jcproducao
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      DATABASE_DELETE_MESSAGE: "true"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: JC Sacolas
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: "30"
+      DEL_INSTANCE: "false"
+    volumes:
+      - whatsapp_instances:/evolution/instances
+    security_opt: [no-new-privileges:true]
+    logging: *logs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  backend:
+    build:
+      # a RAIZ do repositório: o Dockerfile copia src/utils.js (helpers compartilhados)
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: jcproducao-backend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Sao_Paulo}
+      PORT: "3000"
+      API_DOMAIN: ${API_DOMAIN:-api.jcproducao.totalicontabilidade.com.br}
+      # Evolution API (rede interna)
+      WA_URL: http://whatsapp:8080
+      WA_API_KEY: ${WA_API_KEY:-}
+      WA_INSTANCIA: ${WA_INSTANCIA:-jc_principal}
+      # o webhook da Evolution chama o backend pela rede interna com este Bearer
+      WA_WEBHOOK_URL: http://backend:3000/wa/webhook
+      WA_WEBHOOK_TOKEN: ${WA_WEBHOOK_TOKEN:-}
+      # chave da página /wa/qr (parear o celular) — só o dono usa, uma vez
+      WA_ADMIN_CHAVE: ${WA_ADMIN_CHAVE:-}
+      # Firebase Admin: JSON da conta de serviço em base64 (Firebase › Configurações › Contas de serviço)
+      FIREBASE_SERVICE_ACCOUNT_B64: ${FIREBASE_SERVICE_ACCOUNT_B64:-}
+      # mídias recebidas (fotos, áudios, canhotos) ficam no volume; URL assinada com este segredo
+      MIDIA_DIR: /dados/midia
+      MIDIA_SEGREDO: ${MIDIA_SEGREDO:-}
+    volumes:
+      - midia:/dados/midia
+    security_opt: [no-new-privileges:true]
+    logging: *logs
+    depends_on:
+      - whatsapp
+    networks: [internal]
+
+volumes:
+  pgdata:
+  whatsapp_instances:
+  # ⚠️ BACKUP: /var/lib/docker/volumes/jcproducao_midia/_data — foto de canhoto
+  # perdida é comprovante de entrega perdido. Entrar na rotina de backup da VPS.
+  midia:
+
+networks:
+  internal:
