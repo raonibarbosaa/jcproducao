@@ -1337,6 +1337,20 @@ função que devolve MAPA**.
   para Node. **Não chegam ao bundle do navegador** (verificado: 0 ocorrências em
   `dist`). São ruído neste projeto.
 
+## DESEMPENHO — bundle em pedaços (29/09/2026)
+- **O gargalo é o APARELHO, não a hospedagem.** Migrar para VPS foi avaliado e
+  descartado: o Pages já é CDN e o Firestore é gerenciado; o que pesava era o JS
+  único de 1,35 MB (389 KB gzip) que o tablet baixava e interpretava inteiro.
+- **Cada aba é `React.lazy`** (`App.jsx`, com `Suspense`); React e Firebase em
+  chunks próprios (`vite.config.js`) que ficam no cache entre deploys; a `xlsx`
+  é `await import('xlsx')` na hora de ler a planilha. Abertura: ~188 KB gzip.
+- ⚠️ `manualChunks` tem que ser **função**: a forma de objeto derruba o build SSR
+  do `npm run test:tela` (lá React/Firebase são externos).
+- ⚠️ **NÃO filtrar a consulta de pedidos com `where('status','!=',null)`**
+  (tentado e revertido em 29/09/2026): não tira nada — entregue já sai de
+  `pedidos` e importado nasce com `status: ''` — e o Firestore exclui do `!=` o
+  doc SEM o campo, que sumiria de todas as telas em silêncio.
+
 ## Armadilhas recorrentes do código (LER ANTES DE EDITAR)
 - **Props não declaradas na assinatura** de subcomponentes (`CardTriagem`, `CardProd`,
   `ImpressaoProducao`) causam **tela preta** — o build do Vite não pega. Sempre declarar a
