@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { collection, doc, writeBatch, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
@@ -87,75 +87,80 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   const trava = !!salvando || semQuem
   const usou = () => posto?.renova?.()
 
-  // monta os cards: um por (pedido × painel), com os índices dos itens que estão ali
-  const porPainel = {}
-  for (const pa of paineis) porPainel[pa.id] = []
-  const vivos = idsDeOFsVivas(ordens)
-  const ordemPorId = Object.fromEntries((ordens || []).map((o) => [o.id, o]))
-  // cards de OF por painel: { painelId: { ordemId: [{ p, idx }] } }
-  const ofPorPainel = {}
-  const esperandoOF = new Set()   // itens de plástico fora do quadro, sem OF
-  let aguardandoAcab = 0
-  const semMaterial = new Set()   // itens na montagem que o cadastro de Itens não conhece
-  for (const p of pedidos) {
-    const grupos = {}
-    ;(p.itens || []).forEach((_, i) => {
-      const l = linhaDoItem(p, i)
-      if (!l) return                            // item sem linha ainda está na Triagem
-      const mat = materialDoItem(p.itens[i], itensCad)
-      if (!podeNoMaterial(meusMateriais, mat)) return
-      for (const pa of paineis) {
-        if (!itemPertenceAoPainel(pa, p, i, mat)) continue
-        // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
-        if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) {
-          aguardandoAcab++; continue
-        }
-        if (pa.tipo === 'montagem' && !mat) semMaterial.add(`${p.idVenda}|${i}`)
-        if (pa.tipo === 'linha') {
-          const modo = modoNaLinha(p, i, itensCad, producaoCfg, vivos)
-          if (modo === 'espera') { esperandoOF.add(`${p.idVenda}|${i}`); continue }
-          if (modo === 'of') {
-            const oid = ofDoItem(p, i, vivos)
-            ;((ofPorPainel[pa.id] ??= {})[oid] ??= []).push({ p, idx: i })
-            continue
+  // OTIMIZAÇÃO: envolve os cálculos pesados em useMemo para não rodar a cada render.
+  // Monta os cards e agrupa a fila — operação O(n²) que só precisa rodar quando
+  // os dados mudam, não a cada mudança de estado da tela (qtds, salvando, etc).
+  const { porPainel, ofPorPainel, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel } = useMemo(() => {
+    const porPainel = {}
+    for (const pa of paineis) porPainel[pa.id] = []
+    const vivos = idsDeOFsVivas(ordens)
+    const ordemPorId = Object.fromEntries((ordens || []).map((o) => [o.id, o]))
+    // cards de OF por painel: { painelId: { ordemId: [{ p, idx }] } }
+    const ofPorPainel = {}
+    const esperandoOF = new Set()   // itens de plástico fora do quadro, sem OF
+    let aguardandoAcab = 0
+    const semMaterial = new Set()   // itens na montagem que o cadastro de Itens não conhece
+    for (const p of pedidos) {
+      const grupos = {}
+      ;(p.itens || []).forEach((_, i) => {
+        const l = linhaDoItem(p, i)
+        if (!l) return                            // item sem linha ainda está na Triagem
+        const mat = materialDoItem(p.itens[i], itensCad)
+        if (!podeNoMaterial(meusMateriais, mat)) return
+        for (const pa of paineis) {
+          if (!itemPertenceAoPainel(pa, p, i, mat)) continue
+          // item de gráfica sem laminação não entra — o designer precisa fechar na Triagem
+          if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) {
+            aguardandoAcab++; continue
           }
+          if (pa.tipo === 'montagem' && !mat) semMaterial.add(`${p.idVenda}|${i}`)
+          if (pa.tipo === 'linha') {
+            const modo = modoNaLinha(p, i, itensCad, producaoCfg, vivos)
+            if (modo === 'espera') { esperandoOF.add(`${p.idVenda}|${i}`); continue }
+            if (modo === 'of') {
+              const oid = ofDoItem(p, i, vivos)
+              ;((ofPorPainel[pa.id] ??= {})[oid] ??= []).push({ p, idx: i })
+              continue
+            }
+          }
+          ;(grupos[pa.id] ??= []).push(i)
         }
-        ;(grupos[pa.id] ??= []).push(i)
+      })
+      for (const [id, idxs] of Object.entries(grupos)) porPainel[id].push({ p, idxs })
+    }
+    // AGRUPA A FILA: Data de entrega → Vendedor → Rota (na ordem do cadastro do
+    // vendedor). A produção fecha uma rota inteira antes de ir para a próxima, e a
+    // data vem primeiro para o que sai sexta não ficar atrás do que sai daqui a
+    // três semanas. O contador da faixa conta a rota INTEIRA neste setor — inclusive
+    // o que ainda não chegou aqui —, que é o que denuncia rota incompleta antes da data.
+    const chaveGrupo = (p) => `${p.previsao || '9999'}|${p.vendedor || '—'}|${p.rota || 'SEM ROTA'}`
+    const gruposPorPainel = {}
+    for (const pa of paineis) {
+      const mapa = {}
+      for (const card of porPainel[pa.id]) {
+        const k = chaveGrupo(card.p)
+        ;(mapa[k] ??= {
+          chave: k,
+          previsao: card.p.previsao || '',
+          vendedor: card.p.vendedor || '—',
+          rota: card.p.rota || 'SEM ROTA',
+          cards: [],
+        }).cards.push(card)
       }
-    })
-    for (const [id, idxs] of Object.entries(grupos)) porPainel[id].push({ p, idxs })
-  }
-  // AGRUPA A FILA: Data de entrega → Vendedor → Rota (na ordem do cadastro do
-  // vendedor). A produção fecha uma rota inteira antes de ir para a próxima, e a
-  // data vem primeiro para o que sai sexta não ficar atrás do que sai daqui a
-  // três semanas. O contador da faixa conta a rota INTEIRA neste setor — inclusive
-  // o que ainda não chegou aqui —, que é o que denuncia rota incompleta antes da data.
-  const chaveGrupo = (p) => `${p.previsao || '9999'}|${p.vendedor || '—'}|${p.rota || 'SEM ROTA'}`
-  const gruposPorPainel = {}
-  for (const pa of paineis) {
-    const mapa = {}
-    for (const card of porPainel[pa.id]) {
-      const k = chaveGrupo(card.p)
-      ;(mapa[k] ??= {
-        chave: k,
-        previsao: card.p.previsao || '',
-        vendedor: card.p.vendedor || '—',
-        rota: card.p.rota || 'SEM ROTA',
-        cards: [],
-      }).cards.push(card)
+      const lista = Object.values(mapa)
+      for (const g of lista) {
+        const daRota = pedidos.filter((p) => chaveGrupo(p) === g.chave)
+        g.progresso = progressoNoPainel(pa, daRota, itensCad, meusMateriais)
+      }
+      lista.sort((a, b) =>
+        (a.previsao || '9999').localeCompare(b.previsao || '9999')
+        || a.vendedor.localeCompare(b.vendedor)
+        || (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
+        || a.rota.localeCompare(b.rota))
+      gruposPorPainel[pa.id] = lista
     }
-    const lista = Object.values(mapa)
-    for (const g of lista) {
-      const daRota = pedidos.filter((p) => chaveGrupo(p) === g.chave)
-      g.progresso = progressoNoPainel(pa, daRota, itensCad, meusMateriais)
-    }
-    lista.sort((a, b) =>
-      (a.previsao || '9999').localeCompare(b.previsao || '9999')
-      || a.vendedor.localeCompare(b.vendedor)
-      || (ordemRota(a.vendedor, a.rota, cadastros) - ordemRota(b.vendedor, b.rota, cadastros))
-      || a.rota.localeCompare(b.rota))
-    gruposPorPainel[pa.id] = lista
-  }
+    return { porPainel, ofPorPainel, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel }
+  }, [pedidos, paineis, ordens, itensCad, meusMateriais, producaoCfg, cadastros])
 
   // Move QUANTIDADE dos itens escolhidos para outra etapa.
   // movimentos = [{ idx, de, para, qtd }] — com produção parcial o item pode
