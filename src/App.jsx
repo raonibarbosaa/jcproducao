@@ -56,18 +56,12 @@ export default function App() {
 
   // assina pedidos em tempo real. Vendedor só enxerga os PRÓPRIOS pedidos
   // (consulta filtrada — as regras do Firestore impõem o mesmo no servidor).
-  // Operadores/staff que não são vendedores carregam só pedidos em produção
-  // (status != null), não os 367 históricos — melhora MUITO a performance.
   useEffect(() => {
     if (!user || !perfil) return
     if (perfil === 'vendedor' && !vendedorNome) { setPedidos([]); return }
-    let ref
-    if (perfil === 'vendedor') {
-      ref = query(collection(db, 'pedidos'), where('vendedor', '==', vendedorNome))
-    } else {
-      // operador/staff: só pedidos em produção (não histórico inteiro)
-      ref = query(collection(db, 'pedidos'), where('status', '!=', null))
-    }
+    const ref = perfil === 'vendedor'
+      ? query(collection(db, 'pedidos'), where('vendedor', '==', vendedorNome))
+      : collection(db, 'pedidos')
     const unsub = onSnapshot(ref, (snap) => {
       // as correções de erro são aplicadas AQUI, num ponto só: daí para baixo
       // toda tela, romaneio e conta de volume já enxerga a quantidade certa
