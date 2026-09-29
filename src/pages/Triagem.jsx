@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
 import { doc, setDoc, updateDoc, deleteDoc, writeBatch, collection, getDocs, query, where, documentId } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -42,6 +41,8 @@ export default function Triagem({ pedidos }) {
     if (!file) return
     setImportando(true); setMsg('Lendo planilha…')
     try {
+      // a xlsx (a maior biblioteca do app) só é baixada quando alguém importa
+      const XLSX = await import('xlsx')
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array', cellDates: true })
       const ws = wb.Sheets[wb.SheetNames[0]]

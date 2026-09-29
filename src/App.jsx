@@ -1,29 +1,32 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { useAuth } from './contexts/AuthContext.jsx'
 import { useCadastros } from './contexts/CadastrosContext.jsx'
 import Layout from './components/Layout.jsx'
 import Login from './pages/Login.jsx'
-import Triagem from './pages/Triagem.jsx'
-import Producao from './pages/Producao.jsx'
-import Rota from './pages/Rota.jsx'
-import Entregues from './pages/Entregues.jsx'
-import Cadastros from './pages/Cadastros.jsx'
-import Relatorios from './pages/Relatorios.jsx'
-import Usuarios from './pages/Usuarios.jsx'
-import MeusPedidos from './pages/MeusPedidos.jsx'
-import Ciencia from './pages/Ciencia.jsx'
-import Auditoria from './pages/Auditoria.jsx'
-import Conciliacao from './pages/Conciliacao.jsx'
-import Erros from './pages/Erros.jsx'
-import Carga from './pages/Carga.jsx'
-import Localizar from './pages/Localizar.jsx'
-import Financeiro from './pages/Financeiro.jsx'
-import OrdensFabricacao from './pages/OrdensFabricacao.jsx'
 import AssistenteVoz from './components/AssistenteVoz.jsx'
 import { situacaoPrazo, veAssistenteVoz, abasDoUsuario, aplicaCorrecoes, rotaDe, doDoc } from './utils.js'
+
+// Cada aba vira um pedaço próprio do bundle: o tablet do posto abre só a fila
+// e não precisa baixar/interpretar Financeiro, Conciliação (com a xlsx) etc.
+const Triagem = lazy(() => import('./pages/Triagem.jsx'))
+const Producao = lazy(() => import('./pages/Producao.jsx'))
+const Rota = lazy(() => import('./pages/Rota.jsx'))
+const Entregues = lazy(() => import('./pages/Entregues.jsx'))
+const Cadastros = lazy(() => import('./pages/Cadastros.jsx'))
+const Relatorios = lazy(() => import('./pages/Relatorios.jsx'))
+const Usuarios = lazy(() => import('./pages/Usuarios.jsx'))
+const MeusPedidos = lazy(() => import('./pages/MeusPedidos.jsx'))
+const Ciencia = lazy(() => import('./pages/Ciencia.jsx'))
+const Auditoria = lazy(() => import('./pages/Auditoria.jsx'))
+const Conciliacao = lazy(() => import('./pages/Conciliacao.jsx'))
+const Erros = lazy(() => import('./pages/Erros.jsx'))
+const Carga = lazy(() => import('./pages/Carga.jsx'))
+const Localizar = lazy(() => import('./pages/Localizar.jsx'))
+const Financeiro = lazy(() => import('./pages/Financeiro.jsx'))
+const OrdensFabricacao = lazy(() => import('./pages/OrdensFabricacao.jsx'))
 
 // abas permitidas por perfil
 const ACESSO = {
@@ -141,6 +144,7 @@ export default function App() {
   return (
     <>
     <Layout abas={abas} contadores={contadores}>
+      <Suspense fallback={<div className="loading">Carregando…</div>}>
       <Routes>
         <Route path="/" element={<Navigate to={`/${primeira}`} replace />} />
         {abas.includes('triagem') && <Route path="/triagem" element={<Triagem pedidos={pedidos} />} />}
@@ -161,6 +165,7 @@ export default function App() {
         {abas.includes('conciliacao') && <Route path="/conciliacao" element={<Conciliacao pedidos={pedidos} />} />}
         <Route path="*" element={<Navigate to={`/${primeira}`} replace />} />
       </Routes>
+      </Suspense>
     </Layout>
     {veAssistenteVoz(perfil) && <AssistenteVoz pedidos={pedidos} />}
     </>

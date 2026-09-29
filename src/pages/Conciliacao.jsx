@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import * as XLSX from 'xlsx'
 import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
@@ -41,6 +40,7 @@ export default function Conciliacao({ pedidos }) {
     if (!file) return
     setMsg('Lendo planilha…'); setAnalise(null); setResultado(null); setBackupFeito(false)
     try {
+      const XLSX = await import('xlsx')   // baixada só quando alguém lê a planilha
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
       const entradas = []
       const abas = []
