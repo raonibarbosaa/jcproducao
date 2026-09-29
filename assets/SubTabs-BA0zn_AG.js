@@ -1,0 +1,1 @@
+import{j as a}from"./react-BE3N8IZe.js";function t({abas:e,ativa:b,onTrocar:i}){return a.jsx("div",{className:"subtabs no-print",children:e.map(s=>a.jsxs("button",{className:"subtab"+(s.id===b?" active":""),onClick:()=>i(s.id),children:[s.label,s.badge?a.jsx("span",{className:"subtab-badge",children:s.badge}):null]},s.id))})}export{t as S};
