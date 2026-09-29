@@ -90,7 +90,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   // OTIMIZAÇÃO: envolve os cálculos pesados em useMemo para não rodar a cada render.
   // Monta os cards e agrupa a fila — operação O(n²) que só precisa rodar quando
   // os dados mudam, não a cada mudança de estado da tela (qtds, salvando, etc).
-  const { porPainel, ofPorPainel, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel } = useMemo(() => {
+  const { porPainel, ofPorPainel, ordemPorId, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel } = useMemo(() => {
     const porPainel = {}
     for (const pa of paineis) porPainel[pa.id] = []
     const vivos = idsDeOFsVivas(ordens)
@@ -159,7 +159,9 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
         || a.rota.localeCompare(b.rota))
       gruposPorPainel[pa.id] = lista
     }
-    return { porPainel, ofPorPainel, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel }
+    // ordemPorId sai junto: os cards de OF lá embaixo leem dele (esquecê-lo
+    // aqui dava ReferenceError e tela preta no quadro inteiro)
+    return { porPainel, ofPorPainel, ordemPorId, esperandoOF, aguardandoAcab, semMaterial, gruposPorPainel }
   }, [pedidos, paineis, ordens, itensCad, meusMateriais, producaoCfg, cadastros])
 
   // Move QUANTIDADE dos itens escolhidos para outra etapa.
