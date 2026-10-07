@@ -4,7 +4,8 @@
 > abaixo. **Fases A e B FEITAS em 07/10/2026 e REVISADAS no mesmo dia** depois
 > que o dono viu a 1ª versão no ar (ver "Revisão de 07/10/2026"). ⚠️ A revisão
 > exige publicar `firestore.rules` (campo `baixaEscritorio` para a expedição)
-> ANTES do build. Fase C é a próxima. Fases A → D no fim.
+> ANTES do build (✅ publicadas em 07/10/2026). **Fase C FEITA em 07/10/2026.**
+> Fase D é a próxima. Fases A → D no fim.
 
 ## O problema real (visto na foto da planilha `CONTROLE DE ENTRGA 2026`)
 
@@ -228,8 +229,15 @@ misturava o histórico de entregas por mês. Não era isso. O que vale agora:
   card + PRONTO + SAIU/CANCELAR + tabela do mês + impressão/CSV. Aba `controle` no `ACESSO` (dono, designer, financeiro, expedicao) e em
   `abasDoUsuario` para operador de expedição/entrega (decisão 2).
   `test:tela` cobre o card com um pedido na linha e um já entregue.
-- **C — fechar o aviso "já foi entregue" no ato da baixa + os mesmos botões
-  no Localizar** (ENTREGUE já está na tela desde a B).
+- ✅ **C — FEITA 07/10/2026:** as ações saíram da página para
+  `src/components/AcoesControle.jsx` (`useAcoesControle` + o bloco de botões),
+  fonte única da aba Controle e do **Localizar** — quem acha o pedido lá lança,
+  marca retorno e entrega sem trocar de aba. O lançamento **fecha no mesmo
+  batch** o aviso "já foi entregue" do vendedor (`avisosEntregaAbertos` +
+  `fechaAvisoPeloLancamento`), e a confirmação diz quantos fecha. ⚠️ Só quando
+  quem lança é STAFF (`podeFecharAviso`): a rule de `problemas` só aceita update
+  de staff, e pôr o fechamento no batch da expedição derrubaria o lançamento
+  inteiro — o aviso dela fica aberto para o escritório fechar. Sem rule nova.
 - **D — relatório "baixas pelo escritório por setor × mês"** (Relatórios) e
   filtro de origem na Auditoria.
 

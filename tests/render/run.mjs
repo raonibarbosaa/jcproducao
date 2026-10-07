@@ -141,6 +141,8 @@ const ESPERA = {
   ceVoltou: ['NÃO ENTREGOU', 'aguardando sair de novo', 'Motorista…', 'Saiu de novo', 'ENTREGUE por PAULO'],
   ceEntregue: ['SPAÇO', 'Pedido já entregue', 'ENTREGUE · remessa 1', 'PAULO', 'Não há mais nada a marcar'],
   ceExpedicao: ['Não entregou (voltou)', 'entregue: financeiro ou dono'],
+  ceLocalizar: ['Localizar', 'Número do pedido, cliente ou produto'],   // a casca monta com o hook de ações dentro
+  ceAcoesSemPermissao: ['<vazio>'],
   ceTabela: ['#6215', '#6206', 'CREDIMOVEIS', 'BEBE DE MAE', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', 'MATEUS', 'PAULO', 'R$ 448,00', '2 pedido(s)'],
 }
 

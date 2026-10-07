@@ -48,9 +48,11 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > operador de expedição/entrega; render em `test:tela`) FEITAS e REVISADAS no
 > mesmo dia**: só entra na lista o que o escritório LANÇOU (nº + motorista =
 > finalizado e saiu, pedido inteiro); ENTREGUE só financeiro/dono e sai da lista.
-> ⚠️ A revisão pede `firestore.rules` publicadas ANTES do build
-> (`baixaEscritorio` no hasOnly da expedição) — login do Firebase expirado em
-> 07/10/2026. Fase C é a próxima.
+> ✅ Rules (`baixaEscritorio` no hasOnly da expedição) publicadas e site no ar
+> em 07/10/2026. **Fase C FEITA** (ações compartilhadas em
+> `components/AcoesControle.jsx`, também no Localizar; lançamento fecha o aviso
+> "já foi entregue" quando quem lança é staff). Falta a D (relatório de baixas do
+> escritório por setor).
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

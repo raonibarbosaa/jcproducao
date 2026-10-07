@@ -8,13 +8,14 @@ import {
   nomeCliente, fmtData, fmtDataHora, fmtQtd, fmtDuracao, fmtMoeda, fmtPeso,
   pesoDaLista, situacaoPrazo, previsaoDe, doDoc, indexaProblemas, problemasDoPedido,
   nomeCampoErro, ehErroEntrega, saiuParaEntrega,
-  quemFez,
+  quemFez, podeBaixarNoControle, podeEntregarNoControle, quemAssina, pegarIP, lancadoNoControle,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 import SeloCor from '../components/SeloCor.jsx'
 import Realce from '../components/Realce.jsx'
+import AcoesControle, { useAcoesControle } from '../components/AcoesControle.jsx'
 
 // A previsão é falada pelo NÚMERO ("a previsão 15"), e `rotuloPlano` devolve só
 // a data/rota — sozinho ele não identifica de qual viagem se está falando.
@@ -33,13 +34,22 @@ const nomePlano = (pl) => `#${pl?.numero ?? '?'} · ${rotuloPlano(pl)}`
 // Papel", "3 volumes prontos no galpão", "saiu na viagem #12 dia 20/08 com
 // JUNINHO". Quem lê isso está de pé no galpão procurando uma caixa.
 export default function Localizar({ pedidos, problemas }) {
-  const { clientes, vendedores: cadastros, itens: itensCad } = useCadastros()
-  const { perfil, nome } = useAuth()
+  const { clientes, vendedores: cadastros, itens: itensCad, motoristas } = useCadastros()
+  const { user, perfil, nome, setores } = useAuth()
   // Desfazer é do escritório: a expedição VÊ o motivo do bloqueio e sabe a quem
   // pedir, mas quem desfaz uma viagem já registrada é dono/designer — mesma
   // linha do "retornar carga", que sempre foi só do dono.
   const podeLiberar = perfil === 'dono' || perfil === 'designer'
   const veValor = perfil === 'dono' || perfil === 'financeiro'
+  // Fase C do Controle de entrega: quem acha o pedido aqui pode lançá-lo
+  // (finalizado + saiu) sem trocar de aba — os mesmos botões, a mesma conta
+  const podeLancar = podeBaixarNoControle(perfil, setores)
+  const podeEntregar = podeEntregarNoControle(perfil)
+  const motoristasAtivos = (motoristas || []).filter((m) => m.ativo !== false)
+  const [ip, setIp] = useState('')
+  useEffect(() => { pegarIP().then(setIp) }, [])
+  const quem = () => quemAssina({ user, nome, perfil, ip })
+  const acoes = useAcoesControle({ quem, nome, perfil, clientes, itensCad, podeLancar, podeEntregar })
 
   const [termo, setTermo] = useState('')
   const [entregues, setEntregues] = useState([])
@@ -214,7 +224,8 @@ export default function Localizar({ pedidos, problemas }) {
           aberto={!!abertos[r.idVenda] || res.itens.length === 1}
           onAlterna={() => alterna(r.idVenda)}
           problemas={problemasDoPedido(mapaProblemas, r.idVenda)}
-          onTirarPlano={tirarDoPlano} onLiberarCarga={liberarDaCarga} onCancelarSaida={cancelarSaida} />
+          onTirarPlano={tirarDoPlano} onLiberarCarga={liberarDaCarga} onCancelarSaida={cancelarSaida}
+          controle={{ acoes, motoristas: motoristasAtivos, podeLancar, podeEntregar }} />
       ))}
     </>
   )
@@ -223,7 +234,7 @@ export default function Localizar({ pedidos, problemas }) {
 // ---------- um pedido ----------
 function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor,
                      podeLiberar, salvando, aberto, onAlterna, problemas,
-                     onTirarPlano, onLiberarCarga, onCancelarSaida }) {
+                     onTirarPlano, onLiberarCarga, onCancelarSaida, controle }) {
   const p = r.p
   const ref = p || r.remessas[r.remessas.length - 1] || {}
   const sit = situacaoEntrega(p, { cargas, planos, remessas: r.remessas, comp })
@@ -281,6 +292,17 @@ function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor
       {/* ---- viagens e previsões ---- */}
       <Logistica p={p} sit={sit} podeLiberar={podeLiberar} salvando={salvando}
         onTirarPlano={onTirarPlano} onLiberarCarga={onLiberarCarga} onCancelarSaida={onCancelarSaida} />
+
+      {/* ---- Controle de entrega: lançar / voltou / entregue, daqui mesmo ---- */}
+      {p && lancadoNoControle(p) && (
+        <div className="loc-linha">
+          <span>🏢 Lançado no Controle de entrega {fmtDataHora(p.baixaEscritorio.em)} · {p.baixaEscritorio.por || '—'}</span>
+        </div>
+      )}
+      {p && controle && (
+        <AcoesControle p={p} motoristas={controle.motoristas} podeLancar={controle.podeLancar}
+          podeEntregar={controle.podeEntregar} acoes={controle.acoes} problemas={problemas} />
+      )}
 
       {/* ---- remessas já entregues ---- */}
       {r.remessas.map((e) => (

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, onSnapshot, updateDoc, setDoc, deleteDoc, deleteField, writeBatch } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
-  buscaGlobal, situacaoBaixa, lancarControle, lancadoNoControle, preparaRemessa, situacaoEntrega,
+  buscaGlobal, situacaoBaixa, lancadoNoControle, situacaoEntrega,
   comprometimentoDeCargas, linhasControleEntrega, totaisDoControle,
   podeBaixarNoControle, podeEntregarNoControle, quemAssina, pegarIP,
   NOME_SITUACAO_CONTROLE, SITUACAO_CONTROLE,
-  idxProntos, saiuParaEntrega, nomeCliente, ondeProcurar,
+  saiuParaEntrega, nomeCliente, ondeProcurar,
   fmtData, fmtDataHora, fmtMoeda, fmtQtd, doDoc, previsaoDe, situacaoPrazo,
   indexaProblemas, problemasDoPedido, ehErroEntrega, nomeCampoErro, quemFez,
   STATUS_CARGA, rotuloCarga, rotuloPlano,
@@ -15,6 +15,7 @@ import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 import Realce from '../components/Realce.jsx'
+import AcoesControle, { useAcoesControle } from '../components/AcoesControle.jsx'
 
 // CONTROLE DE ENTREGA — a planilha do escritório vira tela.
 //
@@ -39,7 +40,6 @@ export default function ControleEntrega({ pedidos, problemas }) {
   const [cargas, setCargas] = useState([])
   const [planos, setPlanos] = useState([])
   const [negado, setNegado] = useState({})
-  const [salvando, setSalvando] = useState('')
   const [situacao, setSituacao] = useState('')
   const [ip, setIp] = useState('')
   const inputRef = useRef(null)
@@ -71,81 +71,9 @@ export default function ControleEntrega({ pedidos, problemas }) {
   // de gravar, o foco volta ao campo e o número fica lá para conferir o resultado
   const foca = () => setTimeout(() => inputRef.current?.focus(), 30)
 
-  // ---------- ações ----------
-  async function lancar(p, motorista) {
-    if (!podeLancar || salvando) return
-    if (!motorista) { alert('Escolha o motorista: o lançamento diz que o pedido SAIU com alguém.'); return }
-    const l = lancarControle(p, quem(), motorista, itensCad)
-    if (!l) return
-    const lista = l.movidos.length
-      ? `\n\nO que ainda estava na fábrica passa a FINALIZADO:\n${l.movidos.map((m) =>
-          `• ${m.produto} — ${fmtQtd(m.qtd)}${m.semPesagem ? ` (${fmtQtd(m.semPesagem)} sem pesagem)` : ''}`).join('\n')}`
-      : '\n\nA fábrica já tinha dado baixa em tudo; fica só o lançamento e a saída.'
-    if (!confirm(`Lançar o pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)} como FINALIZADO e SAÍDO com ${motorista}?${lista}\n\nFica registrado que a baixa foi do escritório.`)) return
-    setSalvando(`lancar-${p.idVenda}`)
-    try {
-      // etapa + carimbo + saída + auditoria no MESMO batch: tudo ou nada
-      const batch = writeBatch(db)
-      batch.update(doc(db, 'pedidos', String(p.idVenda)), { ...(l.gravaEtapas ? { etapas: l.etapas } : {}), ...l.campos })
-      for (const r of l.registros) batch.set(doc(collection(db, 'auditoria')), r)
-      await batch.commit()
-    } catch (e) {
-      alert('Não foi possível lançar: ' + (e.code || e.message))
-    } finally { setSalvando(''); foca() }
-  }
-
-  // "NÃO ENTREGOU" da planilha: voltou no caminhão. Continua lançado (na
-  // lista), só a saída é apagada — e sai de novo com outro clique.
-  async function voltou(p) {
-    if (!podeLancar || salvando) return
-    if (!confirm(`O pedido #${p.idVenda} voltou sem ser entregue? Ele fica na lista como NÃO ENTREGOU, para sair de novo.`)) return
-    setSalvando(`voltou-${p.idVenda}`)
-    try {
-      await updateDoc(doc(db, 'pedidos', String(p.idVenda)), {
-        saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
-      })
-    } catch (e) {
-      alert('Não foi possível registrar o retorno: ' + (e.code || e.message))
-    } finally { setSalvando(''); foca() }
-  }
-
-  async function sairDeNovo(p, motorista) {
-    if (!podeLancar || salvando) return
-    if (!motorista) { alert('Escolha o motorista.'); return }
-    if (!confirm(`O pedido #${p.idVenda} saiu de novo com ${motorista}?`)) return
-    setSalvando(`saida-${p.idVenda}`)
-    try {
-      await updateDoc(doc(db, 'pedidos', String(p.idVenda)), {
-        saidaEm: new Date().toISOString(), saidaMotorista: motorista, saidaPor: nome || '',
-      })
-    } catch (e) {
-      alert('Não foi possível marcar a saída: ' + (e.code || e.message))
-    } finally { setSalvando(''); foca() }
-  }
-
-  // ENTREGUE: a mesma remessa que a Rota grava (`preparaRemessa`, fonte única).
-  // Financeiro e dono — é o que move para `entregues` e abre a cobrança.
-  async function entregar(p) {
-    if (!podeEntregar || salvando) return
-    const motorista = p.saidaMotorista || p.baixaEscritorio?.motorista || ''
-    const r = preparaRemessa(p, motorista, nome)
-    if (!r) { alert('Nada expedido neste pedido — lance antes.'); return }
-    if (!confirm(`Confirmar ENTREGA do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?\n\nEle sai desta lista e vai para Entregues.`)) return
-    setSalvando(`entrega-${p.idVenda}`)
-    try {
-      await setDoc(doc(db, 'entregues', r.docId), r.remessa)
-      if (r.acabou) {
-        await deleteDoc(doc(db, 'pedidos', String(p.idVenda)))
-      } else {
-        await updateDoc(doc(db, 'pedidos', String(p.idVenda)), {
-          etapas: r.etapas, remessas: r.n,
-          saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
-        })
-      }
-    } catch (e) {
-      alert('Não foi possível registrar a entrega: ' + (e.code || e.message))
-    } finally { setSalvando(''); foca() }
-  }
+  // as ações moram em `useAcoesControle` (fonte única com o Localizar)
+  const acoes = useAcoesControle({ quem, nome, perfil, clientes, itensCad, podeLancar, podeEntregar, depois: foca })
+  const salvando = acoes.salvando
 
   const unico = res.itens.length === 1 || (res.itens.length > 1 && res.itens[0].idVenda === res.termo)
   const alvo = unico ? res.itens[0] : null
@@ -185,9 +113,8 @@ export default function ControleEntrega({ pedidos, problemas }) {
         <CardControle r={alvo} comp={comp} cargas={cargas} planos={planos} clientes={clientes}
           itensCad={itensCad} termo={res.termo} veValor={veValor}
           podeLancar={podeLancar} podeEntregar={podeEntregar} salvando={salvando}
-          motoristas={motoristasAtivos}
-          problemas={problemasDoPedido(mapaProblemas, alvo.idVenda)}
-          onLancar={lancar} onVoltou={voltou} onSairDeNovo={sairDeNovo} onEntregar={entregar} />
+          motoristas={motoristasAtivos} acoes={acoes}
+          problemas={problemasDoPedido(mapaProblemas, alvo.idVenda)} />
       )}
 
       {!alvo && res.total > 0 && (
@@ -233,23 +160,18 @@ export default function ControleEntrega({ pedidos, problemas }) {
 
 // ---------- o card do pedido digitado ----------
 export function CardControle({ r, comp, cargas, planos, clientes, itensCad, termo, veValor,
-                               podeLancar, podeEntregar, salvando, motoristas, problemas,
-                               onLancar, onVoltou, onSairDeNovo, onEntregar }) {
+                               podeLancar, podeEntregar, salvando, motoristas, problemas, acoes }) {
   const p = r.p
   const ref = p || r.remessas[r.remessas.length - 1] || {}
   const sit = situacaoEntrega(p, { cargas, planos, remessas: r.remessas, comp })
   const itens = p ? situacaoBaixa(p, itensCad) : []
-  const [motorista, setMotorista] = useState('')
   const lancado = lancadoNoControle(p)
   const saiu = saiuParaEntrega(p)
   const emCarga = sit.cargasVivas.length > 0
-  const prontos = p ? idxProntos(p) : []
   const naFabrica = itens.some((s) => !s.concluido)
   const prazo = p ? situacaoPrazo(p.previsao) : ''
   const avisoEntregue = (problemas || []).filter((x) => x.status === 'aberto' && ehErroEntrega(x.campo))
   const outrosAvisos = (problemas || []).filter((x) => x.status === 'aberto' && !ehErroEntrega(x.campo))
-  const ocupado = !!salvando
-  const mot = motorista || p?.saidaMotorista || p?.baixaEscritorio?.motorista || ''
 
   return (
     <div className={`card loc-card ctl-card ${prazo === 'atrasado' ? 'atrasado' : 'em_dia'}`}>
@@ -349,35 +271,8 @@ export function CardControle({ r, comp, cargas, planos, clientes, itensCad, term
             </div>
           )}
 
-          {(podeLancar || podeEntregar) && (
-            <div className="ctl-acoes no-print">
-              {podeLancar && (!lancado || !saiu) && motoristas.length > 0 && (
-                <select className="filtro-input" value={motorista} onChange={(e) => setMotorista(e.target.value)} disabled={ocupado}>
-                  <option value="">Motorista…</option>
-                  {motoristas.map((m) => <option key={m.id || m.nome} value={m.nome}>{m.nome}</option>)}
-                </select>
-              )}
-              {podeLancar && !lancado && (
-                <button className="btn primary" disabled={ocupado || !motorista} onClick={() => onLancar(p, motorista)}>
-                  ✔ Lançar: finalizado e saiu{motorista ? ` com ${motorista}` : ''}
-                </button>
-              )}
-              {podeLancar && lancado && !saiu && (
-                <button className="btn primary" disabled={ocupado || !motorista} onClick={() => onSairDeNovo(p, motorista)}>
-                  🚚 Saiu de novo{motorista ? ` com ${motorista}` : ''}
-                </button>
-              )}
-              {podeLancar && lancado && saiu && (
-                <button className="btn" disabled={ocupado} onClick={() => onVoltou(p)}>↩ Não entregou (voltou)</button>
-              )}
-              {podeEntregar && lancado && prontos.length > 0 && (
-                <button className="btn ok" disabled={ocupado} onClick={() => onEntregar(p)}>
-                  📦 ENTREGUE{mot ? ` por ${mot}` : ''}
-                </button>
-              )}
-              {!podeEntregar && lancado && <small className="ctl-nota">entregue: financeiro ou dono</small>}
-            </div>
-          )}
+          <AcoesControle p={p} motoristas={motoristas} podeLancar={podeLancar} podeEntregar={podeEntregar}
+            acoes={acoes || { salvando }} problemas={problemas} />
         </>
       )}
     </div>

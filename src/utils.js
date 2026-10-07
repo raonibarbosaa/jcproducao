@@ -4437,3 +4437,20 @@ export function totaisDoControle(linhas) {
   }
   return t
 }
+
+// O aviso "já foi entregue" do vendedor é respondido pelo LANÇAMENTO: quando o
+// escritório lança o pedido, o aviso aberto fecha no mesmo batch (Fase C).
+// Devolve os campos do `updateDoc` em `problemas/{id}`. ⚠️ A rule de
+// `problemas` só aceita update de STAFF — a expedição lança, mas o aviso dela
+// fica aberto (fechar no mesmo batch derrubaria o lançamento inteiro).
+export const avisosEntregaAbertos = (lista) =>
+  (lista || []).filter((x) => x?.status === 'aberto' && ehErroEntrega(x.campo))
+export function fechaAvisoPeloLancamento(motorista, quem, agora) {
+  return {
+    status: 'resolvido',
+    resolucao: `Lançado no Controle de entrega: finalizado e saiu${motorista ? ` com ${motorista}` : ''}`,
+    resolvidoPor: quem?.executorNome || quem?.porNome || '',
+    resolvidoEm: agora || new Date().toISOString(),
+  }
+}
+export const podeFecharAviso = (perfil) => ['dono', 'designer', 'financeiro'].includes(perfil)

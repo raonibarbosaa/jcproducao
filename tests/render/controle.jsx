@@ -1,5 +1,7 @@
 import { renderToString } from 'react-dom/server'
 import ControleEntrega, { CardControle, TabelaControle } from '../../src/pages/ControleEntrega.jsx'
+import Localizar from '../../src/pages/Localizar.jsx'
+import AcoesControle from '../../src/components/AcoesControle.jsx'
 import { carimbaKeys, keyDoItem, linhasControleEntrega, totaisDoControle, comprometimentoDeCargas } from '../../src/utils.js'
 
 const CAD = [{ produto: 'SACOLA PAPEL P02', tipo: 'papel', unidade: 'un' }, { produto: 'SACOLA PLASTICA 30X40', tipo: 'plastico', unidade: 'kg' }]
@@ -30,7 +32,7 @@ const comp = comprometimentoDeCargas([])
 const card = (r, props = {}) => renderToString(
   <CardControle r={r} comp={comp} cargas={[]} planos={[]} clientes={[]} itensCad={CAD} termo={r.idVenda}
     veValor podeLancar podeEntregar salvando="" motoristas={MOT} problemas={[]}
-    onLancar={nada} onVoltou={nada} onSairDeNovo={nada} onEntregar={nada} {...props} />)
+    acoes={{ salvando: '', lancar: nada, voltou: nada, sairDeNovo: nada, entregar: nada }} {...props} />)
 const linhas = linhasControleEntrega([naFabrica, prontoFabrica, lancado, voltou])
 
 export function roda() {
@@ -45,6 +47,9 @@ export function roda() {
       ceEntregue: card({ idVenda: '5900', p: null, remessas: [remessa] }),
       // expedição: lança e marca retorno, mas a ENTREGA não é dela
       ceExpedicao: card({ idVenda: '6215', p: lancado, remessas: [] }, { podeEntregar: false, veValor: false }),
+      // Localizar com os mesmos botões (Fase C); operador do silk não vê ação nenhuma
+      ceLocalizar: renderToString(<Localizar pedidos={[lancado]} problemas={[]} />),
+      ceAcoesSemPermissao: renderToString(<AcoesControle p={lancado} motoristas={MOT} podeLancar={false} podeEntregar={false} acoes={{ salvando: '' }} problemas={[]} />) || '<vazio>',
       ceTabela: renderToString(<TabelaControle linhas={linhas} totais={totaisDoControle(linhas)} veValor onAbrir={nada} />),
     }
   } finally { globalThis.__auth = undefined }

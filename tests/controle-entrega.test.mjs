@@ -6,6 +6,7 @@ import {
   baixaEscritorio, situacaoBaixa, podeBaixarNoControle, podeEntregarNoControle,
   preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle,
   origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA, lancarControle, lancadoNoControle,
+  avisosEntregaAbertos, fechaAvisoPeloLancamento, podeFecharAviso,
   qtdNaEtapa, volumesDoItem, idxProntos, itensParaCarga, temTrabalhoNaProducao,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
@@ -165,5 +166,18 @@ t('meses', mesesDoControle(linhas), ['2026-10'])
 const r8 = preparaRemessa(lancado, 'MATEUS', 'Anny', AGORA)
 ok('remessa inteira apaga o pedido (acabou)', r8.acabou)
 ok('e a remessa guarda o carimbo do lançamento (origem para relatórios)', !!r8.remessa.baixaEscritorio)
+
+// ---------- 9. Fase C: o lançamento responde ao aviso "já foi entregue" ----------
+const avisos = [
+  { id: 'a1', campo: 'entregue', status: 'aberto' },
+  { id: 'a2', campo: 'entregue', status: 'resolvido' },
+  { id: 'a3', campo: 'qtd', status: 'aberto' },
+]
+t('só o aviso de ENTREGA que está ABERTO fecha', avisosEntregaAbertos(avisos).map((x) => x.id), ['a1'])
+const f = fechaAvisoPeloLancamento('MATEUS', QUEM, AGORA)
+t('fecha como resolvido, dizendo o que aconteceu', [f.status, f.resolvidoPor, f.resolvidoEm], ['resolvido', 'Ana (escritório)', AGORA])
+ok('a resolução nomeia o motorista', f.resolucao.includes('MATEUS'))
+t('quem fecha o aviso é staff (a rule de problemas só aceita staff)',
+  ['dono', 'designer', 'financeiro', 'expedicao', 'operador'].map(podeFecharAviso), [true, true, true, false, false])
 
 export default resultado('controle-entrega')
