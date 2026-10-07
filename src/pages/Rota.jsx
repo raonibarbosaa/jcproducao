@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora,
@@ -32,27 +32,31 @@ export default function Rota({ pedidos }) {
     return () => { clearTimeout(t); window.removeEventListener('afterprint', limpa) }
   }, [soImprimir])
 
+  // ---------- derivações memoizadas (correção 2, 07/10/2026) ----------
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
-  const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
-  const categorizados = base.filter((p) => p.status)
-  const vendedores = vendedoresDe(categorizados)
+  const base = useMemo(() => pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) })), [pedidos, cadastros])
+  const categorizados = useMemo(() => base.filter((p) => p.status), [base])
+  const vendedores = useMemo(() => vendedoresDe(categorizados), [categorizados])
   // A Rota mostra só o que já foi EXPEDIDO — e por QUANTIDADE: o pedido entra
   // com a fatia pronta (40 de 100), e o resto segue em produção.
-  const lista = filtraPedidos(categorizados, filtros, clientes)
+  const lista = useMemo(() => filtraPedidos(categorizados, filtros, clientes)
     .map(fatiaProntos)
-    .filter((p) => p.itens.length > 0 || p._todos.length === 0)
+    .filter((p) => p.itens.length > 0 || p._todos.length === 0), [categorizados, filtros, clientes])
 
   // agrupa: Vendedor -> Rota -> Cliente -> pedidos
-  const arvore = {}
-  for (const p of lista) {
-    const vend = p.vendedor || '—'
-    const rota = p.rota || 'SEM ROTA'
-    arvore[vend] ??= {}
-    arvore[vend][rota] ??= {}
-    const nomeCli = nomeCliente(p.cliente, clientes)
-    arvore[vend][rota][nomeCli] ??= []
-    arvore[vend][rota][nomeCli].push(p)
-  }
+  const arvore = useMemo(() => {
+    const arvore = {}
+    for (const p of lista) {
+      const vend = p.vendedor || '—'
+      const rota = p.rota || 'SEM ROTA'
+      arvore[vend] ??= {}
+      arvore[vend][rota] ??= {}
+      const nomeCli = nomeCliente(p.cliente, clientes)
+      arvore[vend][rota][nomeCli] ??= []
+      arvore[vend][rota][nomeCli].push(p)
+    }
+    return arvore
+  }, [lista, clientes])
 
   // Grava uma REMESSA em `entregues` (entregues/{idVenda}-{n}) e move a
   // QUANTIDADE entregue de `expedido` para `entregue`. O pedido só é apagado

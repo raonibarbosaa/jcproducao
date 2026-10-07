@@ -129,6 +129,16 @@ service cloud.firestore {
       allow write: if ehStaff();
     }
 
+    // Clientes (de/para razão social → apelido), coleção própria desde
+    // 07/10/2026 — antes era o array `clientes` dentro de config/cadastros, e
+    // cada apelido salvo reenviava o documento inteiro a todo aparelho. Mesma
+    // regra do config: quem tem perfil lê (todo card resolve o nome), só staff
+    // grava (a captura automática do import é do designer/dono).
+    match /clientes/{id} {
+      allow read: if temPerfil();
+      allow write: if ehStaff();
+    }
+
     // Ciência: staff LÊ todas; quem CRIA é só o vendedor, e só em nome dele.
     // ⚠️ Dono e designer não dão ciência (decisão do dono em 17/08/2026) — a
     // ciência é a assinatura de quem vendeu, e assinada por outro não prova

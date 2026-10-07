@@ -1,17 +1,21 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { doc, onSnapshot } from 'firebase/firestore'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { collection, doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useAuth } from './AuthContext.jsx'
-import { definirCores } from '../utils.js'
+import { definirCores, doDoc, mesclaClientes } from '../utils.js'
 
 const CadCtx = createContext(null)
 export const useCadastros = () => useContext(CadCtx)
 
-// Documento único: config/cadastros = { vendedores: [...], clientes: [...], itens: [...] }
+// Documento único: config/cadastros = { vendedores: [...], itens: [...], motoristas, logistica, cores }
+// + a coleção `clientes` (um doc por cliente — correção 5, 07/10/2026). O array
+// `clientes` que ficou no documento é lido como LEGADO e mesclado, perdendo
+// para a coleção, até a migração (Cadastros › Clientes) apagar o campo.
 export function CadastrosProvider({ children }) {
   const { user } = useAuth()
   const [vendedores, setVendedores] = useState([])
-  const [clientes, setClientes] = useState([])
+  const [clientesCol, setClientesCol] = useState([])       // coleção `clientes`
+  const [clientesLegado, setClientesLegado] = useState([]) // ainda em config/cadastros
   const [itens, setItens] = useState([])
   const [motoristas, setMotoristas] = useState([])
   // parâmetros de logística (hoje só a capacidade do caminhão, em kg)
@@ -27,7 +31,7 @@ export function CadastrosProvider({ children }) {
     // cadastrado" no carregamento a frio.
     if (!user) {
       setVendedores([])
-      setClientes([])
+      setClientesLegado([])
       setItens([])
       setMotoristas([])
       setLogistica({})
@@ -39,7 +43,7 @@ export function CadastrosProvider({ children }) {
       if (snap.exists()) {
         const d = snap.data()
         setVendedores(Array.isArray(d.vendedores) ? d.vendedores : [])
-        setClientes(Array.isArray(d.clientes) ? d.clientes : [])
+        setClientesLegado(Array.isArray(d.clientes) ? d.clientes : [])
         setItens(Array.isArray(d.itens) ? d.itens : [])
         setMotoristas(Array.isArray(d.motoristas) ? d.motoristas : [])
         setLogistica(d.logistica && typeof d.logistica === 'object' ? d.logistica : {})
@@ -48,7 +52,7 @@ export function CadastrosProvider({ children }) {
         setCores(Array.isArray(d.cores) ? d.cores : [])
       } else {
         setVendedores([])
-        setClientes([])
+        setClientesLegado([])
         setItens([])
         setMotoristas([])
         setLogistica({})
@@ -63,8 +67,22 @@ export function CadastrosProvider({ children }) {
     return unsub
   }, [user?.uid])
 
+  // A coleção `clientes`. ⚠️ Se as rules ainda não foram publicadas a leitura
+  // morre com permission-denied: o erro é registrado e a lista fica vazia, e a
+  // tela continua funcionando com o array legado — publicar as rules ANTES do
+  // build continua sendo a regra da casa, isto é só a rede de segurança.
+  useEffect(() => {
+    if (!user) { setClientesCol([]); return undefined }
+    return onSnapshot(collection(db, 'clientes'),
+      (snap) => setClientesCol(snap.docs.map(doDoc)),
+      (e) => { console.error('Erro ao ler clientes:', e); setClientesCol([]) })
+  }, [user?.uid])
+
+  // UMA lista para todo mundo, sem repetir: a coleção ganha do legado
+  const clientes = useMemo(() => mesclaClientes(clientesCol, clientesLegado), [clientesCol, clientesLegado])
+
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, itens, motoristas, logistica, cores, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, clientesLegado, itens, motoristas, logistica, cores, carregando }}>
       {children}
     </CadCtx.Provider>
   )

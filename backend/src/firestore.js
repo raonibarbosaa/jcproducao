@@ -19,14 +19,28 @@ export const db = () => getFirestore(iniciaFirebase())
 export const auth = () => getAuth(iniciaFirebase())
 export { FieldValue }
 
-// Cache vivo de `config/cadastros` (clientes, vendedores, motoristas) para
-// resolver quem é o número sem uma leitura por mensagem.
+// Cache vivo de `config/cadastros` (vendedores, motoristas) + da coleção
+// `clientes` para resolver quem é o número sem uma leitura por mensagem.
+// Os clientes saíram do documento para a coleção em 07/10/2026 (correção 5 do
+// site); o array que sobrou no documento é legado e perde para a coleção —
+// a mesma mescla que `mesclaClientes` faz no site, sem importar o utils de lá
+// (o build do Docker só enxerga esta pasta).
 let cadastros = { clientes: [], vendedores: [], motoristas: [] }
-export const getCadastros = () => cadastros
+let clientesCol = []
+const normRazao = (s) => String(s || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ')
+export const getCadastros = () => {
+  const vistos = new Set(clientesCol.map((c) => normRazao(c.razao)))
+  const legado = (cadastros.clientes || []).filter((c) => c?.razao && !vistos.has(normRazao(c.razao)))
+  return { ...cadastros, clientes: [...clientesCol, ...legado] }
+}
 export function assinaCadastros() {
   db().doc('config/cadastros').onSnapshot(
-    (s) => { cadastros = s.data() || cadastros; console.log(`[cadastros] ${cadastros.clientes?.length || 0} clientes, ${cadastros.vendedores?.length || 0} vendedores, ${cadastros.motoristas?.length || 0} motoristas`) },
+    (s) => { cadastros = s.data() || cadastros; console.log(`[cadastros] ${cadastros.clientes?.length || 0} clientes (legado), ${cadastros.vendedores?.length || 0} vendedores, ${cadastros.motoristas?.length || 0} motoristas`) },
     (e) => console.error('[cadastros] onSnapshot', e.message),
+  )
+  db().collection('clientes').onSnapshot(
+    (s) => { clientesCol = s.docs.map((d) => ({ id: d.id, ...d.data() })); console.log(`[clientes] ${clientesCol.length} na coleção`) },
+    (e) => console.error('[clientes] onSnapshot', e.message),
   )
 }
 

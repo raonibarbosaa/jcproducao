@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
-import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
+import { useEffect, useRef, useState, useMemo } from 'react'
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { fmtData, fmtMoeda, ORIGEM_NM, nomeCliente, keyDoItem, valorDosItens, linhaDoItem,
   mapaEtapasComQtd, mapaEtapasMovendoVolumes, temVolumes, volumesNaEtapa,
-  arredondaQtd, casaBusca, doDoc } from '../utils.js'
+  arredondaQtd, casaBusca, PERIODOS_ENTREGUES, PERIODO_ENTREGUES_PADRAO } from '../utils.js'
+import { useEntregues } from '../hooks/useEntregues.js'
 import SeloLinha from '../components/SeloLinha.jsx'
 import Realce from '../components/Realce.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 
 export default function Entregues() {
-  const [itens, setItens] = useState([])
   const { clientes } = useCadastros()
   const { perfil, nome } = useAuth()
   const podeCancelar = perfil === 'dono' || perfil === 'designer'
@@ -20,20 +20,15 @@ export default function Entregues() {
   const [soPendentes, setSoPendentes] = useState(false)
   const [salvando, setSalvando] = useState('')
 
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'entregues'), (snap) => {
-      // ⚠️ `id` DEPOIS do spread, e não antes. O doc da remessa nasce de um
-      // `...pedido` que já carrega o campo `id` (o id do doc em `pedidos`), então
-      // com `{id: d.id, ...d.data()}` o campo gravado SOBRESCREVIA o id do
-      // documento: `p.id` virava "5001" quando o doc é "5001-1". Cancelar a
-      // entrega apagava `entregues/5001`, que não existe — o Firestore não
-      // reclama de apagar o que não há, então a quantidade voltava para o pedido
-      // e o card CONTINUAVA na tela. E duas remessas do mesmo pedido ficavam com
-      // a mesma `key` no React, que aí desenha card trocado.
-      setItens(snap.docs.map(doDoc))
-    })
-    return unsub
-  }, [])
+  // FATIA do histórico (correção 4, 07/10/2026). `entregues` só cresce, e esta
+  // tela a assinava inteira a cada abertura. Agora lê o PERÍODO escolhido mais
+  // as remessas do NÚMERO digitado — pedido antigo aparece quando se digita o
+  // número, mesmo fora do período; busca por texto procura só dentro dele.
+  // (A leitura usa `doDoc`: o `id` do DOCUMENTO ganha do campo `id` gravado
+  // dentro dele — ver "CANCELAR ENTREGA" no CLAUDE.md.)
+  const [periodo, setPeriodo] = useState(PERIODO_ENTREGUES_PADRAO)
+  const per = PERIODOS_ENTREGUES.find((x) => x.id === periodo) || PERIODOS_ENTREGUES[0]
+  const { entregues: itens, negado } = useEntregues({ periodoDias: per.dias, tudo: per.dias === 0, numero: busca.trim() })
 
   // motoristas que aparecem no histórico (inclui inativos/antigos)
   const motoristasNasEntregas = [...new Set(itens.map((p) => p.motorista).filter(Boolean))].sort()
@@ -155,8 +150,10 @@ export default function Entregues() {
 
   // número do pedido é dígito: casa por pedaço exato (5111 não pode trazer 5118).
   // O resto vai pela busca tolerante das outras telas (nome parecido, apelido).
+  // memoizado (correção 2, 07/10/2026): `entregues` é histórico e só cresce;
+  // a busca tolerante sobre a coleção inteira rodava a cada render
   const termo = busca.trim()
-  const lista = itens
+  const lista = useMemo(() => itens
     .filter((p) =>
       !termo ||
       String(p.idVenda).includes(termo) ||
@@ -168,7 +165,8 @@ export default function Entregues() {
       return p.motorista === motoristaFiltro
     })
     .filter((p) => !soPendentes || !p.pago)
-    .sort((a, b) => new Date(b.entregueEm) - new Date(a.entregueEm))
+    .sort((a, b) => new Date(b.entregueEm) - new Date(a.entregueEm)),
+  [itens, termo, clientes, motoristaFiltro, soPendentes])
 
   // Total: com entrega parcial o mesmo pedido aparece em várias remessas, então o
   // valor do pedido só pode ser contado UMA vez (enquanto não houver valor por item).
@@ -219,6 +217,10 @@ export default function Entregues() {
             Só pendentes de baixa
           </label>
         )}
+        <select className="btn" value={periodo} onChange={(e) => setPeriodo(e.target.value)}
+          title="Quanto do histórico carregar. O número de um pedido acha a entrega em qualquer data.">
+          {PERIODOS_ENTREGUES.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+        </select>
         {motoristasNasEntregas.length > 0 && (
           <select className="btn" style={{ minWidth: 170 }}
             value={motoristaFiltro} onChange={(e) => setMotoristaFiltro(e.target.value)}>
@@ -231,6 +233,11 @@ export default function Entregues() {
           value={busca} onChange={(e) => setBusca(e.target.value)} />
       </div>
 
+      {negado && (
+        <div className="qv-resumo" style={{ color: 'var(--danger, #c33)' }}>
+          ⚠ Sem permissão para ler as entregas. A tela continua, mas vazia.
+        </div>
+      )}
       {termo && (
         <div className="qv-resumo">
           {lista.length} de {itens.length} entrega(s) · busca "{termo}"
@@ -249,7 +256,7 @@ export default function Entregues() {
                 <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-faint)' }}>
                   Se o pedido ainda não foi entregue, ele está na Produção ou na Rota — não aqui.
                 </div></>
-            : 'Nenhuma entrega registrada ainda.'}
+            : (per.dias ? `Nenhuma entrega nos ${per.nome.toLowerCase()}. Mude o período para ver mais.` : 'Nenhuma entrega registrada ainda.')}
         </div>
       ) : (
         <div className="cards">

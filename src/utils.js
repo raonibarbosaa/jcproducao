@@ -199,18 +199,49 @@ export function parseVendedor(raw) {
   return { codigo: null, nomeRaw: s }
 }
 
+// ---------- ÍNDICE dos cadastros (07/10/2026) ----------
+// Os cadastros (vendedores, clientes, itens) são arrays vindos do Firestore, e
+// as telas procuram neles por PEDIDO e por ITEM a cada render: `achaCliente`
+// em todo filtro e romaneio, `achaItem` em cada `materialDoItem`. Percorrer
+// o array normalizando cada elemento a cada chamada custava pedidos × cadastro
+// por passagem — e o cadastro de clientes cresce em todo import.
+//
+// O índice é montado UMA vez por array e guardado pela IDENTIDADE dele
+// (WeakMap): o React/Firestore entregam um array novo quando o cadastro muda,
+// e aí o índice se refaz sozinho. A conferência de `length` é a rede de
+// segurança contra mutação em lugar (push no mesmo array) — editar um elemento
+// sem trocar o array continua invisível, então: cadastro muda = array novo.
+// Semântica preservada: PRIMEIRA ocorrência vence, como o `find` fazia.
+function indiceDe(cache, arr, monta) {
+  let ix = cache.get(arr)
+  if (!ix || ix.len !== arr.length) {
+    ix = { len: arr.length, ...monta(arr) }
+    cache.set(arr, ix)
+  }
+  return ix
+}
+const poe = (mapa, chave, valor) => { if (!mapa.has(chave)) mapa.set(chave, valor) }
+
 // ---------- localizar um vendedor nos cadastros ----------
 // cadastros = array de vendedores (do Firestore). Casa por código; se não,
 // tenta por nome normalizado. Devolve o objeto do vendedor ou null.
+const IDX_VENDEDORES = new WeakMap()
 export function achaVendedor(raw, cadastros) {
   if (!cadastros || !cadastros.length) return null
   const { codigo, nomeRaw } = parseVendedor(raw)
+  const ix = indiceDe(IDX_VENDEDORES, cadastros, (lista) => {
+    const porCodigo = new Map(), porNome = new Map()
+    for (const v of lista) {
+      if (v?.codigo) poe(porCodigo, normaliza(v.codigo), v)
+      poe(porNome, normaliza(v?.nome), v)
+    }
+    return { porCodigo, porNome }
+  })
   if (codigo) {
-    const porCod = cadastros.find((v) => v.codigo && normaliza(v.codigo) === normaliza(codigo))
+    const porCod = ix.porCodigo.get(normaliza(codigo))
     if (porCod) return porCod
   }
-  const nomeN = normaliza(nomeRaw)
-  return cadastros.find((v) => normaliza(v.nome) === nomeN) || null
+  return ix.porNome.get(normaliza(nomeRaw)) || null
 }
 
 // resolve o nome "oficial" do vendedor a partir do raw da planilha
@@ -226,11 +257,17 @@ export function nomeVendedor(raw, cadastros) {
 // ---------- DE/PARA de clientes (razão social -> nome de exibição) ----------
 // clientes = array [{ razao: 'EXEMPLO LIMITADA', nome: 'Loja Exemplo' }]
 // Casa pela razão social normalizada (ignora espaço extra, acento e caixa).
+const IDX_CLIENTES = new WeakMap()
 export function achaCliente(razaoSocial, clientes) {
   if (!clientes || !clientes.length) return null
   const alvo = normaliza(razaoSocial)
   if (!alvo) return null
-  return clientes.find((c) => normaliza(c.razao) === alvo) || null
+  const ix = indiceDe(IDX_CLIENTES, clientes, (lista) => {
+    const porRazao = new Map()
+    for (const c of lista) poe(porRazao, normaliza(c?.razao), c)
+    return { porRazao }
+  })
+  return ix.porRazao.get(alvo) || null
 }
 
 // nome a EXIBIR: apelido cadastrado, senão a própria razão social da planilha.
@@ -1655,11 +1692,17 @@ export const tipoNome = (id) => (TIPOS_ITEM.find((t) => t.id === id)?.nome || ''
 export const unidadeNome = (id) => (UNIDADES_ITEM.find((u) => u.id === id)?.nome || '')
 
 // Casa pelo nome do produto normalizado (ignora espaço extra, acento e caixa).
+const IDX_ITENS = new WeakMap()
 export function achaItem(produto, itens) {
   if (!itens || !itens.length) return null
   const alvo = normaliza(produto)
   if (!alvo) return null
-  return itens.find((it) => normaliza(it.produto) === alvo) || null
+  const ix = indiceDe(IDX_ITENS, itens, (lista) => {
+    const porProduto = new Map()
+    for (const it of lista) poe(porProduto, normaliza(it?.produto), it)
+    return { porProduto }
+  })
+  return ix.porProduto.get(alvo) || null
 }
 
 // info do produto (tipo + unidade) resolvida no render a partir do cadastro.
@@ -4517,3 +4560,97 @@ export const fmtPorMaterial = (porMaterial) =>
   Object.entries(porMaterial || {})
     .map(([m, q]) => `${fmtQtd(q)} ${unidadeDoMaterial(m) || ''} ${nomeDoMaterial(m) || 'sem material'}`.replace(/\s+/g, ' ').trim())
     .join(' · ')
+
+// ============================================================
+// ENTREGUES FATIADA (07/10/2026 — correção 4 da leitura de lentidão)
+// `entregues` é histórico e só cresce; cinco telas assinavam a coleção INTEIRA.
+// Agora cada tela pede só a fatia que mostra: um período (`entregueEm >=`) e/ou
+// as remessas de UM número. Helpers puros aqui; o hook está em
+// src/hooks/useEntregues.js.
+// ============================================================
+export const PERIODOS_ENTREGUES = [
+  { id: '30', nome: 'Últimos 30 dias', dias: 30 },
+  { id: '90', nome: 'Últimos 90 dias', dias: 90 },
+  { id: '365', nome: 'Último ano', dias: 365 },
+  { id: 'tudo', nome: 'Todo o histórico', dias: 0 },   // 0 = sem corte
+]
+export const PERIODO_ENTREGUES_PADRAO = '90'
+
+// ISO do corte de um período (N dias para trás). `entregueEm` é ISO string,
+// então a comparação lexicográfica do Firestore é a cronológica.
+export function corteDoPeriodo(dias, agora = new Date()) {
+  const n = Number(dias)
+  if (!(n > 0)) return ''
+  return new Date(agora.getTime() - n * MS_DIA).toISOString()
+}
+
+// Faixa de PREFIXO para achar as remessas de um número no servidor: o doc novo é
+// "5111-1" (e tem campo idVenda "5111"), o antigo é "5111" sem campo. Prefixo,
+// não substring: o Firestore não faz "contém"; quem digita o número digita do
+// começo. Só dígitos e pelo menos 2 — menos que isso varre a coleção inteira.
+export function faixaPrefixoNumero(numero) {
+  const s = String(numero ?? '').trim()
+  if (!/^\d{2,}$/.test(s)) return null
+  return [s, s + '']
+}
+
+// junta as fatias (período, por número…) sem repetir documento
+export function uneEntregues(...fatias) {
+  const m = new Map()
+  for (const arr of fatias) for (const e of arr || []) if (e?.id) m.set(e.id, e)
+  return [...m.values()]
+}
+
+// ============================================================
+// CLIENTES EM COLEÇÃO PRÓPRIA (07/10/2026 — correção 5 da leitura de lentidão)
+// O de/para de clientes vivia num ARRAY dentro de config/cadastros, junto com
+// vendedores, itens e motoristas: todo apelido salvo reenviava o documento
+// inteiro a todo aparelho conectado, a captura automática do import só o fazia
+// crescer, e o teto de 1 MiB por documento era uma parede à frente. Agora cada
+// cliente é um doc em `clientes/{idCliente(razao)}`; o array antigo continua
+// sendo LIDO (mesclado, perdendo para a coleção) até a migração pela tela de
+// Cadastros apagar o campo. Nenhuma tela precisa saber de onde veio.
+// ============================================================
+
+// id do doc = razão social normalizada (é a chave que `achaCliente` sempre
+// usou). `/` não pode em id do Firestore; tamanho cortado por segurança.
+export function idCliente(razao) {
+  const n = normaliza(razao).replace(/\//g, '_').slice(0, 400)
+  if (!n || n === '.' || n === '..' || /^__.*__$/.test(n)) return null
+  return n
+}
+
+// o que vai para o documento: só os campos do cliente (sem `id`/`_legado`)
+export function dadosCliente(c) {
+  const { id, _legado, ...resto } = c || {}
+  return { ...resto, razao: String(c?.razao || '').trim(), nome: String(c?.nome || '').trim() }
+}
+
+// coleção + array antigo, sem repetir: a COLEÇÃO ganha (pode ter apelido mais
+// novo); quem só existe no array sai marcado `_legado` — é o que a tela de
+// Cadastros usa para saber que ainda há o que migrar e para apagar no lugar
+// certo. Ordem: por nome de exibição (ou razão), para a lista ser legível.
+export function mesclaClientes(colecao, legado) {
+  const m = new Map()
+  for (const c of colecao || []) {
+    const k = idCliente(c?.razao)
+    if (k && !m.has(k)) m.set(k, c)
+  }
+  for (const c of legado || []) {
+    const k = idCliente(c?.razao)
+    if (k && !m.has(k)) m.set(k, { ...c, _legado: true })
+  }
+  return [...m.values()].sort((a, b) =>
+    normaliza(a.nome || a.razao).localeCompare(normaliza(b.nome || b.razao)))
+}
+
+// o que falta copiar do array antigo para a coleção (o que já está lá ganha)
+export function clientesParaMigrar(colecao, legado) {
+  const ja = new Set((colecao || []).map((c) => idCliente(c?.razao)).filter(Boolean))
+  const out = new Map()
+  for (const c of legado || []) {
+    const k = idCliente(c?.razao)
+    if (k && !ja.has(k) && !out.has(k)) out.set(k, dadosCliente(c))
+  }
+  return [...out.entries()].map(([id, dados]) => ({ id, dados }))
+}

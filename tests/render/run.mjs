@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx') } },
   },
   resolve: {
     alias: [
@@ -45,6 +45,8 @@ const bruto = {
   ...(await import(join(OUT, 'ordens.js'))).roda(),
   ...(await import(join(OUT, 'cores.js'))).roda(),
   ...(await import(join(OUT, 'controle.js'))).roda(),
+  ...(await import(join(OUT, 'paginas.js'))).roda(),
+  ...(await import(join(OUT, 'clientes.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -144,6 +146,18 @@ const ESPERA = {
   ceResumoEsc: ['Baixas do escritório por setor', '3 item(ns) de 2 pedido(s)', '1 sem pesagem', 'OUTUBRO 2026', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300 un Papel', '20 kg Plástico'],
   ceLocalizar: ['Localizar', 'Número do pedido, cliente ou produto'],   // a casca monta com o hook de ações dentro
   ceAcoesSemPermissao: ['<vazio>'],
+  // páginas inteiras (correção 2): a lista mostra o que FALTA (300 de 500), o
+  // quadro do operador só a fila dele, a Rota só o expedido
+  prLista: ['Lista de Produção', 'INGRID MODAS', 'SACOLA PAPEL P02', 'SACOLA PLASTICA 30X40', 'SERGIO', 'ROTA 01', '300', '1 pedidos'],
+  prQuadroOp: ['Produção · ', 'INGRID MODAS', 'SACOLA PLASTICA 30X40', 'Concluir → '],
+  prQuadroExp: ['Produção · ', 'item(ns) neste setor'],
+  rota: ['Lista de Rota', 'INGRID MODAS', 'SACOLA PAPEL P02', 'ROTA 01', '200'],
+  entregues: ['Entregues'],
+  carga: ['Controle de entregas', 'INGRID MODAS'],
+  // clientes em coleção: a faixa de migração só aparece com legado; a mescla
+  // lista os dois; "Migrar 1" porque a INGRID já está na coleção (ela ganha)
+  cliLegado: ['2 cliente(s)', '2 cliente(s) ainda no formato antigo', 'Migrar 1 cliente(s)', 'Ingrid', 'Velha', 'LOJA VELHA LTDA'],
+  cliLimpo: ['1 cliente(s)', 'Ingrid', '+ Novo cliente'],
   ceTabela: ['#6215', '#6206', '#6999', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '3 pedido(s)'],
 }
 
@@ -174,6 +188,10 @@ const PROIBE = {
   qOfCancelada: ['OF 0012', 'ANA MODAS', 'BIA CALCADOS'],   // nem card da OF nem avulso
   vDeslDesigner: ['Ligar exigência'],
   cTriagem: ['Dourado', 'Laranja'],   // fora do cadastro: não viram botão
+  prLista: ['BIA CALCADOS'],              // sem triagem: fora da lista de produção
+  rota: ['BIA CALCADOS'],                 // nada expedido: fora da rota
+  cliLimpo: ['formato antigo', 'Migrar'],  // sem legado, sem faixa
+  cliLegado: ['Ingrid Antiga'],            // a coleção ganha do array
 }
 
 let mal = 0

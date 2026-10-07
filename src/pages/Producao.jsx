@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { doc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
@@ -20,6 +20,10 @@ import SeloLinha from '../components/SeloLinha.jsx'
 import SeloCor from '../components/SeloCor.jsx'
 import PostoFaixa, { usePosto } from '../components/PostoFaixa.jsx'
 
+// `[]` ESTÁVEL para "todos os materiais": um literal novo a cada render era
+// dependência do useMemo do QuadroProducao e anulava o memo dele inteiro.
+const SEM_MATERIAIS = []
+
 export default function Producao({ pedidos, problemas, ordens = [], producaoCfg = {} }) {
   const { vendedores: cadastros, clientes, itens: itensCad } = useCadastros()
   const { perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
@@ -36,16 +40,22 @@ export default function Producao({ pedidos, problemas, ordens = [], producaoCfg 
   const [dataLote, setDataLote] = useState('')
   const [salvandoLote, setSalvandoLote] = useState(false)
 
+  // ---------- derivações MEMOIZADAS (07/10/2026, correção 2) ----------
+  // Tudo abaixo roda sobre TODOS os pedidos e rodava a cada render — a cada
+  // tecla no filtro e a cada segundo do relógio do posto (`usePosto` re-renderiza
+  // a página enquanto alguém está ativo no tablet). Cada bloco só refaz quando a
+  // entrada dele muda; `pedidos` já vem memoizado do App.
+
   // recalcula a previsão de entrega com o calendário ATUAL do Cadastro
-  const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
-  const categorizados = base.filter((p) => p.status)
-  const vendedores = vendedoresDe(categorizados)
+  const base = useMemo(() => pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) })), [pedidos, cadastros])
+  const categorizados = useMemo(() => base.filter((p) => p.status), [base])
+  const vendedores = useMemo(() => vendedoresDe(categorizados), [categorizados])
 
   // quadro por setor: TODO pedido categorizado entra (o item é que anda pela sua linha
   // — papel, plástico, alça torcida e etiqueta). Respeita os filtros do FiltrosBar;
   // o filtro de linha vai para o quadro, que esconde as colunas das outras linhas.
   // A trava da laminação é por item, dentro do próprio quadro.
-  const pedidosQuadro = filtraPedidos(categorizados, filtros, clientes)
+  const pedidosQuadro = useMemo(() => filtraPedidos(categorizados, filtros, clientes), [categorizados, filtros, clientes])
 
   // ---------- painéis do quadro (uma FILA POR SETOR) ----------
   // Cada aba é um posto de trabalho: SILK / GLICHE / GRÁFICA, as três montagens
@@ -53,95 +63,108 @@ export default function Producao({ pedidos, problemas, ordens = [], producaoCfg 
   // naquele posto — o item some da fila assim que avança. Dono e designer têm a
   // aba "Visão geral", que desenha todos os painéis lado a lado (o fluxo inteiro).
   const ehStaff = perfil === 'dono' || perfil === 'designer'
-  const meusPaineis = paineisVisiveis({ perfil, setores, materiais })
-  const meusMateriais = perfil === 'operador' ? (materiais || []) : []
-  const vivosOF = idsDeOFsVivas(ordens)
-  const conta = {}
-  for (const pa of meusPaineis) conta[pa.id] = 0
-  for (const p of pedidosQuadro) {
-    (p.itens || []).forEach((_, i) => {
-      const l = linhaDoItem(p, i)
-      if (!l) return
-      const mat = materialDoItem(p.itens[i], itensCad)
-      if (!podeNoMaterial(meusMateriais, mat)) return
-      for (const pa of meusPaineis) {
-        if (!itemPertenceAoPainel(pa, p, i, mat)) continue
-        if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) continue
-        // plástico esperando OF não está na fila — o contador não pode dizer que está
-        if (pa.tipo === 'linha' && modoNaLinha(p, i, itensCad, producaoCfg, vivosOF) === 'espera') continue
-        conta[pa.id]++
-      }
-    })
-  }
-  const totalNoFluxo = meusPaineis.reduce((s, pa) => s + (conta[pa.id] || 0), 0)
-  const abasQuadro = [
+  // ⚠️ `paineis` e `meusMateriais` são dependências do useMemo do QuadroProducao:
+  // precisam ser a MESMA referência entre renders, senão o memo dele nunca acerta.
+  const meusPaineis = useMemo(() => paineisVisiveis({ perfil, setores, materiais }), [perfil, setores, materiais])
+  const meusMateriais = perfil === 'operador' ? (materiais || SEM_MATERIAIS) : SEM_MATERIAIS
+  const { conta, totalNoFluxo } = useMemo(() => {
+    const vivosOF = idsDeOFsVivas(ordens)
+    const conta = {}
+    for (const pa of meusPaineis) conta[pa.id] = 0
+    for (const p of pedidosQuadro) {
+      (p.itens || []).forEach((_, i) => {
+        const l = linhaDoItem(p, i)
+        if (!l) return
+        const mat = materialDoItem(p.itens[i], itensCad)
+        if (!podeNoMaterial(meusMateriais, mat)) return
+        for (const pa of meusPaineis) {
+          if (!itemPertenceAoPainel(pa, p, i, mat)) continue
+          if (pa.tipo === 'linha' && l === 'GRAFICA' && !acabamentoItemOk(acabamentoDoItem(p, i))) continue
+          // plástico esperando OF não está na fila — o contador não pode dizer que está
+          if (pa.tipo === 'linha' && modoNaLinha(p, i, itensCad, producaoCfg, vivosOF) === 'espera') continue
+          conta[pa.id]++
+        }
+      })
+    }
+    const totalNoFluxo = meusPaineis.reduce((s, pa) => s + (conta[pa.id] || 0), 0)
+    return { conta, totalNoFluxo }
+  }, [pedidosQuadro, meusPaineis, meusMateriais, itensCad, ordens, producaoCfg])
+  const abasQuadro = useMemo(() => [
     ...(ehStaff ? [{ id: 'geral', label: '▦ Visão geral', badge: totalNoFluxo }] : []),
     ...meusPaineis.map((pa) => ({ id: pa.id, label: pa.nome, badge: conta[pa.id] || 0 })),
-  ]
+  ], [ehStaff, totalNoFluxo, meusPaineis, conta])
   // sem escolha do usuário: staff abre na visão geral, operador na fila que tem serviço
   const painelAba = (abasQuadro.some((a) => a.id === painelEscolhido) && painelEscolhido)
     || (ehStaff ? 'geral' : (meusPaineis.find((pa) => conta[pa.id])?.id || meusPaineis[0]?.id || ''))
-  const paineisDoQuadro = painelAba === 'geral' ? meusPaineis : meusPaineis.filter((pa) => pa.id === painelAba)
+  const paineisDoQuadro = useMemo(
+    () => (painelAba === 'geral' ? meusPaineis : meusPaineis.filter((pa) => pa.id === painelAba)),
+    [painelAba, meusPaineis])
   const nomeAba = abasQuadro.find((a) => a.id === painelAba)?.label || '—'
+  const mapaProblemas = useMemo(() => indexaProblemas(problemas), [problemas])
 
   // A lista é o SERVIÇO A FAZER — só o que ainda está na fábrica. Pedido já
   // expedido some daqui (ele vive em Entregas/Rota), senão a folha impressa
   // mandaria produzir de novo o que já saiu. Quem nunca passou pelo quadro tem
   // tudo na linha, então continua aparecendo — nada de legado escondido.
-  const emProducao = categorizados.filter(temTrabalhoNaProducao)
+  const emProducao = useMemo(() => categorizados.filter(temTrabalhoNaProducao), [categorizados])
   const jaSairam = categorizados.length - emProducao.length
 
-  let lista = emProducao
-  // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
-  if (filtroLinha) lista = lista.filter((p) => linhasPresentes(p).includes(filtroLinha))
-  // filtroMaterial: pedido que TEM algum item desse material (papel/plástico)
-  if (filtroMaterial) lista = lista.filter((p) => (p.itens || []).some((it) => materialDoItem(it, itensCad) === filtroMaterial))
-  lista = filtraPedidos(lista, filtros, clientes)
+  const lista = useMemo(() => {
+    let lista = emProducao
+    // filtroLinha agora filtra por "pedido que TEM algum item nessa linha"
+    if (filtroLinha) lista = lista.filter((p) => linhasPresentes(p).includes(filtroLinha))
+    // filtroMaterial: pedido que TEM algum item desse material (papel/plástico)
+    if (filtroMaterial) lista = lista.filter((p) => (p.itens || []).some((it) => materialDoItem(it, itensCad) === filtroMaterial))
+    return filtraPedidos(lista, filtros, clientes)
+  }, [emProducao, filtroLinha, filtroMaterial, itensCad, filtros, clientes])
 
   // agrupa: Vendedor -> Data de entrega -> Linha -> Rota
   // Um mesmo pedido pode aparecer em MAIS DE UMA linha quando seus itens estão divididos.
   // Em cada bucket, o pedido entra com APENAS os itens daquela linha.
-  const arvore = {}
-  for (const p of lista) {
-    const vend = p.vendedor || '—'
-    const data = fmtData(p.previsao)
-    const totalItens = (p.itens || []).length
-    const linhas = linhasPresentes(p)
-    for (const m of linhas) {
-      if (filtroLinha && m !== filtroLinha) continue // só montra a linha filtrada
-      // fatia do pedido: só os itens dessa linha (com índice original preservado)
-      let itensFatia = totalItens ? itensDaLinha(p, m) : (p.itens || [])
-      // filtroMaterial: dentro da linha, só os itens do material escolhido
-      if (filtroMaterial) itensFatia = itensFatia.filter((it) => materialDoItem(it, itensCad) === filtroMaterial)
-      if (filtroMaterial && !itensFatia.length) continue // esse card não tem item do material
-      // só o que ainda está na fábrica, e a quantidade do card passa a ser ELA:
-      // de 500 com 200 já expedidas, o que falta produzir é 300. Imprimir 500
-      // faria a fábrica repetir o que já saiu.
-      if (totalItens) {
-        itensFatia = itensFatia
-          .map((it) => {
-            const falta = qtdEmProducao(p, it._idx)
-            if (falta <= 0) return null
-            return falta === Number(it.qtd) ? it : { ...it, qtd: falta, _qtdPedida: it.qtd }
-          })
-          .filter(Boolean)
-        if (!itensFatia.length) continue   // tudo desta linha já saiu
+  const arvore = useMemo(() => {
+    const arvore = {}
+    for (const p of lista) {
+      const vend = p.vendedor || '—'
+      const data = fmtData(p.previsao)
+      const totalItens = (p.itens || []).length
+      const linhas = linhasPresentes(p)
+      for (const m of linhas) {
+        if (filtroLinha && m !== filtroLinha) continue // só montra a linha filtrada
+        // fatia do pedido: só os itens dessa linha (com índice original preservado)
+        let itensFatia = totalItens ? itensDaLinha(p, m) : (p.itens || [])
+        // filtroMaterial: dentro da linha, só os itens do material escolhido
+        if (filtroMaterial) itensFatia = itensFatia.filter((it) => materialDoItem(it, itensCad) === filtroMaterial)
+        if (filtroMaterial && !itensFatia.length) continue // esse card não tem item do material
+        // só o que ainda está na fábrica, e a quantidade do card passa a ser ELA:
+        // de 500 com 200 já expedidas, o que falta produzir é 300. Imprimir 500
+        // faria a fábrica repetir o que já saiu.
+        if (totalItens) {
+          itensFatia = itensFatia
+            .map((it) => {
+              const falta = qtdEmProducao(p, it._idx)
+              if (falta <= 0) return null
+              return falta === Number(it.qtd) ? it : { ...it, qtd: falta, _qtdPedida: it.qtd }
+            })
+            .filter(Boolean)
+          if (!itensFatia.length) continue   // tudo desta linha já saiu
+        }
+        arvore[vend] ??= {}
+        arvore[vend][data] ??= {}
+        arvore[vend][data][m] ??= {}
+        const rota = p.rota || 'SEM ROTA'
+        arvore[vend][data][m][rota] ??= []
+        arvore[vend][data][m][rota].push({
+          ...p,
+          itens: itensFatia,
+          _totalItens: totalItens,
+          _linhaCard: m,
+        })
       }
-      arvore[vend] ??= {}
-      arvore[vend][data] ??= {}
-      arvore[vend][data][m] ??= {}
-      const rota = p.rota || 'SEM ROTA'
-      arvore[vend][data][m][rota] ??= []
-      arvore[vend][data][m][rota].push({
-        ...p,
-        itens: itensFatia,
-        _totalItens: totalItens,
-        _linhaCard: m,
-      })
     }
-  }
+    return arvore
+  }, [lista, filtroLinha, filtroMaterial, itensCad])
 
-  const vendedoresOrd = Object.keys(arvore).sort()
+  const vendedoresOrd = useMemo(() => Object.keys(arvore).sort(), [arvore])
   const filtrado = lista.length !== emProducao.length
 
   // ---------- seleção / alteração em lote (dono e designer) ----------
@@ -244,7 +267,7 @@ export default function Producao({ pedidos, problemas, ordens = [], producaoCfg 
                 {categorizados.length === 0 ? 'Nenhum pedido categorizado ainda.' : 'Nenhum pedido com esses filtros.'}
               </div>
             : <QuadroProducao pedidos={pedidosQuadro} clientes={clientes} itensCad={itensCad}
-                paineis={paineisDoQuadro} problemas={indexaProblemas(problemas)}
+                paineis={paineisDoQuadro} problemas={mapaProblemas}
                 posto={contaPosto ? posto : null} ordens={ordens} producaoCfg={producaoCfg} />}
         </div>
       )}

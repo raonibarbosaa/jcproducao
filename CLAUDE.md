@@ -1376,6 +1376,89 @@ função que devolve MAPA**.
   é `await import('xlsx')` na hora de ler a planilha. Abertura: ~188 KB gzip.
 - ⚠️ `manualChunks` tem que ser **função**: a forma de objeto derruba o build SSR
   do `npm run test:tela` (lá React/Firebase são externos).
+- **Índice dos cadastros (07/10/2026 — correção 1 da leitura de lentidão):**
+  `achaCliente`, `achaItem` e `achaVendedor` percorriam o array inteiro
+  rodando `normaliza()` em cada elemento, a cada chamada — e são chamados por
+  pedido e por item em todo render (`nomeCliente` em filtro/romaneio,
+  `materialDoItem` 15× só no quadro). Custo era pedidos × cadastro por
+  passagem; medido: 500 pedidos × 3 itens com 3.000 clientes e 2.000 itens
+  caiu de segundos para milissegundos. Agora `indiceDe()` monta um `Map` por
+  array e guarda num `WeakMap` pela IDENTIDADE do array; array novo (o que o
+  React/Firestore entregam) = índice novo. ⚠️ **Cadastro muda = array novo.**
+  Editar um elemento em lugar, sem trocar o array, não é visto (a rede de
+  segurança só confere `length`). Primeira ocorrência vence, como o `find`.
+  Testes em `tests/indice-cadastros.test.mjs`.
+- **Telas memoizadas (07/10/2026 — correção 2):** Producao, Triagem, Rota,
+  Carga, Localizar e Entregues derivavam tudo (`base` com `previsaoDe`,
+  filtro, árvore, contagem por painel, volumes livres, busca global) a cada
+  render — a cada tecla no filtro e, no tablet, **a cada segundo** (o relógio do
+  `usePosto` re-renderiza a página da Produção enquanto alguém está ativo).
+  Agora cada bloco é um `useMemo` com a entrada dele. ⚠️ **O memo do
+  QuadroProducao existia e NUNCA acertava para dono/designer**: as deps
+  `paineis`, `pedidos` e `meusMateriais` chegavam como array novo a cada render
+  (`.filter` novo, `filtraPedidos` novo e o literal `[]` de "todos os
+  materiais", tanto na Produção quanto dentro do próprio quadro). Virou
+  `SEM_MATERIAIS` (constante de módulo) + `useMemo` nos dois lados. Regra:
+  **prop que é dependência de `useMemo` no filho precisa ser referência
+  estável no pai** — literal `[]`/`{}` no JSX ou no corpo do componente
+  derruba o memo em silêncio. Render da página inteira coberto em
+  `tests/render/paginas.jsx` (Produção lista/quadro, Rota, Entregues, Carga).
+- **Cache local do Firestore (07/10/2026 — correção 3):** `src/firebase.js`
+  usa `initializeFirestore` + `persistentLocalCache` com
+  `persistentMultipleTabManager`. Antes, cada abertura do site baixava
+  `pedidos` inteira e cada troca de aba refazia `entregues`/`cargas`/`planos`
+  (as abas são lazy: desmontar = perder tudo). Agora o onSnapshot responde do
+  IndexedDB e o servidor manda só o delta. Sem IndexedDB (navegação privada,
+  cota, WebView velha) o SDK cai sozinho em memória com aviso no console —
+  verificado no fonte do SDK 10.14.1 e exercitado em Node. Custo: o chunk
+  `firebase` foi de 106 para 130 KB gzip (fica em cache entre deploys).
+  ⚠️ **Decisão em aberto para o dono:** os dados lidos FICAM no aparelho
+  depois do logout (o SDK não limpa o IndexedDB ao sair). Limpar exigiria
+  `terminate` + `clearIndexedDbPersistence` + recarregar, e perderia o ganho
+  no login seguinte. No tablet do posto a conta já lê tudo; o caso a decidir
+  é celular/PC compartilhado.
+- **`entregues` em FATIAS (07/10/2026 — correção 4):** a coleção é histórico
+  e só cresce; Entregues, Localizar e Controle de entrega a assinavam INTEIRA a
+  cada abertura da aba. Hook `src/hooks/useEntregues.js` com três fontes que
+  se somam: **período** (`entregueEm >= corte`, ISO comparado como texto),
+  **número** (faixa de PREFIXO nas DUAS formas do doc — id `5111-1` com campo
+  `idVenda`, e o antigo `5111` sem campo; são duas consultas) e **tudo**.
+  Nenhuma exige índice composto. Entregues abre em "Últimos 90 dias"
+  (`PERIODOS_ENTREGUES`, seletor na barra) e o número digitado acha a entrega
+  em qualquer data; Localizar/Controle só leem quando há termo: número →
+  prefixo, texto → histórico inteiro (o Firestore não faz "contém").
+  ⚠️ **Prefixo, não substring, no servidor:** digitar "111" não acha a remessa
+  do 5111 em `entregues` (em `pedidos`, em memória, continua substring).
+  ⚠️ **Financeiro e MeusPedidos ficaram de FORA de propósito:** a fila "a
+  cobrar" é "entrega SEM cobrança" e um corte por data esconderia dívida
+  (`!=`/ausência de campo não é consultável — ver DESEMPENHO); o vendedor já
+  vem fatiado pela rule (`where('vendedor','==')`). Helpers puros
+  (`corteDoPeriodo`, `faixaPrefixoNumero`, `uneEntregues`) testados em
+  `tests/entregues-fatia.test.mjs`.
+- **Clientes em COLEÇÃO própria (07/10/2026 — correção 5):** o de/para
+  (`razao` → `nome`) era um array dentro de `config/cadastros`: todo apelido
+  salvo reenviava o documento inteiro a todo aparelho, a captura automática do
+  import só o fazia crescer e o teto de 1 MiB era uma parede. Agora é
+  `clientes/{idCliente(razao)}` (id = razão normalizada, `/` → `_`). O
+  `CadastrosContext` assina a coleção E lê o array antigo como legado;
+  `mesclaClientes` junta os dois (a coleção ganha; o que só está no array sai
+  marcado `_legado`), então **nenhuma tela mudou**: `clientes` continua um
+  array no contexto. Gravam na coleção: captura do import (batch de 450),
+  apelido no card e no modal da Triagem, aba Clientes (editar razão = apagar
+  o doc antigo; excluir `_legado` também tira do array). **Migração pela tela:**
+  Cadastros › Clientes mostra "N cliente(s) ainda no formato antigo" com o
+  botão Migrar — copia em lotes e só DEPOIS apaga o campo (`deleteField`);
+  falhou no meio, nada se perde. Backend da VPS (`assinaCadastros`) também
+  passou a ouvir a coleção e mescla igual. Helpers `idCliente`,
+  `dadosCliente`, `mesclaClientes`, `clientesParaMigrar` com testes em
+  `tests/clientes-colecao.test.mjs`.
+  ⚠️ **Rules novas (`match /clientes`, mesma regra do config): publicar ANTES
+  do build.** Se não publicar, a leitura da coleção morre com permission-denied
+  e a tela continua com o array legado (rede de segurança), mas o import e o
+  apelido passam a FALHAR na gravação. Ordem de ida ao ar: rules → build →
+  migrar pelo botão (dono/designer) → redeploy do backend pelo Portainer.
+  **As cinco correções da leitura de 07/10/2026 estão feitas** (índice, memo,
+  cache local, `entregues` em fatias, clientes em coleção).
 - ⚠️ **NÃO filtrar a consulta de pedidos com `where('status','!=',null)`**
   (tentado e revertido em 29/09/2026): não tira nada — entregue já sai de
   `pedidos` e importado nasce com `status: ''` — e o Firestore exclui do `!=` o

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc, writeBatch, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO,
-  coresDoCadastro, slugCor, problemaDaCor } from '../utils.js'
+  coresDoCadastro, slugCor, problemaDaCor, idCliente, dadosCliente, clientesParaMigrar } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -511,39 +511,79 @@ export function FormCor({ lista, inicial, salvando, onSalvar, onCancelar }) {
 // ============================================================
 // ABA CLIENTES — de/para de nome (razão social -> nome de exibição)
 // ============================================================
-function AbaClientes() {
-  const { clientes } = useCadastros()
-  const [editando, setEditando] = useState(null) // índice em edição, ou 'novo'
+// ============================================================
+// ABA CLIENTES — um DOC por cliente em `clientes/{idCliente(razao)}`
+// (correção 5, 07/10/2026). Antes era um array dentro de config/cadastros e
+// cada apelido salvo reenviava o documento inteiro a todo aparelho conectado.
+// O array antigo ainda é lido (mesclado pelo contexto, marcado `_legado`) até
+// a migração abaixo copiá-lo para a coleção e apagar o campo.
+// ============================================================
+export function AbaClientes() {
+  const { clientes, clientesLegado } = useCadastros()
+  const [editando, setEditando] = useState(null) // cliente em edição (objeto), ou 'novo'
   const [msg, setMsg] = useState('')
   const [busca, setBusca] = useState('')
+  const [migrando, setMigrando] = useState(false)
 
-  async function salvarTudo(lista) {
-    await setDoc(REF(), { clientes: lista }, { merge: true })
-  }
+  // tira um cliente que ainda vive no array antigo (senão ele volta na mescla)
+  const legadoSem = (c) => clientesLegado.filter((x) => idCliente(x?.razao) !== idCliente(c.razao))
 
-  async function salvarCliente(dados, indice) {
-    const dup = clientes.findIndex(
-      (c, i) => i !== (indice === 'novo' ? -1 : indice) && normaliza(c.razao) === normaliza(dados.razao)
-    )
-    if (dup !== -1) {
-      if (!confirm(`Já existe um cliente com a razão social "${clientes[dup].razao}" (exibido como "${clientes[dup].nome}"). Substituir?`)) return
-      const lista = clientes.map((c, i) => (i === dup ? dados : c)).filter((_, i) => indice !== 'novo' ? i !== indice : true)
-      await salvarTudo(lista)
-    } else {
-      const lista = [...clientes]
-      if (indice === 'novo') lista.push(dados)
-      else lista[indice] = dados
-      await salvarTudo(lista)
+  async function salvarCliente(dados, atual) {
+    const idNovo = idCliente(dados.razao)
+    if (!idNovo) { alert('Razão social inválida.'); return }
+    const idAtual = atual && atual !== 'novo' ? idCliente(atual.razao) : null
+    const dup = clientes.find((c) => idCliente(c.razao) === idNovo && idCliente(c.razao) !== idAtual)
+    if (dup && !confirm(`Já existe um cliente com a razão social "${dup.razao}" (exibido como "${dup.nome}"). Substituir?`)) return
+    try {
+      const batch = writeBatch(db)
+      batch.set(doc(db, 'clientes', idNovo), dadosCliente(dados), { merge: true })
+      // mudou a razão social: o doc antigo sai (e, se ainda era do array, sai de lá)
+      if (idAtual && idAtual !== idNovo) {
+        batch.delete(doc(db, 'clientes', idAtual))
+        if (atual._legado) batch.set(REF(), { clientes: legadoSem(atual) }, { merge: true })
+      }
+      await batch.commit()
+      setEditando(null)
+      setMsg('Cliente salvo.')
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
     }
-    setEditando(null)
-    setMsg('Cliente salvo.')
   }
 
-  async function excluirCliente(indice) {
-    if (!confirm(`Excluir o cliente "${clientes[indice].nome}"?`)) return
-    const lista = clientes.filter((_, i) => i !== indice)
-    await salvarTudo(lista)
-    setMsg('Cliente excluído.')
+  async function excluirCliente(c) {
+    if (!confirm(`Excluir o cliente "${c.nome || c.razao}"?`)) return
+    try {
+      const batch = writeBatch(db)
+      batch.delete(doc(db, 'clientes', idCliente(c.razao)))
+      if (c._legado) batch.set(REF(), { clientes: legadoSem(c) }, { merge: true })
+      await batch.commit()
+      setMsg('Cliente excluído.')
+    } catch (e) {
+      alert('Não foi possível excluir: ' + (e.code || e.message))
+    }
+  }
+
+  // MIGRAÇÃO: copia o array antigo para a coleção e apaga o campo do documento.
+  // O que já está na coleção GANHA (pode ter apelido mais novo). O campo só é
+  // apagado DEPOIS de todos os lotes gravarem — falhou no meio, nada se perde:
+  // o array continua lá e o botão continua aparecendo com o que faltou.
+  const pendentes = clientesParaMigrar(clientes.filter((c) => !c._legado), clientesLegado)
+  async function migrar() {
+    if (!clientesLegado.length || migrando) return
+    if (!confirm(`Migrar ${pendentes.length} cliente(s) do formato antigo para a coleção?\n\n`
+      + `Nada muda nas telas — só o lugar onde o cadastro fica guardado.`)) return
+    setMigrando(true)
+    try {
+      for (let i = 0; i < pendentes.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const { id, dados } of pendentes.slice(i, i + 450)) batch.set(doc(db, 'clientes', id), dados, { merge: true })
+        await batch.commit()
+      }
+      await updateDoc(REF(), { clientes: deleteField() })
+      setMsg(`${pendentes.length} cliente(s) migrado(s). O cadastro agora vive na coleção.`)
+    } catch (e) {
+      alert('A migração parou: ' + (e.code || e.message) + '\nNada foi perdido — tente de novo.')
+    } finally { setMigrando(false) }
   }
 
   const filtrados = clientes
@@ -570,10 +610,24 @@ function AbaClientes() {
 
       {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
 
+      {clientesLegado.length > 0 && (
+        <div className="card em_dia" style={{ marginBottom: 14, borderLeftColor: 'var(--accent)' }}>
+          <b>📦 {clientesLegado.length} cliente(s) ainda no formato antigo</b>
+          <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '4px 0 10px' }}>
+            O cadastro de clientes passou a ter um registro por cliente. Os que ainda estão no
+            documento antigo continuam funcionando, mas cada apelido salvo reenvia a lista inteira
+            a todo aparelho. Migrar copia {pendentes.length} para o formato novo e apaga o antigo.
+          </div>
+          <button className="btn primary" onClick={migrar} disabled={migrando}>
+            {migrando ? 'Migrando…' : `Migrar ${pendentes.length} cliente(s)`}
+          </button>
+        </div>
+      )}
+
       {editando !== null && (
         <PainelEdicao>
           <FormCliente
-            inicial={editando === 'novo' ? null : clientes[editando]}
+            inicial={editando === 'novo' ? null : editando}
             onSalvar={(dados) => salvarCliente(dados, editando)}
             onCancelar={() => setEditando(null)}
           />
@@ -595,9 +649,9 @@ function AbaClientes() {
       ) : (
         <div className="cards">
           {filtrados.map(({ c, i }) => (
-            <CardCliente key={i} c={c}
-              onEditar={() => setEditando(i)}
-              onExcluir={() => excluirCliente(i)}
+            <CardCliente key={c.id || idCliente(c.razao) || i} c={c}
+              onEditar={() => setEditando(c)}
+              onExcluir={() => excluirCliente(c)}
             />
           ))}
         </div>

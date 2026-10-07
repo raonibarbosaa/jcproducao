@@ -12,6 +12,7 @@ import {
   STATUS_CARGA, rotuloCarga, rotuloPlano,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
+import { useEntregues } from '../hooks/useEntregues.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 import Realce from '../components/Realce.jsx'
@@ -36,7 +37,6 @@ export default function ControleEntrega({ pedidos, problemas }) {
   const motoristasAtivos = (motoristas || []).filter((m) => m.ativo !== false)
 
   const [termo, setTermo] = useState('')
-  const [entregues, setEntregues] = useState([])
   const [cargas, setCargas] = useState([])
   const [planos, setPlanos] = useState([])
   const [negado, setNegado] = useState({})
@@ -50,15 +50,22 @@ export default function ControleEntrega({ pedidos, problemas }) {
     const assina = (nomeCol, set) => onSnapshot(collection(db, nomeCol),
       (snap) => { set(snap.docs.map(doDoc)); setNegado((x) => ({ ...x, [nomeCol]: false })) },
       (e) => { console.error(`Erro ao ler ${nomeCol}:`, e); setNegado((x) => ({ ...x, [nomeCol]: true })) })
-    const us = [assina('entregues', setEntregues), assina('cargas', setCargas), assina('planos', setPlanos)]
+    const us = [assina('cargas', setCargas), assina('planos', setPlanos)]
     return () => us.forEach((u) => u())
   }, [])
 
+  // `entregues` em FATIA (correção 4, 07/10/2026): aqui se digita o NÚMERO do
+  // pedido, então quase sempre são só as remessas daquele prefixo; texto puxa o
+  // histórico inteiro (o Firestore não busca "contém"). Sem termo, nada é lido.
+  const termoLimpo = String(termo || '').trim()
+  const ehNumeroBusca = /^\d+$/.test(termoLimpo)
+  const { entregues, negado: entreguesNegado } = useEntregues({
+    numero: ehNumeroBusca ? termoLimpo : '', tudo: !ehNumeroBusca && termoLimpo.length >= 2 })
   const base = useMemo(() => (pedidos || []).map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) })), [pedidos, cadastros])
-  const res = buscaGlobal(termo, { pedidos: base, entregues, clientes, limite: 12 })
+  const res = useMemo(() => buscaGlobal(termo, { pedidos: base, entregues, clientes, limite: 12 }), [termo, base, entregues, clientes])
   const comp = comprometimentoDeCargas(cargas)
   const mapaProblemas = indexaProblemas(problemas)
-  const semAcesso = Object.entries(negado).filter(([, v]) => v).map(([k]) => k)
+  const semAcesso = [...Object.entries(negado).filter(([, v]) => v).map(([k]) => k), ...(entreguesNegado ? ['entregues'] : [])]
   const quem = () => quemAssina({ user, nome, perfil, ip })
 
   // a lista: VISÃO sobre `pedidos` — tudo que está pronto e não foi entregue

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { collection, doc, onSnapshot, updateDoc, deleteDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
@@ -11,6 +11,7 @@ import {
   quemFez, podeBaixarNoControle, podeEntregarNoControle, quemAssina, pegarIP, lancadoNoControle,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
+import { useEntregues } from '../hooks/useEntregues.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SeloLinha from '../components/SeloLinha.jsx'
 import SeloCor from '../components/SeloCor.jsx'
@@ -52,14 +53,14 @@ export default function Localizar({ pedidos, problemas }) {
   const acoes = useAcoesControle({ quem, nome, perfil, clientes, itensCad, podeLancar, podeEntregar })
 
   const [termo, setTermo] = useState('')
-  const [entregues, setEntregues] = useState([])
   const [cargas, setCargas] = useState([])
   const [planos, setPlanos] = useState([])
   const [negado, setNegado] = useState({})     // coleção que as rules recusaram
   const [salvando, setSalvando] = useState('')
   const [abertos, setAbertos] = useState({})   // idVenda -> detalhe dos itens aberto
 
-  // As três coleções que a tela precisa além de `pedidos` (que vem do App).
+  // As coleções que a tela precisa além de `pedidos` (que vem do App).
+  // `entregues` vem em FATIA pelo hook mais abaixo (correção 4).
   // ⚠️ O erro de permissão é TRATADO, não engolido: sem isso a busca responderia
   // "não achei" para um pedido que existe, só porque a leitura foi recusada — e
   // ninguém descobriria o motivo fora do console.
@@ -67,15 +68,25 @@ export default function Localizar({ pedidos, problemas }) {
     const assina = (nomeCol, set) => onSnapshot(collection(db, nomeCol),
       (snap) => { set(snap.docs.map(doDoc)); setNegado((x) => ({ ...x, [nomeCol]: false })) },
       (e) => { console.error(`Erro ao ler ${nomeCol}:`, e); setNegado((x) => ({ ...x, [nomeCol]: true })) })
-    const us = [assina('entregues', setEntregues), assina('cargas', setCargas), assina('planos', setPlanos)]
+    const us = [assina('cargas', setCargas), assina('planos', setPlanos)]
     return () => us.forEach((u) => u())
   }, [])
 
-  const base = (pedidos || []).map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) }))
-  const res = buscaGlobal(termo, { pedidos: base, entregues, clientes })
-  const comp = comprometimentoDeCargas(cargas)
-  const mapaProblemas = indexaProblemas(problemas)
-  const semAcesso = Object.entries(negado).filter(([, v]) => v).map(([k]) => k)
+  // `entregues` em FATIA (correção 4, 07/10/2026): número digitado → só as
+  // remessas daquele prefixo (as duas formas do doc); texto → o histórico
+  // inteiro, porque o Firestore não busca "contém" e o nome/produto pode estar
+  // em qualquer remessa. Sem termo não se lê nada — a tela abre leve no tablet.
+  const termoLimpo = termo.trim()
+  const ehNumeroBusca = /^\d+$/.test(termoLimpo)
+  const { entregues, negado: entreguesNegado } = useEntregues({
+    numero: ehNumeroBusca ? termoLimpo : '', tudo: !ehNumeroBusca && termoLimpo.length >= 2 })
+  // memoizado (correção 2, 07/10/2026): a busca varre pedidos + entregues e
+  // rodava a cada render, inclusive ao abrir/fechar o detalhe de um item
+  const base = useMemo(() => (pedidos || []).map((p) => ({ ...p, previsao: previsaoDe(p, cadastros) })), [pedidos, cadastros])
+  const res = useMemo(() => buscaGlobal(termo, { pedidos: base, entregues, clientes }), [termo, base, entregues, clientes])
+  const comp = useMemo(() => comprometimentoDeCargas(cargas), [cargas])
+  const mapaProblemas = useMemo(() => indexaProblemas(problemas), [problemas])
+  const semAcesso = [...Object.entries(negado).filter(([, v]) => v).map(([k]) => k), ...(entreguesNegado ? ['entregues'] : [])]
 
   const alterna = (id) => setAbertos((a) => ({ ...a, [id]: !a[id] }))
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { doc, setDoc, updateDoc, deleteDoc, writeBatch, collection, getDocs, query, where, documentId } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
@@ -12,7 +12,7 @@ import {
   LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
   coresAtivas, nomeCor, hexCor, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
   MATERIAIS, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
-  filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem,
+  filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem, idCliente, dadosCliente,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
@@ -169,12 +169,20 @@ export default function Triagem({ pedidos }) {
       }
       const itensNovos = [...produtosNovos.values()].map((produto) => ({ produto, tipo: '', unidade: '' }))
 
-      // grava clientes e itens novos numa única escrita (mesmo documento config/cadastros)
-      if (clientesNovos.length || itensNovos.length) {
-        const patch = {}
-        if (clientesNovos.length) patch.clientes = [...clientes, ...clientesNovos]
-        if (itensNovos.length) patch.itens = [...itens, ...itensNovos]
-        await setDoc(doc(db, 'config', 'cadastros'), patch, { merge: true })
+      // clientes novos: um doc por cliente na coleção `clientes` (correção 5 —
+      // antes era o array em config/cadastros, e cada import reenviava o
+      // documento inteiro a todo aparelho). Em lotes de 450 (limite do batch).
+      for (let i = 0; i < clientesNovos.length; i += 450) {
+        const batch = writeBatch(db)
+        for (const c of clientesNovos.slice(i, i + 450)) {
+          const id = idCliente(c.razao)
+          if (id) batch.set(doc(db, 'clientes', id), dadosCliente(c), { merge: true })
+        }
+        await batch.commit()
+      }
+      // itens novos continuam no documento config/cadastros
+      if (itensNovos.length) {
+        await setDoc(doc(db, 'config', 'cadastros'), { itens: [...itens, ...itensNovos] }, { merge: true })
       }
 
       // monta o resultado pro modal
@@ -267,12 +275,13 @@ export default function Triagem({ pedidos }) {
     }
   }
 
+  // ---------- derivações memoizadas (correção 2, 07/10/2026) ----------
   // recalcula a previsão com o calendário ATUAL (respeita a data manual do pedido)
-  const base = pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) }))
+  const base = useMemo(() => pedidos.map((p) => ({ ...p, previsao: previsaoDe(p, vendedores) })), [pedidos, vendedores])
   // vendedores presentes nos pedidos (select do filtro)
-  const vendedoresFiltro = vendedoresDe(base)
-  const filtroItem = { material: filtroMaterial, faltaCor: soFaltaCor }
-  const lista = filtraPedidos(soPendentes ? base.filter(pendenteNaTriagem) : base, filtros, clientes)
+  const vendedoresFiltro = useMemo(() => vendedoresDe(base), [base])
+  const filtroItem = useMemo(() => ({ material: filtroMaterial, faltaCor: soFaltaCor }), [filtroMaterial, soFaltaCor])
+  const lista = useMemo(() => filtraPedidos(soPendentes ? base.filter(pendenteNaTriagem) : base, filtros, clientes)
     .filter((p) => pedidoPassaNaTriagem(p, itens, filtroItem))
     .slice()
     .sort((a, b) => {
@@ -281,16 +290,17 @@ export default function Triagem({ pedidos }) {
       const sb = situacaoPrazo(b.previsao) === 'atrasado' ? 0 : 1
       if (sa !== sb) return sa - sb
       return String(a.idVenda).localeCompare(String(b.idVenda))
-    })
+    }), [base, soPendentes, filtros, clientes, itens, filtroItem])
 
-  const semCorTotal = pedidos.reduce((s, p) => s + itensSemCor(p, itens), 0)
+  const semCorTotal = useMemo(() => pedidos.reduce((s, p) => s + itensSemCor(p, itens), 0), [pedidos, itens])
+  const semDefinicao = useMemo(() => pedidos.filter(pendenteNaTriagem).length, [pedidos])
 
   return (
     <>
       <div className="toolbar">
         <h1 className="page-title">Triagem
           <small>
-            {pedidos.length} pedidos · {pedidos.filter(pendenteNaTriagem).length} sem definição
+            {pedidos.length} pedidos · {semDefinicao} sem definição
             {semCorTotal > 0 && ` · ${semCorTotal} item(ns) sem cor`}
             {lista.length !== pedidos.length && ` · ${lista.length} exibido(s)`}
           </small>
@@ -570,16 +580,13 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
     const apelido = apelidoNovo.trim()
     const razao = (p.cliente || '').trim()
     if (!razao) { setEditandoApelido(false); return }
-    const idx = clientes.findIndex((c) => normaliza(c.razao) === normaliza(razao))
-    let lista
-    if (idx === -1) {
-      // pedido antigo importado antes da captura automática — cria entrada agora
-      lista = [...clientes, { razao, nome: apelido }]
-    } else {
-      lista = clientes.map((c, i) => (i === idx ? { ...c, nome: apelido } : c))
-    }
+    // um doc por cliente (coleção `clientes`): cria se ainda não existe (pedido
+    // antigo, importado antes da captura automática) ou só troca o apelido.
+    // Mantém a razão como está no cadastro, se já houver.
+    const existente = achaCliente(razao, clientes)
     try {
-      await setDoc(doc(db, 'config', 'cadastros'), { clientes: lista }, { merge: true })
+      await setDoc(doc(db, 'clientes', idCliente(razao)),
+        dadosCliente({ ...(existente || {}), razao: existente?.razao || razao, nome: apelido }), { merge: true })
       setEditandoApelido(false); setApelidoNovo('')
     } catch (err) {
       console.error('[salvarApelido]', err)
@@ -1022,11 +1029,10 @@ function SecaoClientesNovos({ clientesNovos, clientes }) {
   async function salvarApelido(razao) {
     const apelido = (edicoes[razao] || '').trim()
     if (!apelido) return // vazio = mantém só a razão social, nada a salvar
-    // pega a lista mais atual do contexto e atualiza só esse cliente
-    const idx = clientes.findIndex((c) => normaliza(c.razao) === normaliza(razao))
-    if (idx === -1) return // estranho, mas defensivo
-    const lista = clientes.map((c, i) => (i === idx ? { ...c, nome: apelido } : c))
-    await setDoc(doc(db, 'config', 'cadastros'), { clientes: lista }, { merge: true })
+    // um doc por cliente: só o apelido deste muda (merge), nada de reenviar lista
+    const existente = achaCliente(razao, clientes)
+    await setDoc(doc(db, 'clientes', idCliente(razao)),
+      dadosCliente({ ...(existente || {}), razao: existente?.razao || razao, nome: apelido }), { merge: true })
     const novo = new Set(salvos); novo.add(razao); setSalvos(novo)
   }
 

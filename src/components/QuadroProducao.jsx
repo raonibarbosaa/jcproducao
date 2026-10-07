@@ -50,6 +50,11 @@ function Espera({ ms }) {
 // `ordens` + `producaoCfg`: sacola plástica com OF viva anda no card da OF (fase
 // C); com a exigência ligada, a sem OF espera fora do quadro — menos as que já
 // estavam na fila no dia da virada.
+// `[]` ESTÁVEL para "todos os materiais". É dependência do useMemo abaixo: um
+// literal novo a cada render (como era) refazia a conta inteira do quadro em
+// todo render de dono/designer — o memo existia e nunca acertava.
+const SEM_MATERIAIS = []
+
 export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, problemas, posto,
   ordens = [], producaoCfg = {} }) {
   const { user, perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
@@ -62,7 +67,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
     : (perfil === 'operador' ? (setores || []).map(normSetor) : [])
   const podeMoverEtapa = (etapa) => ehStaff || setoresOp.includes(etapa)
   // 2º eixo da permissão: com que material eu trabalho ([] = todos)
-  const meusMateriais = perfil === 'operador' ? (materiais || []) : []
+  const meusMateriais = perfil === 'operador' ? (materiais || SEM_MATERIAIS) : SEM_MATERIAIS
   const [salvando, setSalvando] = useState('')
   // quanto mover de cada item: { "idVenda|painel|idx": número }. Vazio = tudo
   // que está naquela etapa (o caso comum é concluir a quantidade inteira).

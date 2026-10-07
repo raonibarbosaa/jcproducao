@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import {
@@ -71,57 +71,66 @@ export default function Carga({ pedidos }) {
   // porque a tela de busca (Localizar) precisa dar a MESMA resposta: duas contas
   // de "o que está livre" divergem em silêncio, e aí uma tela manda carregar o
   // que a outra já deu por carregado.
-  const comp = comprometimentoDeCargas(cargas)
+  // ---------- derivações MEMOIZADAS (correção 2, 07/10/2026) ----------
+  // Esta tela mapeava os pedidos inteiros DUAS vezes e refazia toda a conta de
+  // volumes livres, candidatos e peso a cada render — a cada tecla do filtro e a
+  // cada clique de abrir produto. Cada bloco agora só refaz quando a entrada muda.
+  const comp = useMemo(() => comprometimentoDeCargas(cargas), [cargas])
+  const todos = useMemo(() => (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) })), [pedidos, cadastros])
 
   // pedidos com quantidade expedida ainda LIVRE para entrar numa carga.
   // A lista NÃO é filtrada: é a base da seleção. Assim dá para filtrar a ROTA 01,
   // marcar, trocar para a ROTA 02 e marcar mais — sem perder o que já foi escolhido.
-  const disponiveis = []
-  for (const p of (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))) {
-    const livres = volumesLivresDoPedido(p, comp)
-      .map((it) => ({ ...it, material: materialDoItem({ produto: it.produto }, itensCad) }))
-    if (livres.length) disponiveis.push({ p, itens: livres })
-  }
+  const disponiveis = useMemo(() => {
+    const disponiveis = []
+    for (const p of todos) {
+      const livres = volumesLivresDoPedido(p, comp)
+        .map((it) => ({ ...it, material: materialDoItem({ produto: it.produto }, itensCad) }))
+      if (livres.length) disponiveis.push({ p, itens: livres })
+    }
+    return disponiveis
+  }, [todos, comp, itensCad])
 
   const capacidadeKg = Number(logistica?.capacidadeKg) > 0 ? Number(logistica.capacidadeKg) : 0
-  const livresPorPedido = new Map(disponiveis.map((d) => [String(d.p.idVenda), d.itens]))
-  const todos = (pedidos || []).map((x) => ({ ...x, previsao: previsaoDe(x, cadastros) }))
+  const livresPorPedido = useMemo(() => new Map(disponiveis.map((d) => [String(d.p.idVenda), d.itens])), [disponiveis])
 
   // ---------- planos ----------
   const abertos = planosAbertos(planos)
   const plano = planos.find((x) => x.id === planoId) || null
   // um pedido só pode estar num plano aberto por vez: duas viagens contando com
   // a mesma mercadoria é o erro que some sozinho na hora de carregar
-  const noutroPlano = pedidosEmPlanos(planos, planoId)
-  const emAlgumPlano = pedidosEmPlanos(planos)
+  const noutroPlano = useMemo(() => pedidosEmPlanos(planos, planoId), [planos, planoId])
+  const emAlgumPlano = useMemo(() => pedidosEmPlanos(planos), [planos])
 
   // PRONTOS SEM PREVISÃO — o que está expedido e não entrou em plano nenhum.
   // Sem esta lista o estoque pronto fica INVISÍVEL: ao trocar a montagem direta
   // pelo plano, tudo que já estava pronto sumiu da tela de uma vez. É também o
   // ponto de partida natural — a previsão nasce do que já existe no galpão.
-  const prontosLivres = disponiveis.filter((d) => !emAlgumPlano.has(String(d.p.idVenda)))
-  const idsListaFiltrada = new Set(
-    filtraPedidos(prontosLivres.map((d) => d.p), filtrosLista, clientes).map((p) => p.idVenda))
+  const prontosLivres = useMemo(() => disponiveis.filter((d) => !emAlgumPlano.has(String(d.p.idVenda))), [disponiveis, emAlgumPlano])
   // Agrupado pela DATA de entrega, que é a unidade da viagem: o dia é que enche
   // o caminhão, e por vendedor+rota o mesmo dia aparecia repartido em vários
   // cards sem ninguém ver o tamanho da saída.
-  const gruposProntos = Object.values(
-    prontosLivres
-      .filter((d) => idsListaFiltrada.has(d.p.idVenda))
-      .reduce((acc, d) => {
-        const k = diaDaPrevisao(d.p) || 'sem-data'
-        ;(acc[k] ??= { chave: k, dia: diaDaPrevisao(d.p), pedidos: [], volumes: [] })
-        acc[k].pedidos.push(d.p)
-        acc[k].volumes.push(...d.itens)
-        return acc
-      }, {})
-  ).map((g) => ({
-    ...g,
-    peso: pesoDaLista(g.volumes, itensCad),
-    // as rotas de dentro do dia continuam à vista: é o que diz se o dia é uma
-    // viagem só ou três
-    rotas: agrupaPlanoPorRota(g.pedidos, cadastros),
-  })).sort((a, b) => String(a.dia || '9999').localeCompare(String(b.dia || '9999')))
+  const gruposProntos = useMemo(() => {
+    const idsListaFiltrada = new Set(
+      filtraPedidos(prontosLivres.map((d) => d.p), filtrosLista, clientes).map((p) => p.idVenda))
+    return Object.values(
+      prontosLivres
+        .filter((d) => idsListaFiltrada.has(d.p.idVenda))
+        .reduce((acc, d) => {
+          const k = diaDaPrevisao(d.p) || 'sem-data'
+          ;(acc[k] ??= { chave: k, dia: diaDaPrevisao(d.p), pedidos: [], volumes: [] })
+          acc[k].pedidos.push(d.p)
+          acc[k].volumes.push(...d.itens)
+          return acc
+        }, {})
+    ).map((g) => ({
+      ...g,
+      peso: pesoDaLista(g.volumes, itensCad),
+      // as rotas de dentro do dia continuam à vista: é o que diz se o dia é uma
+      // viagem só ou três
+      rotas: agrupaPlanoPorRota(g.pedidos, cadastros),
+    })).sort((a, b) => String(a.dia || '9999').localeCompare(String(b.dia || '9999')))
+  }, [prontosLivres, filtrosLista, clientes, itensCad, cadastros])
   const prontosSemPlano = gruposProntos.reduce((n, g) => n + g.pedidos.length, 0)
   // já existe previsão aberta para este dia? então é melhor engordar aquela
   const planoDaData = (dia) => abertos.find((pl) => pl.dataEntrega && pl.dataEntrega === dia)
@@ -129,7 +138,7 @@ export default function Carga({ pedidos }) {
   // Rotas do seletor: com um vendedor escolhido, TODAS as cadastradas dele (mais
   // as que aparecem em pedido). Sem isso a rota só existia no filtro depois de
   // alguém expedir algo dela. Sem vendedor escolhido, a barra calcula sozinha.
-  const rotasFiltro = filtrosLista.vendedor
+  const rotasFiltro = useMemo(() => (filtrosLista.vendedor
     ? [...new Set([
         ...rotasDoVendedor(filtrosLista.vendedor, cadastros),
         ...todos.filter((p) => (p.vendedor || '—') === filtrosLista.vendedor)
@@ -137,30 +146,33 @@ export default function Carga({ pedidos }) {
       ])].filter(Boolean)
         .sort((a, b) => (ordemRota(filtrosLista.vendedor, a, cadastros)
           - ordemRota(filtrosLista.vendedor, b, cadastros)) || a.localeCompare(b))
-    : undefined
+    : undefined), [filtrosLista.vendedor, cadastros, todos])
 
   // Candidatos do plano: TODO pedido do bolo natural da previsão (entrega até a
   // data dela; nas antigas, o vendedor+rota) que ainda tem serviço na fábrica OU
   // já tem volume livre. É o ponto do planejamento — enxergar o que está vindo,
   // não só o que já está pronto. Quem decide o "bolo natural" é `doPlano`.
-  const candidatos = plano
-    ? todos.filter((p) => doPlano(p, plano)
-        && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
-    : []
-  const noPlano = new Set((plano?.pedidos || []).map(String))
-  const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
-  // a busca em outras rotas roda sobre TODOS os pedidos, não sobre os candidatos
-  const idsBusca = new Set(filtraPedidos(todos, filtros, clientes).map((p) => p.idVenda))
+  const { candidatos, noPlano, idsFiltrados, idsBusca } = useMemo(() => {
+    const candidatos = plano
+      ? todos.filter((p) => doPlano(p, plano)
+          && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
+      : []
+    const noPlano = new Set((plano?.pedidos || []).map(String))
+    const idsFiltrados = new Set(filtraPedidos(candidatos, filtros, clientes).map((p) => p.idVenda))
+    // a busca em outras rotas roda sobre TODOS os pedidos, não sobre os candidatos
+    const idsBusca = new Set(filtraPedidos(todos, filtros, clientes).map((p) => p.idVenda))
+    return { candidatos, noPlano, idsFiltrados, idsBusca }
+  }, [plano, todos, livresPorPedido, filtros, clientes])
 
   // O que está NA previsão sai de `todos`, não dos candidatos: a rota é viva
   // (recalculada pelo cadastro de cidades), então um pedido cuja cidade mudou de
   // rota deixaria de casar com a do plano e sumiria da tela — continuando dentro
   // de `plano.pedidos`, invisível. Quem entrou na viagem fica visível até alguém
   // tirar.
-  const dentro = plano ? todos.filter((p) => noPlano.has(String(p.idVenda))) : []
-  const fora = candidatos
+  const dentro = useMemo(() => (plano ? todos.filter((p) => noPlano.has(String(p.idVenda))) : []), [plano, todos, noPlano])
+  const fora = useMemo(() => candidatos
     .filter((p) => !noPlano.has(String(p.idVenda)) && idsFiltrados.has(p.idVenda))
-    .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
+    .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || '')), [candidatos, noPlano, idsFiltrados])
 
   // BUSCA EM OUTRAS ROTAS — a exceção que o caminhão faz: passa perto, então
   // pega. Fica FORA da lista normal de propósito: entrar aqui é decisão, não
@@ -171,36 +183,39 @@ export default function Carga({ pedidos }) {
   // vazia: o operador seleciona "todos" justamente para ver todos. O tamanho é
   // resolvido com CORTE VISÍVEL (o rodapé diz quantos ficaram de fora), não
   // escondendo tudo.
-  const deOutrasRotas = plano
+  const deOutrasRotas = useMemo(() => (plano
     ? todos
         .filter((p) => !noPlano.has(String(p.idVenda))
           && !doPlano(p, plano)
           && idsBusca.has(p.idVenda)
           && (livresPorPedido.has(String(p.idVenda)) || temTrabalhoNaProducao(p)))
         .sort((a, b) => (a.previsao || '').localeCompare(b.previsao || ''))
-    : []
+    : []), [plano, todos, noPlano, idsBusca, livresPorPedido])
 
   // o que sai AGORA se liberar: os volumes prontos dos pedidos do plano MENOS os
   // itens segurados. Peso e totais saem daqui — contar o segurado faria o peso
   // mentir para cima, e é assim que o caminhão passa do limite.
-  const segurados = itensSeguradosDoPlano(plano)
-  const volumesDoPlano = dentro.flatMap((p) =>
-    volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados))
-  const prontosDoPlano = dentro.filter((p) =>
-    volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados).length > 0)
-  // quantos pedidos saem pela METADE (algo fica: na produção ou segurado)
-  const parciaisDoPlano = prontosDoPlano.filter((p) =>
-    sobrouNoPedido(p, livresPorPedido.get(String(p.idVenda)), segurados))
-  const nSegurados = dentro.reduce((n, p) => {
-    const livres = livresPorPedido.get(String(p.idVenda)) || []
-    return n + (livres.length - volumesQueVao(livres, p.idVenda, segurados).length)
-  }, 0)
-  const pesoPlano = pesoDaLista(volumesDoPlano, itensCad)
-  const totaisPlano = totaisPorMaterial(
-    volumesDoPlano.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)
+  const { segurados, volumesDoPlano, prontosDoPlano, parciaisDoPlano, nSegurados, pesoPlano, totaisPlano } = useMemo(() => {
+    const segurados = itensSeguradosDoPlano(plano)
+    const volumesDoPlano = dentro.flatMap((p) =>
+      volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados))
+    const prontosDoPlano = dentro.filter((p) =>
+      volumesQueVao(livresPorPedido.get(String(p.idVenda)), p.idVenda, segurados).length > 0)
+    // quantos pedidos saem pela METADE (algo fica: na produção ou segurado)
+    const parciaisDoPlano = prontosDoPlano.filter((p) =>
+      sobrouNoPedido(p, livresPorPedido.get(String(p.idVenda)), segurados))
+    const nSegurados = dentro.reduce((n, p) => {
+      const livres = livresPorPedido.get(String(p.idVenda)) || []
+      return n + (livres.length - volumesQueVao(livres, p.idVenda, segurados).length)
+    }, 0)
+    const pesoPlano = pesoDaLista(volumesDoPlano, itensCad)
+    const totaisPlano = totaisPorMaterial(
+      volumesDoPlano.map((i) => ({ produto: i.produto, qtd: i.qtd })), itensCad)
+    return { segurados, volumesDoPlano, prontosDoPlano, parciaisDoPlano, nSegurados, pesoPlano, totaisPlano }
+  }, [plano, dentro, livresPorPedido, itensCad])
 
   // resumo de um plano na LISTA (sem abrir): quantos já dá para levar
-  const porIdTodos = new Map(todos.map((p) => [String(p.idVenda), p]))
+  const porIdTodos = useMemo(() => new Map(todos.map((p) => [String(p.idVenda), p])), [todos])
   const resumoPlano = (pl) => {
     const ids = (pl.pedidos || []).map(String)
     const seg = itensSeguradosDoPlano(pl)
