@@ -81,7 +81,9 @@ service cloud.firestore {
         || (ehOperador()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
-                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio'])
+                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio',
+                           // whatsSaida = resultado do aviso ao cliente pelo Esmero (07/10/2026)
+                           'whatsSaida'])
             && meu().get('setores', []).hasAny(['expedicao', 'entrega']))
         // Expedição: além das etapas, marca a SAÍDA da rota (é quem carrega o
         // caminhão e sabe a hora que ele saiu). Continua sem poder dar a entrega,
@@ -91,7 +93,9 @@ service cloud.firestore {
         || (ehExpedicao()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
-                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio']));
+                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio',
+                           // whatsSaida = resultado do aviso ao cliente pelo Esmero (07/10/2026)
+                           'whatsSaida']));
     }
 
     // Entregues: staff escreve e lê tudo. O VENDEDOR lê só as entregas dos

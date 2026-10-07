@@ -1437,3 +1437,10 @@ mark.hl {
 
 .aud-esc { margin-bottom: 14px; border-left: 3px solid var(--accent); }
 .aud-esc .rel-tab { margin-top: 8px; }
+
+/* aviso ao cliente pelo Esmero (Controle de entrega / Localizar) */
+.ctl-whats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; font-size: 13px; padding: 6px 10px; border-radius: 8px; background: rgba(127,127,127,.08); }
+.ctl-whats.ok { background: rgba(46,160,67,.12); }
+.ctl-whats.erro { background: rgba(220,60,60,.12); }
+.ctl-whats small { color: var(--text-faint); }
+.ctl-whats .btn { margin-left: auto; }

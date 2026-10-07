@@ -5,7 +5,8 @@ import PainelEdicao from '../components/PainelEdicao.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO,
-  coresDoCadastro, slugCor, problemaDaCor, idCliente, dadosCliente, clientesParaMigrar } from '../utils.js'
+  coresDoCadastro, slugCor, problemaDaCor, idCliente, dadosCliente, clientesParaMigrar,
+  TEXTO_AVISO_SAIDA_PADRAO, textoAvisoSaida } from '../utils.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -20,6 +21,8 @@ const ABAS_CADASTRO = [
   // cores da impressão do plástico (Triagem e Ordens de Fabricação)
   { id: 'cores',      label: 'Cores',      perfis: ['designer', 'dono'] },
   { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
+  // ponte com o Esmero (aviso ao cliente no WhatsApp): só o dono liga/desliga
+  { id: 'integracoes', label: 'Integrações', perfis: ['dono'] },
 ]
 
 export default function Cadastros() {
@@ -35,6 +38,7 @@ export default function Cadastros() {
       {aba === 'motoristas' && <AbaMotoristas />}
       {aba === 'cores'      && <AbaCores />}
       {aba === 'vendedores' && <AbaVendedores />}
+      {aba === 'integracoes' && <AbaIntegracoes />}
     </>
   )
 }
@@ -669,6 +673,7 @@ function CardCliente({ c, onEditar, onExcluir }) {
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>
         <b>Razão social:</b> {c.razao}
+        {c.telefone && <> · 📞 {c.telefone}</>}
       </div>
       <div className="modo-btns">
         <button className="modo-btn" onClick={onEditar}>Editar</button>
@@ -681,11 +686,14 @@ function CardCliente({ c, onEditar, onExcluir }) {
 function FormCliente({ inicial, onSalvar, onCancelar }) {
   const [razao, setRazao] = useState(inicial?.razao || '')
   const [nome, setNome] = useState(inicial?.nome || '')
+  const [telefone, setTelefone] = useState(inicial?.telefone || '')
 
   function salvar() {
     if (!razao.trim()) { alert('Informe a razão social (como vem na planilha).'); return }
     if (!nome.trim()) { alert('Informe o nome de exibição (apelido).'); return }
-    onSalvar({ razao: razao.trim(), nome: nome.trim() })
+    // telefone é opcional: é o WhatsApp do cliente para o aviso de "saiu para
+    // entrega" (vai ao Esmero junto com a razão social, e casa mais seguro)
+    onSalvar({ ...(inicial || {}), razao: razao.trim(), nome: nome.trim(), telefone: telefone.trim() })
   }
 
   return (
@@ -699,6 +707,10 @@ function FormCliente({ inicial, onSalvar, onCancelar }) {
         <div className="field" style={{ flex: 1, minWidth: 220 }}>
           <label>Nome de exibição (apelido)</label>
           <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Loja Exemplo" />
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 180 }}>
+          <label>WhatsApp (opcional)</label>
+          <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(79) 99999-0000" inputMode="tel" />
         </div>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-faint)', margin: '4px 0 12px' }}>
@@ -979,5 +991,82 @@ function FormItem({ inicial, onSalvar, onCancelar }) {
         <button className="btn" onClick={onCancelar}>Cancelar</button>
       </div>
     </div>
+  )
+}
+
+// ============================================================
+// ABA INTEGRAÇÕES — a ponte com o Esmero (07/10/2026)
+// Quando o escritório LANÇA um pedido no Controle de entrega, o JC pede ao
+// Esmero (o CRM/WhatsApp da Totali) que avise o cliente. Aqui o dono diz o
+// endereço do Esmero, liga/desliga e escreve o modelo da mensagem. Do lado do
+// Esmero, em Configurações › Integrações › JC Produção, fica o id do projeto
+// Firebase e o endereço deste site. Doc: config/esmero.
+// ============================================================
+export function AbaIntegracoes() {
+  const { esmero } = useCadastros()
+  const [url, setUrl] = useState(esmero?.url || '')
+  const [ativo, setAtivo] = useState(!!esmero?.ativo)
+  const [texto, setTexto] = useState(esmero?.textoSaida || '')
+  const [msg, setMsg] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const exemplo = textoAvisoSaida(texto || TEXTO_AVISO_SAIDA_PADRAO, { cliente: 'Atual Modas', pedido: '5111', motorista: 'Juninho', cidade: 'Itabaiana' })
+
+  async function salvar() {
+    const u = url.trim().replace(/\/+$/, '')
+    if (ativo && !/^https:\/\/[^\s/]+$/.test(u)) { alert('Informe o endereço do Esmero com https:// e sem caminho (ex.: https://esmero.exemplo.com.br).'); return }
+    setSalvando(true)
+    try {
+      await setDoc(doc(db, 'config', 'esmero'), { url: u, ativo, textoSaida: texto.trim(), alteradoEm: new Date().toISOString() }, { merge: true })
+      setMsg(ativo ? 'Integração salva e ligada.' : 'Integração salva (desligada).')
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
+    } finally { setSalvando(false) }
+  }
+
+  return (
+    <>
+      <div className="toolbar">
+        <h1 className="page-title">Integrações <small>Esmero · aviso ao cliente no WhatsApp</small></h1>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '0 0 14px', maxWidth: 760 }}>
+        Quando o escritório lança um pedido como <b>finalizado e saiu</b> no Controle de entrega, o JC Produção pede ao
+        <b> Esmero</b> que mande uma mensagem ao cliente pelo WhatsApp da empresa. Quem fala com o cliente é o Esmero: a
+        mensagem fica na conversa dele, onde a vendedora vê. Se o cliente não for encontrado lá (ou estiver sem telefone),
+        o lançamento fica e a tela avisa, com o botão de reenviar.
+      </div>
+      {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
+
+      <div className="card em_dia" style={{ maxWidth: 760 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div className="field" style={{ flex: 2, minWidth: 260 }}>
+            <label>Endereço do Esmero</label>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://esmero.exemplo.com.br" disabled={salvando} />
+          </div>
+          <label className="filter-pill" style={{ alignSelf: 'flex-end' }}>
+            <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} disabled={salvando} />
+            Avisar o cliente ao lançar
+          </label>
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>Modelo da mensagem</label>
+          <textarea rows={4} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={TEXTO_AVISO_SAIDA_PADRAO} disabled={salvando}
+            style={{ width: '100%', font: 'inherit', padding: 8, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input, transparent)', color: 'inherit' }} />
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 4 }}>
+            Pode usar <code>{'{cliente}'}</code> (apelido), <code>{'{pedido}'}</code> (número), <code>{'{motorista}'}</code> (vira " com Fulano"; some sem motorista) e <code>{'{cidade}'}</code>.
+            Vazio = o modelo padrão.
+          </div>
+        </div>
+        <div style={{ fontSize: 13, marginTop: 10, padding: 10, borderRadius: 8, background: 'var(--bg-soft, rgba(127,127,127,.08))' }}>
+          <b>Como vai sair:</b> {exemplo}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button className="btn primary" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : '💾 Salvar'}</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 10 }}>
+          No Esmero: Configurações › WhatsApp e integrações › <b>JC Produção</b> — projeto Firebase <code>producaojcsacolas</code> e o endereço deste site.
+          Sem isso o Esmero recusa a chamada.
+        </div>
+      </div>
+    </>
   )
 }

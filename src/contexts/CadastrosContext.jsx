@@ -4,6 +4,7 @@ import { db } from '../firebase.js'
 import { useAuth } from './AuthContext.jsx'
 import { definirCores, doDoc, mesclaClientes } from '../utils.js'
 
+const ESMERO_VAZIO = { url: '', ativo: false, textoSaida: '' }
 const CadCtx = createContext(null)
 export const useCadastros = () => useContext(CadCtx)
 
@@ -23,6 +24,8 @@ export function CadastrosProvider({ children }) {
   // cores da impressão (Cadastros › Cores); [] = as de fábrica
   const [cores, setCores] = useState([])
   const [carregando, setCarregando] = useState(true)
+  // ponte com o Esmero (config/esmero): url, ativo, textoSaida — ver AVISO AO CLIENTE em utils
+  const [esmero, setEsmero] = useState(ESMERO_VAZIO)
 
   useEffect(() => {
     // Só assina DEPOIS do login. As regras do Firestore exigem auth, e um
@@ -78,11 +81,18 @@ export function CadastrosProvider({ children }) {
       (e) => { console.error('Erro ao ler clientes:', e); setClientesCol([]) })
   }, [user?.uid])
 
+  useEffect(() => {
+    if (!user) { setEsmero(ESMERO_VAZIO); return undefined }
+    return onSnapshot(doc(db, 'config', 'esmero'),
+      (snap) => setEsmero(snap.exists() ? { ...ESMERO_VAZIO, ...snap.data() } : ESMERO_VAZIO),
+      (e) => { console.error('Erro ao ler config/esmero:', e); setEsmero(ESMERO_VAZIO) })
+  }, [user?.uid])
+
   // UMA lista para todo mundo, sem repetir: a coleção ganha do legado
   const clientes = useMemo(() => mesclaClientes(clientesCol, clientesLegado), [clientesCol, clientesLegado])
 
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, clientesLegado, itens, motoristas, logistica, cores, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, clientesLegado, itens, motoristas, logistica, cores, esmero, carregando }}>
       {children}
     </CadCtx.Provider>
   )

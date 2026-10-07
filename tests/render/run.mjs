@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx'), aviso: join(aqui, 'aviso.jsx') } },
   },
   resolve: {
     alias: [
@@ -47,6 +47,7 @@ const bruto = {
   ...(await import(join(OUT, 'controle.js'))).roda(),
   ...(await import(join(OUT, 'paginas.js'))).roda(),
   ...(await import(join(OUT, 'clientes.js'))).roda(),
+  ...(await import(join(OUT, 'aviso.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -158,6 +159,12 @@ const ESPERA = {
   // lista os dois; "Migrar 1" porque a INGRID já está na coleção (ela ganha)
   cliLegado: ['2 cliente(s)', '2 cliente(s) ainda no formato antigo', 'Migrar 1 cliente(s)', 'Ingrid', 'Velha', 'LOJA VELHA LTDA'],
   cliLimpo: ['1 cliente(s)', 'Ingrid', '+ Novo cliente'],
+  // aviso ao cliente pelo Esmero: enviado sem botão; erro com motivo e Reenviar; lançado antes da ponte oferece avisar
+  avisoOk: ['✅ WhatsApp enviado para Atual pelo Loja centro', 'Anny', 'ENTREGUE por MATEUS'],
+  avisoErro: ['⚠ WhatsApp não enviado: cliente sem telefone no Esmero', '↻ Reenviar WhatsApp'],
+  avisoNenhum: ['cliente ainda não avisado no WhatsApp', '💬 Avisar no WhatsApp'],
+  avisoDesligado: ['ENTREGUE por MATEUS'],
+  integ: ['Integrações', 'Endereço do Esmero', 'Avisar o cliente ao lançar', 'Modelo da mensagem', 'Como vai sair:', 'Atual Modas', '#5111', 'com Juninho', 'producaojcsacolas'],
   ceTabela: ['#6215', '#6206', '#6999', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '3 pedido(s)'],
 }
 
@@ -192,6 +199,8 @@ const PROIBE = {
   rota: ['BIA CALCADOS'],                 // nada expedido: fora da rota
   cliLimpo: ['formato antigo', 'Migrar'],  // sem legado, sem faixa
   cliLegado: ['Ingrid Antiga'],            // a coleção ganha do array
+  avisoOk: ['Reenviar', 'Avisar no WhatsApp'],   // já enviado: nada a fazer
+  avisoDesligado: ['WhatsApp'],                   // ponte desligada e sem registro: nenhum chip
 }
 
 let mal = 0

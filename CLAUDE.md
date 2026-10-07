@@ -672,6 +672,51 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   recarregar — o que já saiu. Os outros tipos de erro seguem no ⚠ do item.
 - Testes em `tests/problemas.test.mjs` (inclui a aba da expedição pelos 2 eixos).
 
+## AVISO AO CLIENTE PELO ESMERO (07/10/2026)
+> O **Esmero** é o CRM/WhatsApp da Totali (`~/Code/esmero`, Next.js + Postgres
+> multi-empresa na VPS `totali-prod-01`). Quando o escritório LANÇA um pedido no
+> Controle de entrega (finalizado e saiu), o JC pede ao Esmero que avise o cliente.
+> **Quem fala com o cliente é o Esmero** — a mensagem fica na conversa, onde a
+> vendedora vê. Daqui sai só o pedido do aviso, com o texto pronto.
+
+- **Caminho (decisão do Raoni):** o NAVEGADOR de quem lançou chama
+  `POST <esmero>/api/integracoes/jcproducao/aviso` com o **token de sessão do
+  Firebase** no Authorization. Nenhum segredo no código (repositório público):
+  o Esmero confere a assinatura do Google e descobre a empresa pelo id do
+  projeto (`producaojcsacolas`) gravado lá. Cliente: `src/lib/esmero.js`
+  (nunca lança; devolve objeto que `registroWhatsSaida` traduz).
+- **Por qual número sai (decisão do Raoni):** a conversa que o cliente já tem →
+  o número da vendedora da carteira → o central. Quem decide é o Esmero.
+- **Como o Esmero acha o cliente:** pelo `telefone` se o JC mandar (campo novo e
+  opcional em Cadastros › Clientes, gravado no doc de `clientes`), senão pela
+  **razão social igual** depois de normalizada. Parecido NÃO casa — mandaria
+  mensagem para o cliente errado. Não achou / sem telefone / sem número
+  conectado: a resposta diz o motivo e a tela mostra.
+- **Configuração:** `config/esmero` = `{ url, ativo, textoSaida }`, editado em
+  Cadastros › **Integrações** (só dono). Modelo com `{cliente}` `{pedido}`
+  `{motorista}` `{cidade}` (`textoAvisoSaida`); vazio = `TEXTO_AVISO_SAIDA_PADRAO`.
+  Lido no `CadastrosContext` (`esmero`). Desligado ou sem URL = nada é chamado.
+- **Onde fica o resultado:** `pedidos.whatsSaida = { status enviado|erro, em,
+  por, texto, cliente, numero, motivo, detalhe }` (`registroWhatsSaida`). É o
+  chip do bloco de ações (`.ctl-whats`) no Controle e no Localizar, com
+  "↻ Reenviar WhatsApp" quando falhou e "💬 Avisar" para pedido lançado antes
+  da ponte. ⚠️ **O lançamento FICA mesmo se o aviso falhar** — o pedido saiu de
+  verdade; a tela avisa (alert + chip) que o cliente não foi avisado e por quê.
+  O aviso roda DEPOIS do `batch.commit()` do lançamento, fora dele.
+- **Rules:** `whatsSaida` entrou no `hasOnly` da expedição/operador (quem lança
+  grava o resultado). Publicar antes do build. O doc some com o pedido entregue;
+  o histórico real das mensagens é a conversa no Esmero.
+- **Lado Esmero** (branch `integracao-jcproducao`, PR): rota + `lib/integracoes/
+  jcproducao.ts` + bloco "JC Produção" em Configurações › Integrações (projeto
+  Firebase, endereço do site, ligar/desligar, último aviso). Sem migração: usa
+  o jsonb `organization_settings.integracoes`. Doc lá:
+  `docs/integracao-jcproducao.md`.
+- Testes: `tests/aviso-esmero.test.mjs` (texto, corpo, registro) e
+  `tests/render/aviso.jsx` (chip nos 4 estados + aba Integrações).
+- ⚠️ **O WhatsApp do próprio jcproducao (Fase 0, backend não publicado) duplica
+  o núcleo do Esmero.** Decisão pendente com o Raoni: JC Sacolas como empresa do
+  Esmero e o atendimento lá; este aviso já segue esse caminho.
+
 ## LOCALIZAR — "onde está este pedido?" (24/08/2026)
 > Nasceu de um caso concreto: o #5257 aparecia na Rota como pronto e **não
 > aparecia em Entregas**, e não havia como descobrir o porquê. Estava preso numa

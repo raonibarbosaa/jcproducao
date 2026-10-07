@@ -4654,3 +4654,91 @@ export function clientesParaMigrar(colecao, legado) {
   }
   return [...out.entries()].map(([id, dados]) => ({ id, dados }))
 }
+
+// ============================================================
+// AVISO AO CLIENTE PELO ESMERO (07/10/2026)
+// Quando o escritório LANÇA o pedido no Controle de entrega (finalizado e saiu),
+// o JC pede ao Esmero — o CRM/WhatsApp da Totali — que avise o cliente. Quem
+// fala com o cliente é o Esmero (a mensagem fica na conversa, onde a vendedora
+// vê); daqui sai só o pedido do aviso, com o texto pronto. Configuração em
+// `config/esmero` = { url, ativo, textoSaida }. O resultado fica no pedido em
+// `whatsSaida` = { status, em, por, detalhe, cliente, numero, texto } — é o chip
+// da tela e o que permite "Reenviar". Helpers puros aqui; a chamada HTTP está
+// em src/lib/esmero.js.
+// ============================================================
+export const EVENTO_AVISO_SAIDA = 'saiu_para_entrega'
+export const STATUS_WHATS = { ENVIADO: 'enviado', ERRO: 'erro', DESLIGADO: 'desligado' }
+export const TEXTO_AVISO_SAIDA_PADRAO =
+  'Olá, {cliente}! Aqui é da JC Sacolas. Seu pedido {pedido} saiu para entrega{motorista}. Qualquer dúvida, é só responder esta mensagem.'
+
+// Preenche o modelo: {cliente} (apelido ou razão), {pedido} (nº), {motorista}
+// (" com Fulano" — some, com o espaço, quando não há), {cidade}. Chave que o
+// modelo não conhece fica como está, para a pessoa ver que digitou errado.
+export function textoAvisoSaida(modelo, { cliente, pedido, motorista, cidade } = {}) {
+  const m = String(modelo || TEXTO_AVISO_SAIDA_PADRAO)
+  return m
+    .replace(/\{cliente\}/g, String(cliente || '').trim() || 'cliente')
+    .replace(/\{pedido\}/g, pedido != null ? `#${String(pedido).trim()}` : '')
+    .replace(/\{motorista\}/g, motorista ? ` com ${String(motorista).trim()}` : '')
+    .replace(/\{cidade\}/g, String(cidade || '').trim())
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+// O que vai para o Esmero no lançamento. `telefone` sai do cadastro de clientes
+// do JC quando existe (é o casamento mais seguro); sem ele o Esmero casa pela
+// razão social. Devolve null quando a integração está desligada ou sem URL.
+export function montaAvisoSaida(p, { motorista, clientes, cfg } = {}) {
+  if (!cfg?.ativo || !String(cfg.url || '').trim()) return null
+  if (!p?.idVenda) return null
+  const c = achaCliente(p.cliente, clientes)
+  return {
+    url: String(cfg.url).trim().replace(/\/+$/, ''),
+    corpo: {
+      evento: EVENTO_AVISO_SAIDA,
+      pedido: {
+        numero: String(p.idVenda),
+        cliente: String(p.cliente || '').trim(),
+        cidade: String(p.cidade || '').trim() || null,
+        motorista: String(motorista || '').trim() || null,
+        telefone: String(c?.telefone || '').trim() || null,
+      },
+      texto: textoAvisoSaida(cfg.textoSaida, {
+        cliente: nomeCliente(p.cliente, clientes), pedido: p.idVenda, motorista, cidade: p.cidade,
+      }),
+    },
+  }
+}
+
+// Traduz a resposta do Esmero (ou a falha de rede) no registro `whatsSaida`.
+// `motivo` é o código do Esmero; `detalhe` é a frase para a tela.
+const MOTIVO_WHATS = {
+  cliente_nao_encontrado: 'cliente não encontrado no Esmero (confira a razão social lá)',
+  cliente_sem_telefone: 'cliente sem telefone no Esmero',
+  sem_numero: 'nenhum número de WhatsApp do Esmero está conectado',
+  falhou_envio: 'o WhatsApp não aceitou a mensagem',
+}
+export function registroWhatsSaida(resposta, { quem, texto, agora } = {}) {
+  const em = agora || new Date().toISOString()
+  const por = quem?.executorNome || quem?.porNome || quem?.nome || ''
+  if (resposta?.ok) {
+    return {
+      status: STATUS_WHATS.ENVIADO, em, por, texto: texto || '',
+      cliente: resposta.cliente?.nome || '', telefone: resposta.cliente?.telefone || '',
+      numero: resposta.numero || '', mensagemId: resposta.mensagemId || '',
+    }
+  }
+  const motivo = resposta?.motivo || resposta?.erro || 'erro'
+  return {
+    status: STATUS_WHATS.ERRO, em, por, texto: texto || '',
+    motivo: String(motivo),
+    detalhe: MOTIVO_WHATS[motivo] || String(resposta?.detalhe || resposta?.erro || 'não foi possível avisar'),
+  }
+}
+
+// Frase curta do chip no Controle/Localizar
+export function resumoWhatsSaida(w) {
+  if (!w?.status) return ''
+  if (w.status === STATUS_WHATS.ENVIADO) return `WhatsApp enviado${w.cliente ? ` para ${w.cliente}` : ''}${w.numero ? ` pelo ${w.numero}` : ''}`
+  return `WhatsApp não enviado: ${w.detalhe || w.motivo || 'erro'}`
+}
