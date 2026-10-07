@@ -25,6 +25,7 @@ const Conciliacao = lazy(() => import('./pages/Conciliacao.jsx'))
 const Erros = lazy(() => import('./pages/Erros.jsx'))
 const Carga = lazy(() => import('./pages/Carga.jsx'))
 const Localizar = lazy(() => import('./pages/Localizar.jsx'))
+const ControleEntrega = lazy(() => import('./pages/ControleEntrega.jsx'))
 const Financeiro = lazy(() => import('./pages/Financeiro.jsx'))
 const OrdensFabricacao = lazy(() => import('./pages/OrdensFabricacao.jsx'))
 
@@ -32,10 +33,10 @@ const OrdensFabricacao = lazy(() => import('./pages/OrdensFabricacao.jsx'))
 const ACESSO = {
   // 'ordens' logo depois da Triagem: é o passo seguinte do fluxo (quem solta
   // as Ordens de Fabricação são dono e designer — decisão de 16/09/2026)
-  designer:   ['triagem', 'ordens', 'producao', 'carga', 'rota', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
+  designer:   ['triagem', 'ordens', 'producao', 'carga', 'rota', 'controle', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
   // 'financeiro' PRIMEIRO: é a tela de trabalho dele (contas a receber).
-  financeiro: ['financeiro', 'producao', 'rota', 'entregues', 'localizar', 'cadastros'],   // cadastros: só a aba Itens (preço)
-  dono:       ['triagem', 'ordens', 'producao', 'carga', 'rota', 'entregues', 'financeiro', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
+  financeiro: ['financeiro', 'producao', 'rota', 'controle', 'entregues', 'localizar', 'cadastros'],   // cadastros: só a aba Itens (preço)
+  dono:       ['triagem', 'ordens', 'producao', 'carga', 'rota', 'controle', 'entregues', 'financeiro', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)
   // a expedição VÊ os erros (o "já foi entregue" do vendedor é o aviso de não
@@ -43,7 +44,9 @@ const ACESSO = {
   // 'localizar' é a busca de "onde está o pedido": quem precisa achar a
   // mercadoria no galpão é ela, então entra pelos DOIS eixos (perfil aqui, setor
   // em `abasDoUsuario`). Também só leitura — desbloquear é do escritório.
-  expedicao:  ['producao', 'carga', 'rota', 'localizar', 'erros'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
+  // 'controle' = a planilha do escritório virou tela: a expedição marca pronto e
+  // saída pelo número do pedido (decisão do dono em 07/10/2026); a entrega não.
+  expedicao:  ['producao', 'carga', 'rota', 'controle', 'localizar', 'erros'],   // vê o quadro e a rota (na rota, só acompanha; não dá "entregue")
 }
 
 export default function App() {
@@ -153,6 +156,7 @@ export default function App() {
         {abas.includes('carga') && <Route path="/carga" element={<Carga pedidos={pedidos} />} />}
         {abas.includes('rota') && <Route path="/rota" element={<Rota pedidos={pedidos} />} />}
         {abas.includes('entregues') && <Route path="/entregues" element={<Entregues />} />}
+        {abas.includes('controle') && <Route path="/controle" element={<ControleEntrega pedidos={pedidos} problemas={problemas} />} />}
         {abas.includes('localizar') && <Route path="/localizar" element={<Localizar pedidos={pedidos} problemas={problemas} />} />}
         {abas.includes('financeiro') && <Route path="/financeiro" element={<Financeiro pedidos={pedidos} />} />}
         {abas.includes('relatorios') && <Route path="/relatorios" element={<Relatorios pedidos={pedidos} />} />}

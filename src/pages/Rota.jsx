@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { doc, setDoc, deleteDoc, updateDoc, writeBatch, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora, qtdNaEtapa, qtdPendente,
-  mapaEtapasComQtd, pedidoTodoEntregue, arredondaQtd, fmtQtd,
-  temVolumes, volumesNaEtapa, mapaEtapasMovendoVolumes, coresDoItemPorChave,
+import { fmtData, fmtMoeda, situacaoPrazo, ORIGEM_NM, filtraPedidos, vendedoresDe, resumoFiltros, previsaoDe, nomeCliente, totaisPorMaterial, somaTotais, TOTAIS_ZERO, fmtTotais, fatiaProntos, saiuParaEntrega, fmtDataHora,
+  fmtQtd, preparaRemessa, coresDoItemPorChave,
 } from '../utils.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -58,47 +57,18 @@ export default function Rota({ pedidos }) {
   // Grava uma REMESSA em `entregues` (entregues/{idVenda}-{n}) e move a
   // QUANTIDADE entregue de `expedido` para `entregue`. O pedido só é apagado
   // quando não sobra nada pendente em item nenhum.
-  // O item NÃO sai mais de `itens`: com produção parcial ele pode ter 40 saindo e
-  // 60 ainda na linha, e apagá-lo levaria os 60 junto, sem erro na tela.
+  // A conta mora em `preparaRemessa` (utils) — fonte única com a tela de
+  // Controle de entrega, que grava a mesma remessa pelo número do pedido.
   async function gravarEntrega(p, motorista) {
-    const todos = p._todos || p.itens || []
-    const idxs = p._idxs || todos.map((_, i) => i)
-    const base = { ...p, itens: todos }          // pedido cheio: as contas precisam do total
-    const movs = idxs
-      .map((i) => ({ idx: i, de: 'expedido', para: 'entregue', qtd: qtdNaEtapa(base, i, 'expedido') }))
-      .filter((m) => m.qtd > 0)
-    if (!movs.length) return
-    // item embalado baixa VOLUME por volume; o legado continua por quantidade
-    const porVolume = movs
-      .filter((m) => temVolumes(base, m.idx))
-      .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(base, m.idx, 'expedido'), para: 'entregue' }))
-      .filter((m) => m.ids.length)
-    const etapas = porVolume.length
-      ? mapaEtapasMovendoVolumes(base, porVolume, nome)
-      : mapaEtapasComQtd(base, movs, nome)
-    const depois = { ...base, etapas }
-    const acabou = pedidoTodoEntregue(depois)
-    const n = (p.remessas || 0) + 1
-    // `id` fica de fora: é o id do doc de `pedidos`, e gravado aqui dentro ele
-    // sobrescrevia o id do doc da remessa na leitura (ver `doDoc` em utils)
-    const { _todos, _idxs, _pendentes, id, ...pedido } = p
-    await setDoc(doc(db, 'entregues', `${p.idVenda}-${n}`), {
-      ...pedido,
-      idVenda: p.idVenda,          // campo (o id do doc agora tem sufixo de remessa)
-      // qtd = o que saiu nesta remessa; qtdItem = o total do item no pedido
-      itens: movs.map((m) => ({ ...todos[m.idx], qtd: m.qtd, qtdItem: arredondaQtd(todos[m.idx]?.qtd) })),
-      remessa: n,
-      parcial: !acabou,
-      itensPendentes: todos.filter((_, i) => qtdPendente(depois, i) > 0).length,
-      motorista: motorista || '',
-      entregueEm: new Date().toISOString(),
-    })
-    if (acabou) {
+    const r = preparaRemessa(p, motorista, nome)
+    if (!r) return
+    await setDoc(doc(db, 'entregues', r.docId), r.remessa)
+    if (r.acabou) {
       await deleteDoc(doc(db, 'pedidos', p.idVenda))
     } else {
       // o que sobrou continua na fábrica — não pode herdar a saída da remessa que foi
       await updateDoc(doc(db, 'pedidos', p.idVenda), {
-        etapas, remessas: n,
+        etapas: r.etapas, remessas: r.n,
         saidaEm: deleteField(), saidaMotorista: deleteField(), saidaPor: deleteField(),
       })
     }

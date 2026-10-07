@@ -47,5 +47,10 @@ t('registro antigo cai no porNome', quemFez({ porNome: 'Michele' }), 'Michele')
 t('tablet de expedição só vê a fila', abasDoUsuario('operador', ['expedicao'], ['producao'], true), ['producao'])
 ok('operador de expedição de verdade continua com Entregas',
   abasDoUsuario('operador', ['expedicao'], ['producao']).includes('carga'))
+// e o Controle de entrega (pronto → saiu pelo número) — a entrega continua só do escritório
+ok('operador de expedição ganha a aba Controle de entrega',
+  abasDoUsuario('operador', ['expedicao'], ['producao']).includes('controle'))
+ok('operador do silk não',
+  !abasDoUsuario('operador', ['PRODUCAO'], ['producao']).includes('controle'))
 
 export default resultado('posto')

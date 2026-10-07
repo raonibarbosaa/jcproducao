@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx') } },
   },
   resolve: {
     alias: [
@@ -44,6 +44,7 @@ const bruto = {
   ...(await import(join(OUT, 'triagem.js'))).roda(),
   ...(await import(join(OUT, 'ordens.js'))).roda(),
   ...(await import(join(OUT, 'cores.js'))).roda(),
+  ...(await import(join(OUT, 'controle.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -131,6 +132,14 @@ const ESPERA = {
   tFiltroPapel: ['SACOLA PAPEL P02', 'Laminação', '1 item(ns) oculto(s)'],
   tFiltroCor: ['SACOLA PLASTICA 30X40', 'oculto(s) pelo filtro'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
+  // Controle de entrega: a planilha do escritório virou tela
+  ceCasca: ['Controle de entrega', 'Nº do pedido', 'OUTUBRO 2026', 'Todas as situações', 'Imprimir', 'CSV'],
+  ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Marcar PRONTO', 'R$ 448,00'],
+  cePronto: ['CREDIMOVEIS', 'PRONTO · será entregue', 'baixado pelo escritório', 'Motorista…', 'MATEUS', 'Saiu para entrega', 'ENTREGUE'],
+  ceSaiu: ['SAIU PARA ENTREGA', 'MATEUS', 'Não entregou (voltou)', 'ENTREGUE'],
+  ceEntregue: ['SPAÇO', 'Pedido já entregue', 'ENTREGUE · remessa 1', 'PAULO', 'Não há mais nada a marcar'],
+  ceExpedicao: ['Saiu para entrega', 'entrega: só o escritório', 'disabled=""'],
+  ceTabela: ['#6215', '#6206', '#5900', 'CREDIMOVEIS', 'SERÁ ENTREGUE', 'SAIU P/ ENTREGA', 'ENTREGUE', '🏢 escritório', '🏭 fábrica', 'MATEUS', 'PAULO', 'R$ 408,00', '3 linha(s)'],
 }
 
 // o que NÃO pode aparecer
@@ -147,6 +156,9 @@ const PROIBE = {
   tDuas: ['Cor da impressão ⚠', 'escolha 2', 'Falta a'],  // duas escolhidas = completo
   tFiltroPlast: ['SACOLA PAPEL P02', 'Laminação'],
   tFiltroPapel: ['SACOLA PLASTICA 30X40', 'Cor da impressão'],
+  ceEntregue: ['Marcar PRONTO', 'Saiu para entrega'],   // entregue por inteiro: nada a marcar
+  ceExpedicao: ['R$'],                                  // expedição não vê valor
+  ceSaiu: ['Saiu para entrega'],                        // já saiu: só o voltar
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
   qOfLigada: ['CAIO', 'Concluir produto', 'OF inteira'],   // sem OF e exigência ligada: fora do quadro; 1 produto = só "Concluir OF"

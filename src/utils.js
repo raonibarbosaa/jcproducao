@@ -295,6 +295,11 @@ export function abasDoUsuario(perfil, setores, base, posto = false) {
   if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('localizar')) {
     abas.push('localizar')
   }
+  // e o Controle de entrega (pronto → saiu pelo número do pedido): a expedição
+  // marca pronto e saída; a entrega continua só do escritório (07/10/2026)
+  if ((meus.includes('expedicao') || meus.includes('entrega')) && !abas.includes('controle')) {
+    abas.push('controle')
+  }
   return abas
 }
 
@@ -4096,4 +4101,312 @@ export function backendVivo(vivoEm, agora = new Date(), limiteMin = 3) {
   const t = vivoEm ? new Date(vivoEm).getTime() : 0
   if (!(t > 0)) return false
   return (agora.getTime() - t) <= limiteMin * 60 * 1000
+}
+
+// =====================================================================
+// CONTROLE DE ENTREGA — a planilha do escritório vira tela (07/10/2026)
+// =====================================================================
+// A fábrica não dá baixa no quadro; quando a nota fiscal sobe, o escritório
+// registra numa planilha o que o sistema deveria saber. Esta seção é a ENTRADA
+// do escritório: digita o número, declara "pronto" (vai para `expedido`),
+// "saiu" e "entregue". Desenho em CONTROLE_ENTREGA.md.
+//
+// Princípios que o código abaixo cumpre:
+//  - é uma baixa NORMAL de etapa (mapa + auditoria no mesmo batch), só que
+//    carimbada com `origem: 'escritorio'` — é esse carimbo que depois diz qual
+//    setor não está dando baixa;
+//  - sem balança não há volume: o que está solto anda por QUANTIDADE (caminho
+//    do item legado). NUNCA inventar volume nem peso;
+//  - item já embalado anda por VOLUME (os que estão em `expedicao`); o resto
+//    solto dele é RECUSADO com motivo — misturar quantidade solta com volumes
+//    num item só não tem representação honesta no modelo.
+
+export const ORIGEM_BAIXA = { ESCRITORIO: 'escritorio', FABRICA: 'fabrica', CONCILIACAO: 'conciliacao' }
+
+// Quem usa a tela (os dois eixos, como a aba Entregas): staff + perfil
+// expedição + operador com setor expedicao|entrega. Rules já cobrem os campos.
+export function podeBaixarNoControle(perfil, setores) {
+  if (['dono', 'designer', 'financeiro', 'expedicao'].includes(perfil)) return true
+  if (perfil !== 'operador') return false
+  const meus = (setores || []).map(normSetor)
+  return meus.includes('expedicao') || meus.includes('entrega')
+}
+// A ENTREGA (que abre a cobrança) é só do escritório — decisão do dono em 07/10/2026.
+export const podeEntregarNoControle = (perfil) => ['dono', 'designer', 'financeiro'].includes(perfil)
+
+// Situação de cada item para o card: o que está na fábrica (solto), o que já
+// está embalado esperando o ✓ Expedir, o que está pronto, o que foi entregue.
+// `baixavel` = há algo que a baixa do escritório consegue mover; `recusa` =
+// quantidade solta de item já embalado (precisa da balança na montagem).
+export function situacaoBaixa(p, itensCad) {
+  return (p?.itens || []).map((it, i) => {
+    const d = distribuicaoDoItem(p, i)
+    const linha = linhaDoItem(p, i) || 'triagem'
+    const embalado = temVolumes(p, i)
+    const volsExp = volumesNaEtapa(p, i, 'expedicao')
+    const solta = arredondaQtd((d[linha] || 0) + (d.montagem || 0) + (embalado ? 0 : (d.expedicao || 0)))
+    const onde = []
+    if (d[linha] > 0) onde.push({ etapa: linha, qtd: arredondaQtd(d[linha]) })
+    if (d.montagem > 0) onde.push({ etapa: 'montagem', qtd: arredondaQtd(d.montagem) })
+    if (d.expedicao > 0) onde.push({ etapa: 'expedicao', qtd: arredondaQtd(d.expedicao), volumes: volsExp.length })
+    return {
+      idx: i,
+      key: keyDoItem(p, i),
+      produto: it.produto || '',
+      material: materialDoItem(it, itensCad),
+      linha,
+      qtdItem: arredondaQtd(it.qtd),
+      onde,                                  // onde a parte não pronta está
+      pronto: arredondaQtd(d.expedido),      // já em `expedido`
+      entregue: arredondaQtd(d.entregue),
+      embalado,
+      volumesParaExpedir: volsExp,           // ids dos volumes em `expedicao`
+      solta,                                 // quantidade solta (sem volume)
+      // só o que a baixa consegue mover: solto de item sem volume, ou volumes
+      // embalados em expedição
+      baixavel: embalado ? volsExp.length > 0 : solta > 0,
+      recusa: embalado && solta > 0 ? { qtd: solta, motivo: 'sem-pesagem' } : null,
+      concluido: solta <= 0 && volsExp.length === 0,   // nada a fazer neste item
+    }
+  })
+}
+
+// A BAIXA DO ESCRITÓRIO. `idxs` = itens marcados no card (padrão: todos).
+// Devolve o mapa de etapas pronto para o updateDoc, os registros de auditoria
+// (um por item × etapa de origem, com `origem: 'escritorio'`), os campos que o
+// pedido ganha e o que foi recusado. `movidos` vazio = nada a gravar.
+// Devolve MAPA, então vai envolvido em `carimbaTempos` (regra da casa).
+export function baixaEscritorio(p, idxs, quem, itensCad, agora) {
+  const t = agora || new Date().toISOString()
+  const alvo = new Set(idxs || (p?.itens || []).map((_, i) => i))
+  const sit = situacaoBaixa(p, itensCad)
+  const assina = quem?.executorNome || quem?.porNome || ''
+  const mapa = {}
+  const movidos = []
+  const recusados = []
+  const registros = []
+  const base = (s) => ({
+    idVenda: p?.idVenda || '', cliente: p?.cliente || '', itemKey: s.key,
+    produto: s.produto, qtdItem: s.qtdItem, linha: linhaDoItem(p, s.idx) || '',
+    material: s.material || '', para: 'expedido', quando: t,
+    origem: ORIGEM_BAIXA.ESCRITORIO, ...(quem || {}),
+  })
+  ;(p?.itens || []).forEach((_, i) => {
+    const s = sit[i]
+    const ant = doMapaDoItem(p?.etapas, p, i)
+    const guarda = {
+      ...(ant?.desde ? { desde: ant.desde } : {}),
+      ...(ant?.tempos ? { tempos: ant.tempos } : {}),
+    }
+    if (alvo.has(i) && s.recusa) recusados.push({ idx: i, key: s.key, produto: s.produto, ...s.recusa })
+    if (alvo.has(i) && s.baixavel) {
+      if (s.embalado) {
+        // item embalado: os volumes em expedição vão para expedido
+        const novo = movePorVolume(p, i, s.volumesParaExpedir, 'expedido', assina)
+        if (novo) {
+          mapa[s.key] = novo
+          const vols = volumesDoItem(p, i).filter((v) => s.volumesParaExpedir.includes(v.id))
+          const qtd = arredondaQtd(vols.reduce((sm, v) => sm + v.qtd, 0))
+          movidos.push({ idx: i, key: s.key, produto: s.produto, qtd, de: ['expedicao'], volumes: vols.length })
+          registros.push({ ...base(s), de: 'expedicao', qtd, volumes: vols.length })
+          return
+        }
+      } else {
+        // item solto: tudo que está na fábrica vira `expedido`, por quantidade.
+        // Um registro por ETAPA de origem — é isso que depois diz de onde o
+        // escritório está tendo que tirar o pedido.
+        const d = distribuicaoDoItem(p, i)
+        mapa[s.key] = {
+          montagem: 0, expedicao: 0,
+          expedido: arredondaQtd(d.expedido + s.solta),
+          entregue: arredondaQtd(d.entregue),
+          por: assina, em: t, ...guarda,
+        }
+        movidos.push({ idx: i, key: s.key, produto: s.produto, qtd: s.solta, de: s.onde.map((o) => o.etapa) })
+        for (const o of s.onde) registros.push({ ...base(s), de: o.etapa, qtd: o.qtd })
+        return
+      }
+    }
+    // congela o resto no formato novo (como os outros construtores), SEM perder
+    // o relógio do item que não se moveu
+    if (Array.isArray(ant?.volumes) && ant.volumes.length) { mapa[s.key] = ant; return }
+    const d = distribuicaoDoItem(p, i)
+    mapa[s.key] = {
+      montagem: d.montagem, expedicao: d.expedicao, expedido: d.expedido, entregue: d.entregue,
+      por: ant?.por || '', em: ant?.em || '', ...guarda,
+    }
+  })
+  return {
+    etapas: carimbaTempos(p, mapa, t),
+    registros,
+    movidos,
+    recusados,
+    // o carimbo que a tabela do mês lê para dizer "baixado pelo escritório"
+    campos: movidos.length
+      ? { baixaEscritorio: { em: t, por: assina, uid: quem?.executorUid || quem?.porUid || '' } }
+      : {},
+  }
+}
+
+// De onde veio a baixa para `expedido` deste pedido/remessa.
+export const origemDaBaixa = (p) =>
+  (p?.origem === 'conciliacao-planilha' ? ORIGEM_BAIXA.CONCILIACAO
+    : p?.baixaEscritorio?.em ? ORIGEM_BAIXA.ESCRITORIO : ORIGEM_BAIXA.FABRICA)
+
+// ---------- a REMESSA (entregar) — fonte única para Rota e Controle ----------
+// Era `gravarEntrega` dentro de Rota.jsx. A parte PURA fica aqui para as duas
+// telas gravarem a mesma coisa. `p` pode vir fatiado por `fatiaProntos`
+// (`_todos`/`_idxs`) ou inteiro. Devolve null quando não há nada expedido.
+export function preparaRemessa(p, motorista, quem, agora) {
+  const t = agora || new Date().toISOString()
+  const todos = p?._todos || p?.itens || []
+  const idxs = p?._idxs || todos.map((_, i) => i)
+  const base = { ...p, itens: todos }          // pedido cheio: as contas precisam do total
+  const movs = idxs
+    .map((i) => ({ idx: i, de: 'expedido', para: 'entregue', qtd: qtdNaEtapa(base, i, 'expedido') }))
+    .filter((m) => m.qtd > 0)
+  if (!movs.length) return null
+  // item embalado baixa VOLUME por volume; o legado continua por quantidade
+  const porVolume = movs
+    .filter((m) => temVolumes(base, m.idx))
+    .map((m) => ({ idx: m.idx, ids: volumesNaEtapa(base, m.idx, 'expedido'), para: 'entregue' }))
+    .filter((m) => m.ids.length)
+  const porQtd = movs.filter((m) => !temVolumes(base, m.idx))
+  // pedido MISTO (um item por volume, outro por quantidade): cada construtor
+  // congela o que não é dele, então o de quantidade roda sobre o resultado
+  let etapas = base.etapas
+  if (porVolume.length) etapas = mapaEtapasMovendoVolumes(base, porVolume, quem)
+  if (porQtd.length) etapas = mapaEtapasComQtd({ ...base, etapas }, porQtd, quem)
+  if (!porVolume.length && !porQtd.length) return null
+  const depois = { ...base, etapas }
+  const acabou = pedidoTodoEntregue(depois)
+  const n = (p.remessas || 0) + 1
+  // `id` fica de fora: é o id do doc de `pedidos`, e gravado aqui dentro ele
+  // sobrescrevia o id do doc da remessa na leitura (ver `doDoc`)
+  const { _todos, _idxs, _pendentes, id, ...pedido } = p
+  return {
+    docId: `${p.idVenda}-${n}`,
+    n,
+    acabou,
+    etapas,
+    remessa: {
+      ...pedido,
+      idVenda: p.idVenda,
+      itens: movs.map((m) => ({ ...todos[m.idx], qtd: m.qtd, qtdItem: arredondaQtd(todos[m.idx]?.qtd) })),
+      remessa: n,
+      parcial: !acabou,
+      itensPendentes: todos.filter((_, i) => qtdPendente(depois, i) > 0).length,
+      motorista: motorista || '',
+      entregueEm: t,
+    },
+  }
+}
+
+// ---------- a TABELA DO MÊS (a planilha, derivada do banco) ----------
+// Uma linha por estado: pedido vivo com algo `expedido` = SERÁ ENTREGUE (ou
+// SAIU, se `saidaEm`); remessa em `entregues` = ENTREGUE. Pedido com remessa
+// parcial aparece duas vezes, como na planilha quando vai em duas viagens.
+// Nada disso é coleção: é VISÃO sobre `pedidos` + `entregues`.
+export const SITUACAO_CONTROLE = { PRONTO: 'pronto', SAIU: 'saiu', ENTREGUE: 'entregue' }
+export const NOME_SITUACAO_CONTROLE = {
+  pronto: 'SERÁ ENTREGUE', saiu: 'SAIU P/ ENTREGA', entregue: 'ENTREGUE',
+}
+
+// 'YYYY-MM' pelas partes LOCAIS (em UTC-3 o ISO cai no mês anterior na virada)
+export const mesDe = (iso) => {
+  const d = diaISO(iso)
+  return d ? d.slice(0, 7) : ''
+}
+const MESES_PT = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+  'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO']
+// 'OUTUBRO 2026' — o nome que a aba da planilha deles tem
+export const rotuloMes = (mes) => {
+  const [a, m] = String(mes || '').split('-').map(Number)
+  return MESES_PT[m - 1] ? `${MESES_PT[m - 1]} ${a}` : String(mes || '')
+}
+
+// quando o pedido ficou pronto: a entrada mais recente em `expedido` entre os
+// itens prontos (aproximada quando não há carimbo — como no Localizar)
+export function prontoDesde(p) {
+  let maior = ''
+  let exato = true
+  for (const i of idxProntos(p)) {
+    const e = entradaNaEtapa(p, i, 'expedido')
+    if (e.iso && e.iso > maior) maior = e.iso
+    if (!e.exato) exato = false
+  }
+  return { iso: maior, exato }
+}
+
+export function linhasControleEntrega(pedidos, entregues, { mes, situacao, clientes, vendedores } = {}) {
+  const linhas = []
+  for (const p of pedidos || []) {
+    const prontos = idxProntos(p)
+    if (!prontos.length) continue
+    const saiu = saiuParaEntrega(p)
+    const desde = prontoDesde(p)
+    const quando = saiu ? p.saidaEm : desde.iso
+    linhas.push({
+      chave: `${p.idVenda}|${saiu ? 'saiu' : 'pronto'}`,
+      situacao: saiu ? SITUACAO_CONTROLE.SAIU : SITUACAO_CONTROLE.PRONTO,
+      idVenda: String(p.idVenda ?? ''),
+      cliente: nomeCliente(p.cliente, clientes),
+      cidade: p.cidade || '',
+      rota: vendedores ? rotaDe(p, vendedores) : (p.rota || ''),
+      vendedor: p.vendedor || '',
+      valor: Number(p.valorTotal) || 0,
+      quando: quando || '',
+      aproximado: !saiu && !desde.exato,
+      motorista: saiu ? (p.saidaMotorista || '') : '',
+      origem: origemDaBaixa(p),
+      itens: prontos.length,
+      itensTotal: (p.itens || []).length,
+      parcial: prontos.length < (p.itens || []).length,
+      remessa: 0,
+      docId: p.id || String(p.idVenda ?? ''),
+    })
+  }
+  for (const e of entregues || []) {
+    linhas.push({
+      chave: `${e.idVenda ?? e.id}|entregue|${e.remessa || 1}`,
+      situacao: SITUACAO_CONTROLE.ENTREGUE,
+      idVenda: String(e.idVenda ?? e.id ?? ''),
+      cliente: nomeCliente(e.cliente, clientes),
+      cidade: e.cidade || '',
+      rota: vendedores ? rotaDe(e, vendedores) : (e.rota || ''),
+      vendedor: e.vendedor || '',
+      valor: Number(e.valorTotal) || 0,
+      quando: e.entregueEm || '',
+      aproximado: false,
+      motorista: e.motorista || '',
+      origem: origemDaBaixa(e),
+      itens: (e.itens || []).length,
+      itensTotal: (e.itens || []).length + (Number(e.itensPendentes) || 0),
+      parcial: !!e.parcial,
+      remessa: Number(e.remessa) || 1,
+      pago: !!e.pago,
+      docId: e.id || '',
+    })
+  }
+  for (const l of linhas) l.mes = mesDe(l.quando)
+  return linhas
+    .filter((l) => !mes || l.mes === mes)
+    .filter((l) => !situacao || l.situacao === situacao)
+    .sort((a, b) => (b.quando || '').localeCompare(a.quando || '') || a.idVenda.localeCompare(b.idVenda))
+}
+
+// meses que existem nas linhas, do mais novo para o mais velho
+export const mesesDoControle = (linhas) =>
+  [...new Set((linhas || []).map((l) => l.mes).filter(Boolean))].sort().reverse()
+
+// totais da tabela (valor só para quem vê valor — a tela decide se mostra)
+export function totaisDoControle(linhas) {
+  const t = { linhas: 0, pronto: 0, saiu: 0, entregue: 0, valor: 0, escritorio: 0 }
+  for (const l of linhas || []) {
+    t.linhas++
+    t[l.situacao] = (t[l.situacao] || 0) + 1
+    t.valor += l.valor || 0
+    if (l.origem === ORIGEM_BAIXA.ESCRITORIO) t.escritorio++
+  }
+  return t
 }

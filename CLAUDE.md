@@ -36,6 +36,19 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > `backend/README.md`. ⚠️ Deploy do backend é pelo Portainer, nunca
 > `docker compose up` na VPS.
 
+> **Controle de entrega — a planilha do escritório vira tela** (digita o nº do
+> pedido → puxa cliente/cidade/valor → PRONTO (`expedido`) / SAIU / ENTREGUE na
+> mesma tela; a lista do mês é VISÃO sobre `pedidos`+`entregues`, sem coleção
+> nova; baixa do escritório leva `origem: 'escritorio'` para medir qual setor não
+> dá baixa): **desenho ABERTO em 07/10/2026** em
+> [`CONTROLE_ENTREGA.md`](CONTROLE_ENTREGA.md); decisões do dono fechadas no
+> mesmo dia. **Fase A (helpers `baixaEscritorio`, `situacaoBaixa`,
+> `preparaRemessa`, `linhasControleEntrega` + testes) e Fase B (tela
+> `ControleEntrega.jsx`, aba `controle` para dono/designer/financeiro/expedição e
+> operador de expedição/entrega; render em `test:tela`) FEITAS**; a Rota já grava
+> a remessa por `preparaRemessa`. ⚠️ Não publicada ainda (build + gh-pages; sem
+> rules novas). Fase C é a próxima.
+
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde
 > 04/09/2026 — aba `financeiro`, coleções `cobrancas` e `movimentos`, só dono e

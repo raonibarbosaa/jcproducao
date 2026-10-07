@@ -13,6 +13,7 @@ const LABEL = {
   carga: 'Entregas',
   rota: 'Rota',
   entregues: 'Entregues',
+  controle: 'Controle de entrega',
   localizar: 'Localizar',
   financeiro: 'Financeiro',
   relatorios: 'Relatórios',
