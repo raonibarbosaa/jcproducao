@@ -34,7 +34,7 @@ const card = (r, props = {}) => renderToString(
   <CardControle r={r} comp={comp} cargas={[]} planos={[]} clientes={[]} itensCad={CAD} termo={r.idVenda}
     veValor podeLancar podeEntregar salvando="" motoristas={MOT} problemas={[]}
     acoes={{ salvando: '', lancar: nada, voltou: nada, sairDeNovo: nada, entregar: nada }} {...props} />)
-const linhas = linhasControleEntrega([naFabrica, prontoFabrica, lancado, voltou])
+const linhas = linhasControleEntrega([naFabrica, prontoFabrica, lancado, voltou])   // prontoFabrica ENTRA agora
 
 export function roda() {
   globalThis.__auth = { perfil: 'financeiro', nome: 'Anny', user: { uid: 'u1' } }

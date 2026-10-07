@@ -184,10 +184,14 @@ Decisão derivada de 4: `obsEntrega` SAI do desenho. Decisão derivada de 2: `AC
 A 1ª versão listava TUDO que estava em `expedido` (77 baixas da fábrica) e
 misturava o histórico de entregas por mês. Não era isso. O que vale agora:
 
-1. **Só entra na lista o que o ESCRITÓRIO lançou** (`baixaEscritorio.em`).
-   Pedido que a fábrica baixou sozinha não aparece até alguém digitar o número.
-   A lista é a FILA DO QUE ESTÁ NA RUA, não um arquivo mensal — por isso o
-   filtro de mês saiu.
+1. ~~Só entra na lista o que o ESCRITÓRIO lançou~~ → **REVERTIDO no mesmo dia
+   ("a lista abre toda")**: entra TUDO que está pronto e não foi entregue — a
+   baixa da fábrica e o lançamento do escritório lado a lado, com a coluna
+   **Origem** (🏭 fábrica × 🏢 escritório) e filtro por origem. Situações:
+   SERÁ ENTREGUE (saída marcada, por quem for) · PRONTO (fábrica baixou, sem
+   saída) · NÃO ENTREGOU (lançado, voltou). Continua sem filtro de mês
+   (é a fila do que está pronto/na rua, não um arquivo) e entregue continua
+   SAINDO da lista.
 2. **Lançar é UMA ação:** nº do pedido + motorista (obrigatório) = pedido
    finalizado e SAIU. `lancarControle` = `baixaEscritorio(..., {inteiro:true})`
    + carimbo + `saidaEm/saidaMotorista/saidaPor`, num batch só com a auditoria.

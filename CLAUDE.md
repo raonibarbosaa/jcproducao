@@ -46,8 +46,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > `preparaRemessa`, `linhasControleEntrega` + testes) e Fase B (tela
 > `ControleEntrega.jsx`, aba `controle` para dono/designer/financeiro/expedição e
 > operador de expedição/entrega; render em `test:tela`) FEITAS e REVISADAS no
-> mesmo dia**: só entra na lista o que o escritório LANÇOU (nº + motorista =
-> finalizado e saiu, pedido inteiro); ENTREGUE só financeiro/dono e sai da lista.
+> mesmo dia**: lançar = nº + motorista (finalizado e saiu, pedido inteiro); a
+> lista mostra TUDO que está pronto (fábrica e escritório, coluna Origem);
+> ENTREGUE só financeiro/dono e sai da lista.
 > ✅ Rules (`baixaEscritorio` no hasOnly da expedição) publicadas e site no ar
 > em 07/10/2026. **Fase C FEITA** (ações compartilhadas em
 > `components/AcoesControle.jsx`, também no Localizar; lançamento fecha o aviso

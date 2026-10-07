@@ -133,8 +133,8 @@ const ESPERA = {
   tFiltroCor: ['SACOLA PLASTICA 30X40', 'oculto(s) pelo filtro'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
   // Controle de entrega: a planilha do escritório virou tela
-  ceCasca: ['Controle de entrega', 'Nº do pedido', 'Lançados pelo escritório', '2 pedido(s)', '1 será entregue', '1 não entregou',
-    '#6215', '#6206', 'Todas as situações', 'Imprimir', 'CSV'],
+  ceCasca: ['Controle de entrega', 'Nº do pedido', 'Prontos e na rua', '3 pedido(s)', '1 será entregue', '1 pronto(s) sem saída', '1 não entregou',
+    '2 lançado(s) pelo escritório', '#6215', '#6206', '#6999', 'Todas as situações', 'Fábrica e escritório', 'Imprimir', 'CSV'],
   ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Motorista…', 'Lançar: finalizado e saiu', 'R$ 448,00'],
   ceProntoFabrica: ['PRONTO pela fábrica', 'ainda não lançado', 'Lançar: finalizado e saiu'],
   ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS'],
@@ -144,7 +144,7 @@ const ESPERA = {
   ceResumoEsc: ['Baixas do escritório por setor', '3 item(ns) de 2 pedido(s)', '1 sem pesagem', 'OUTUBRO 2026', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300 un Papel', '20 kg Plástico'],
   ceLocalizar: ['Localizar', 'Número do pedido, cliente ou produto'],   // a casca monta com o hook de ações dentro
   ceAcoesSemPermissao: ['<vazio>'],
-  ceTabela: ['#6215', '#6206', 'CREDIMOVEIS', 'BEBE DE MAE', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', 'MATEUS', 'PAULO', 'R$ 448,00', '2 pedido(s)'],
+  ceTabela: ['#6215', '#6206', '#6999', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '3 pedido(s)'],
 }
 
 // o que NÃO pode aparecer
@@ -164,7 +164,7 @@ const PROIBE = {
   ceEntregue: ['Lançar', 'ENTREGUE por'],               // entregue por inteiro: nada a marcar
   ceExpedicao: ['R$', '📦 ENTREGUE'],                  // expedição não vê valor nem entrega
   ceLancado: ['Lançar: finalizado'],                    // já lançado: não lança de novo
-  ceCasca: ['#6999', '#5738'],                          // a fábrica sozinha não entra na lista
+  ceCasca: ['#5738'],                                   // na fábrica ainda: fora da lista
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
   qOfLigada: ['CAIO', 'Concluir produto', 'OF inteira'],   // sem OF e exigência ligada: fora do quadro; 1 produto = só "Concluir OF"

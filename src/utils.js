@@ -4364,15 +4364,17 @@ export function preparaRemessa(p, motorista, quem, agora) {
   }
 }
 
-// ---------- a LISTA DO ESCRITÓRIO (a planilha, derivada do banco) ----------
-// Só entra o que o escritório LANÇOU (`baixaEscritorio`) e ainda não foi
-// entregue — pedido que a fábrica baixou sozinha não aparece até alguém
-// digitar o número (decisão do dono em 07/10/2026). Entregue SAI da lista: o
-// histórico é a aba Entregues. Nada disso é coleção: é VISÃO sobre `pedidos`.
-//   SERÁ ENTREGUE = lançado e na rua (saída marcada)
-//   NÃO ENTREGOU  = lançado, voltou no caminhão (saída apagada); sai de novo
-export const SITUACAO_CONTROLE = { SERA: 'sera', VOLTOU: 'voltou' }
-export const NOME_SITUACAO_CONTROLE = { sera: 'SERÁ ENTREGUE', voltou: 'NÃO ENTREGOU' }
+// ---------- a LISTA (a planilha, derivada do banco) ----------
+// Entra TUDO que está pronto e ainda não foi entregue — a baixa da fábrica e o
+// lançamento do escritório lado a lado, com a ORIGEM dizendo de quem foi
+// (decisão do dono em 07/10/2026, depois de uma versão que mostrava só o
+// lançado: "a lista abre toda"). Entregue SAI da lista: o histórico é a aba
+// Entregues. Nada disso é coleção: é VISÃO sobre `pedidos`.
+//   SERÁ ENTREGUE = na rua (saída marcada — pelo lançamento, pela Rota ou pela carga)
+//   PRONTO        = pronto no galpão, ainda sem saída (a fábrica baixou, ninguém lançou)
+//   NÃO ENTREGOU  = foi lançado, voltou no caminhão (saída apagada); sai de novo
+export const SITUACAO_CONTROLE = { SERA: 'sera', PRONTO: 'pronto', VOLTOU: 'voltou' }
+export const NOME_SITUACAO_CONTROLE = { sera: 'SERÁ ENTREGUE', pronto: 'PRONTO', voltou: 'NÃO ENTREGOU' }
 
 // 'YYYY-MM' pelas partes LOCAIS (em UTC-3 o ISO cai no mês anterior na virada)
 export const mesDe = (iso) => {
@@ -4400,35 +4402,44 @@ export function prontoDesde(p) {
   return { iso: maior, exato }
 }
 
-export function linhasControleEntrega(pedidos, { situacao, clientes, vendedores } = {}) {
+export function linhasControleEntrega(pedidos, { situacao, origem, clientes, vendedores } = {}) {
   const linhas = []
   for (const p of pedidos || []) {
-    if (!lancadoNoControle(p)) continue
+    const prontos = idxProntos(p)
+    if (!prontos.length) continue
     const saiu = saiuParaEntrega(p)
-    const lanc = p.baixaEscritorio
+    const lancado = lancadoNoControle(p)
+    const lanc = p.baixaEscritorio || {}
+    const desde = prontoDesde(p)
     linhas.push({
       chave: String(p.idVenda ?? ''),
-      situacao: saiu ? SITUACAO_CONTROLE.SERA : SITUACAO_CONTROLE.VOLTOU,
+      situacao: saiu ? SITUACAO_CONTROLE.SERA : lancado ? SITUACAO_CONTROLE.VOLTOU : SITUACAO_CONTROLE.PRONTO,
       idVenda: String(p.idVenda ?? ''),
       cliente: nomeCliente(p.cliente, clientes),
       cidade: p.cidade || '',
       rota: vendedores ? rotaDe(p, vendedores) : (p.rota || ''),
       vendedor: p.vendedor || '',
       valor: Number(p.valorTotal) || 0,
+      origem: origemDaBaixa(p),
+      // "quando ficou pronto": o lançamento, se houve; senão a entrada em expedido
+      quando: lancado ? (lanc.em || '') : (desde.iso || ''),
+      aproximado: !lancado && !desde.exato,
       lancadoEm: lanc.em || '',
       lancadoPor: lanc.por || '',
       saidaEm: saiu ? p.saidaEm : '',
       motorista: saiu ? (p.saidaMotorista || '') : (lanc.motorista || ''),
-      itens: (p.itens || []).length,
-      remessas: Number(p.remessas) || 0,      // entregas parciais já feitas
-      emProducao: (p.itens || []).some((_, i) => qtdEmProducao(p, i) > 0),
+      itens: prontos.length,
+      itensTotal: (p.itens || []).length,
+      parcial: prontos.length < (p.itens || []).length,   // parte ainda na fábrica
+      remessas: Number(p.remessas) || 0,                   // entregas parciais já feitas
       docId: p.id || String(p.idVenda ?? ''),
     })
   }
-  for (const l of linhas) l.mes = mesDe(l.lancadoEm)
+  for (const l of linhas) l.mes = mesDe(l.quando)
   return linhas
     .filter((l) => !situacao || l.situacao === situacao)
-    .sort((a, b) => (b.lancadoEm || '').localeCompare(a.lancadoEm || '') || a.idVenda.localeCompare(b.idVenda))
+    .filter((l) => !origem || l.origem === origem)
+    .sort((a, b) => (b.quando || '').localeCompare(a.quando || '') || a.idVenda.localeCompare(b.idVenda))
 }
 
 // meses que existem nas linhas, do mais novo para o mais velho
@@ -4437,11 +4448,12 @@ export const mesesDoControle = (linhas) =>
 
 // totais da lista (valor só para quem vê valor — a tela decide se mostra)
 export function totaisDoControle(linhas) {
-  const t = { linhas: 0, sera: 0, voltou: 0, valor: 0 }
+  const t = { linhas: 0, sera: 0, pronto: 0, voltou: 0, valor: 0, escritorio: 0 }
   for (const l of linhas || []) {
     t.linhas++
     t[l.situacao] = (t[l.situacao] || 0) + 1
     t.valor += l.valor || 0
+    if (l.origem === ORIGEM_BAIXA.ESCRITORIO) t.escritorio++
   }
   return t
 }

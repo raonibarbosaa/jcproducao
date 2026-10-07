@@ -145,22 +145,28 @@ t('o volume declarado leva a quantidade PEDIDA', volsL2[2].qtd, 273)
 t('produzido fecha o lote', l2.etapas[k(p2, 0)].produzido, 500)
 ok('auditoria marca a parte sem pesagem', l2.registros.some((r) => r.semPesagem && r.de === 'GRAFICA' && r.qtd === 273))
 
-// ---------- 8. a lista do escritório ----------
+// ---------- 8. a lista: TUDO que está pronto, fábrica e escritório lado a lado ----------
 t('mesDe usa partes locais', mesDe('2026-10-07T14:00:00.000Z').length, 7)
 t('rótulo como a aba da planilha', rotuloMes('2026-10'), 'OUTUBRO 2026')
 const lancado = { ...d1, ...l1.campos }
-const voltou = { ...lancado, idVenda: '6215', saidaEm: undefined, saidaMotorista: undefined }
+const voltou = { ...lancado, idVenda: '6215' }
 delete voltou.saidaEm; delete voltou.saidaMotorista
-const soFabrica = pedido({ id: '7000', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } } })
-const linhas = linhasControleEntrega([lancado, voltou, soFabrica, naFabricaOuNada()])
-function naFabricaOuNada() { return pedido({ id: '7001', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }] }) }
-t('só o que o escritório lançou entra (a fábrica sozinha, não)', linhas.map((l) => l.idVenda).sort(), ['5738', '6215'])
-t('situação: na rua × voltou', linhas.map((l) => `${l.idVenda}:${l.situacao}`).sort(), ['5738:sera', '6215:voltou'])
-t('motorista: quem está levando, ou quem levou da última vez', linhas.map((l) => l.motorista), ['MATEUS', 'MATEUS'])
-t('filtro por situação', linhasControleEntrega([lancado, voltou], { situacao: 'voltou' }).map((l) => l.idVenda), ['6215'])
+const soFabrica = pedido({ id: '7000', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } }, valorTotal: 50 })
+const fabricaSaiu = { ...pedido({ id: '7002', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } } }), saidaEm: '2026-10-05T10:00:00.000Z', saidaMotorista: 'PAULO' }
+const naFabricaAinda = pedido({ id: '7001', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }] })
+const linhas = linhasControleEntrega([lancado, voltou, soFabrica, fabricaSaiu, naFabricaAinda])
+t('entra tudo que está pronto; o que ainda está na fábrica, não', linhas.map((l) => l.idVenda).sort(), ['5738', '6215', '7000', '7002'])
+t('situação: na rua × pronto sem saída × voltou', Object.fromEntries(linhas.map((l) => [l.idVenda, l.situacao])),
+  { 5738: 'sera', 6215: 'voltou', 7000: 'pronto', 7002: 'sera' })
+t('origem diz de quem foi a baixa', Object.fromEntries(linhas.map((l) => [l.idVenda, l.origem])),
+  { 5738: 'escritorio', 6215: 'escritorio', 7000: 'fabrica', 7002: 'fabrica' })
+t('motorista: quem está levando, ou quem levou da última vez', Object.fromEntries(linhas.map((l) => [l.idVenda, l.motorista])),
+  { 5738: 'MATEUS', 6215: 'MATEUS', 7000: '', 7002: 'PAULO' })
+t('filtro por situação', linhasControleEntrega([lancado, voltou, soFabrica], { situacao: 'pronto' }).map((l) => l.idVenda), ['7000'])
+t('filtro por origem', linhasControleEntrega([lancado, voltou, soFabrica], { origem: 'fabrica' }).map((l) => l.idVenda), ['7000'])
 const tot = totaisDoControle(linhas)
-t('totais', [tot.linhas, tot.sera, tot.voltou], [2, 1, 1])
-t('valor somado', tot.valor, 896)
+t('totais', [tot.linhas, tot.sera, tot.pronto, tot.voltou, tot.escritorio], [4, 2, 1, 1, 2])
+t('valor somado', tot.valor, 448 + 448 + 50)
 t('meses', mesesDoControle(linhas), ['2026-10'])
 // entregue SAI da lista: depois da remessa inteira o pedido some de `pedidos`
 const r8 = preparaRemessa(lancado, 'MATEUS', 'Anny', AGORA)
