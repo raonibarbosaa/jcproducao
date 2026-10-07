@@ -6,7 +6,7 @@ import {
   baixaEscritorio, situacaoBaixa, podeBaixarNoControle, podeEntregarNoControle,
   preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle,
   origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA, lancarControle, lancadoNoControle,
-  avisosEntregaAbertos, fechaAvisoPeloLancamento, podeFecharAviso,
+  avisosEntregaAbertos, fechaAvisoPeloLancamento, podeFecharAviso, resumoBaixasEscritorio, fmtPorMaterial,
   qtdNaEtapa, volumesDoItem, idxProntos, itensParaCarga, temTrabalhoNaProducao,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
@@ -179,5 +179,23 @@ t('fecha como resolvido, dizendo o que aconteceu', [f.status, f.resolvidoPor, f.
 ok('a resolução nomeia o motorista', f.resolucao.includes('MATEUS'))
 t('quem fecha o aviso é staff (a rule de problemas só aceita staff)',
   ['dono', 'designer', 'financeiro', 'expedicao', 'operador'].map(podeFecharAviso), [true, true, true, false, false])
+
+// ---------- 10. Fase D: baixas do escritório por setor × mês ----------
+const regsD = [
+  ...l1.registros,                                     // 5738: GRAFICA 300, montagem 200 (papel), PRODUCAO 20 (plástico)
+  ...l2.registros.map((r) => ({ ...r, quando: '2026-09-15T10:00:00.000Z' })),   // 5458 em setembro
+  { origem: 'fabrica', de: 'montagem', para: 'expedicao', qtd: 99, idVenda: '1', quando: AGORA },   // da fábrica: fora
+]
+const rd = resumoBaixasEscritorio(regsD)
+t('meses, do mais novo para o mais velho', rd.meses, ['2026-10', '2026-09'])
+const out = resumoBaixasEscritorio(regsD, { mes: '2026-10' })
+t('outubro: 3 itens de 1 pedido (a fábrica não entra)', [out.totais.itens, out.totais.pedidos], [3, 1])
+t('setores pelo nome do chão de fábrica (um item cada)', out.setores.map((g) => `${g.onde}:${g.itens}`).sort(), ['GRÁFICA:1', 'Montagem Papel:1', 'SILK SCREEN:1'])
+// com itens diferentes, o setor que MAIS deixa de baixar vem primeiro
+const muitos = resumoBaixasEscritorio([...l1.registros, ...l1.registros.filter((r) => r.de === 'montagem')], { mes: '2026-10' })
+t('maior primeiro', muitos.setores[0].onde, 'Montagem Papel')
+t('quantidade por material, nunca somada', fmtPorMaterial(out.setores.find((g) => g.etapa === 'PRODUCAO').porMaterial), '20 kg Plástico')
+const set = resumoBaixasEscritorio(regsD, { mes: '2026-09' })
+t('setembro: a parte sem pesagem é contada', [set.totais.itens, set.totais.semPesagem], [2, 1])
 
 export default resultado('controle-entrega')

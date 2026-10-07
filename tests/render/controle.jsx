@@ -2,6 +2,7 @@ import { renderToString } from 'react-dom/server'
 import ControleEntrega, { CardControle, TabelaControle } from '../../src/pages/ControleEntrega.jsx'
 import Localizar from '../../src/pages/Localizar.jsx'
 import AcoesControle from '../../src/components/AcoesControle.jsx'
+import { ResumoBaixasEscritorio } from '../../src/pages/Auditoria.jsx'
 import { carimbaKeys, keyDoItem, linhasControleEntrega, totaisDoControle, comprometimentoDeCargas } from '../../src/utils.js'
 
 const CAD = [{ produto: 'SACOLA PAPEL P02', tipo: 'papel', unidade: 'un' }, { produto: 'SACOLA PLASTICA 30X40', tipo: 'plastico', unidade: 'kg' }]
@@ -50,6 +51,11 @@ export function roda() {
       // Localizar com os mesmos botões (Fase C); operador do silk não vê ação nenhuma
       ceLocalizar: renderToString(<Localizar pedidos={[lancado]} problemas={[]} />),
       ceAcoesSemPermissao: renderToString(<AcoesControle p={lancado} motoristas={MOT} podeLancar={false} podeEntregar={false} acoes={{ salvando: '' }} problemas={[]} />) || '<vazio>',
+      ceResumoEsc: renderToString(<ResumoBaixasEscritorio regs={[
+        { origem: 'escritorio', de: 'GRAFICA', material: 'papel', qtd: 300, idVenda: '5738', quando: '2026-10-07T12:00:00.000Z' },
+        { origem: 'escritorio', de: 'montagem', material: 'papel', qtd: 200, idVenda: '5738', quando: '2026-10-07T12:00:00.000Z' },
+        { origem: 'escritorio', de: 'PRODUCAO', material: 'plastico', qtd: 20, idVenda: '6000', quando: '2026-10-07T12:00:00.000Z', semPesagem: true },
+      ]} />),
       ceTabela: renderToString(<TabelaControle linhas={linhas} totais={totaisDoControle(linhas)} veValor onAbrir={nada} />),
     }
   } finally { globalThis.__auth = undefined }

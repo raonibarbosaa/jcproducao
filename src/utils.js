@@ -4454,3 +4454,46 @@ export function fechaAvisoPeloLancamento(motorista, quem, agora) {
   }
 }
 export const podeFecharAviso = (perfil) => ['dono', 'designer', 'financeiro'].includes(perfil)
+
+// ---------- FASE D: baixas do ESCRITÓRIO por setor × mês ----------
+// É o número que ataca a CAUSA: cada registro de auditoria com
+// `origem: 'escritorio'` é um item que a fábrica não baixou e o escritório
+// teve que tirar de algum setor (`de`). Agrupado por setor (a montagem quebra
+// por material, como no chão de fábrica) e por mês do lançamento.
+// Quantidade sai POR MATERIAL — kg e unidade não somam.
+export function resumoBaixasEscritorio(regs, { mes } = {}) {
+  const lista = (regs || []).filter((r) => r?.origem === ORIGEM_BAIXA.ESCRITORIO)
+  const meses = [...new Set(lista.map((r) => mesDe(r.quando)).filter(Boolean))].sort().reverse()
+  const doMes = mes ? lista.filter((r) => mesDe(r.quando) === mes) : lista
+  const map = new Map()
+  const pedidosTotal = new Set()
+  let semPesagem = 0
+  for (const r of doMes) {
+    const chave = r.de === 'montagem' ? `montagem|${montagemDoMaterial(r.material)}` : (r.de || '?')
+    const g = map.get(chave) || {
+      chave, etapa: r.de || '', onde: ondeProcurar(r.de, r.material),
+      itens: 0, pedidos: new Set(), porMaterial: {}, semPesagem: 0,
+    }
+    g.itens++
+    g.pedidos.add(String(r.idVenda ?? ''))
+    pedidosTotal.add(String(r.idVenda ?? ''))
+    const mat = r.material || SEM_MATERIAL
+    g.porMaterial[mat] = arredondaQtd((g.porMaterial[mat] || 0) + (Number(r.qtd) || 0))
+    if (r.semPesagem) { g.semPesagem++; semPesagem++ }
+    map.set(chave, g)
+  }
+  const setores = [...map.values()]
+    .map((g) => ({ ...g, pedidos: g.pedidos.size }))
+    .sort((a, b) => b.itens - a.itens || ordemEtapaLocal(a.etapa) - ordemEtapaLocal(b.etapa))
+  return {
+    meses,
+    mes: mes || '',
+    setores,
+    totais: { itens: doMes.length, pedidos: pedidosTotal.size, semPesagem },
+  }
+}
+// "300 un papel · 20 kg plástico" — nunca soma materiais diferentes
+export const fmtPorMaterial = (porMaterial) =>
+  Object.entries(porMaterial || {})
+    .map(([m, q]) => `${fmtQtd(q)} ${unidadeDoMaterial(m) || ''} ${nomeDoMaterial(m) || 'sem material'}`.replace(/\s+/g, ' ').trim())
+    .join(' · ')

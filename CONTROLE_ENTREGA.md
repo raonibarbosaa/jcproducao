@@ -4,8 +4,8 @@
 > abaixo. **Fases A e B FEITAS em 07/10/2026 e REVISADAS no mesmo dia** depois
 > que o dono viu a 1ª versão no ar (ver "Revisão de 07/10/2026"). ⚠️ A revisão
 > exige publicar `firestore.rules` (campo `baixaEscritorio` para a expedição)
-> ANTES do build (✅ publicadas em 07/10/2026). **Fase C FEITA em 07/10/2026.**
-> Fase D é a próxima. Fases A → D no fim.
+> ANTES do build (✅ publicadas em 07/10/2026). **Fases C e D FEITAS em
+> 07/10/2026 — o desenho inteiro está no ar.** Fases A → D no fim.
 
 ## O problema real (visto na foto da planilha `CONTROLE DE ENTRGA 2026`)
 
@@ -238,8 +238,17 @@ misturava o histórico de entregas por mês. Não era isso. O que vale agora:
   quem lança é STAFF (`podeFecharAviso`): a rule de `problemas` só aceita update
   de staff, e pôr o fechamento no batch da expedição derrubaria o lançamento
   inteiro — o aviso dela fica aberto para o escritório fechar. Sem rule nova.
-- **D — relatório "baixas pelo escritório por setor × mês"** (Relatórios) e
-  filtro de origem na Auditoria.
+- ✅ **D — FEITA 07/10/2026:** `resumoBaixasEscritorio(regs, {mes})` +
+  `fmtPorMaterial` (utils) e o bloco **"🏢 Baixas do escritório por setor"** no
+  topo da aba **Auditoria** (`ResumoBaixasEscritorio`), com seletor de mês:
+  setor de onde o escritório tirou o item (montagem quebra por material),
+  itens, pedidos, quantidade POR MATERIAL (kg e un não somam) e quantos saíram
+  sem pesagem. Setor no topo = quem mais deixa de dar baixa no tablet. Ficou na
+  Auditoria, e não em Relatórios, porque a `auditoria` só o dono lê (rule) — em
+  Relatórios o designer veria um bloco morto. Lê TODAS as baixas do escritório
+  por `where('origem','==','escritorio')` (sem orderBy → sem índice composto),
+  não só as últimas 500. A tabela da Auditoria ganhou o filtro **Origem**
+  (fábrica × escritório) e a marca `🏢 escritório` na coluna Quem.
 
 **Rules: nada a publicar nas fases A–C** (os campos novos são do pedido e staff
 já grava tudo; expedição só toca `etapas` + saída, já liberados). Se a Fase D

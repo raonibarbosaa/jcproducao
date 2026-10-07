@@ -51,8 +51,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > ✅ Rules (`baixaEscritorio` no hasOnly da expedição) publicadas e site no ar
 > em 07/10/2026. **Fase C FEITA** (ações compartilhadas em
 > `components/AcoesControle.jsx`, também no Localizar; lançamento fecha o aviso
-> "já foi entregue" quando quem lança é staff). Falta a D (relatório de baixas do
-> escritório por setor).
+> "já foi entregue" quando quem lança é staff). **Fase D FEITA**: bloco "Baixas do
+> escritório por setor × mês" + filtro de origem na aba Auditoria (só o dono lê
+> `auditoria`, por isso não foi para Relatórios). Desenho inteiro no ar.
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

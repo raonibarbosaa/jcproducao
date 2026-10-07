@@ -1434,3 +1434,6 @@ mark.hl {
   .ctl-sit { color: #000 !important; background: none !important; border-color: #000 !important; }
   .ctl-num { color: #000; }
 }
+
+.aud-esc { margin-bottom: 14px; border-left: 3px solid var(--accent); }
+.aud-esc .rel-tab { margin-top: 8px; }
