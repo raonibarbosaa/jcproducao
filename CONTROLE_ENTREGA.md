@@ -1,10 +1,10 @@
 # CONTROLE DE ENTREGA — a planilha do escritório vira tela (desenho, 07/10/2026)
 
 > **Status: DESENHO FECHADO em 07/10/2026.** Decisões do dono registradas
-> abaixo. **Fases A e B FEITAS em 07/10/2026** (helpers + 66 asserções em
-> `tests/controle-entrega.test.mjs`; tela `src/pages/ControleEntrega.jsx`, aba
-> `controle`, coberta pelo `test:tela`). ⚠️ Ainda NÃO publicada (falta build +
-> gh-pages; sem rules novas). Fase C é a próxima. Fases A → D no fim.
+> abaixo. **Fases A e B FEITAS em 07/10/2026 e REVISADAS no mesmo dia** depois
+> que o dono viu a 1ª versão no ar (ver "Revisão de 07/10/2026"). ⚠️ A revisão
+> exige publicar `firestore.rules` (campo `baixaEscritorio` para a expedição)
+> ANTES do build. Fase C é a próxima. Fases A → D no fim.
 
 ## O problema real (visto na foto da planilha `CONTROLE DE ENTRGA 2026`)
 
@@ -177,6 +177,38 @@ Mês [ OUTUBRO 2026 ▾ ]  Situação [ todos | será entregue | saiu | entregue
 8. Nome da aba: **"Controle de entrega"** (o nome da planilha deles).
 
 Decisão derivada de 4: `obsEntrega` SAI do desenho. Decisão derivada de 2: `ACESSO.controle` = dono, designer, financeiro, expedicao; `abasDoUsuario` abre a aba para operador com setor expedicao|entrega; `podeEntregar` só staff.
+
+## Revisão de 07/10/2026 — o dono viu a 1ª versão no ar e corrigiu o rumo
+
+A 1ª versão listava TUDO que estava em `expedido` (77 baixas da fábrica) e
+misturava o histórico de entregas por mês. Não era isso. O que vale agora:
+
+1. **Só entra na lista o que o ESCRITÓRIO lançou** (`baixaEscritorio.em`).
+   Pedido que a fábrica baixou sozinha não aparece até alguém digitar o número.
+   A lista é a FILA DO QUE ESTÁ NA RUA, não um arquivo mensal — por isso o
+   filtro de mês saiu.
+2. **Lançar é UMA ação:** nº do pedido + motorista (obrigatório) = pedido
+   finalizado e SAIU. `lancarControle` = `baixaEscritorio(..., {inteiro:true})`
+   + carimbo + `saidaEm/saidaMotorista/saidaPor`, num batch só com a auditoria.
+   Pedido já pronto pela fábrica também é lançado (só carimbo + saída).
+3. **Lançar leva o pedido INTEIRO** (decisão do dono): sem checkbox por item.
+   ⚠️ A parte solta de item que a fábrica já tinha embalado vira um **volume
+   declarado** com a quantidade PEDIDA e `semPesagem: true` (também na
+   auditoria). Não é peso de balança e o campo diz isso — mas sem ele o resto
+   ficaria preso na fábrica contra o que o escritório acabou de declarar.
+   Hoje `volumesDoItem`/`movePorVolume` não carregam a flag adiante: ela vive
+   no doc até o próximo movimento do item e na auditoria.
+4. **Entregue SAI da lista.** O histórico é a aba Entregues. **ENTREGUE é do
+   FINANCEIRO e do DONO** (`podeEntregarNoControle`), não do designer.
+5. **Situações = as da planilha:** SERÁ ENTREGUE (lançado, na rua) ·
+   NÃO ENTREGOU (voltou; saída apagada, continua na lista; "🚚 Saiu de novo")
+   · ENTREGUE (some daqui).
+6. **Rules:** `baixaEscritorio` entrou no `hasOnly` da expedição e do operador
+   de expedição/entrega em `pedidos` — sem isso o lançamento da expedição cai
+   em permission-denied. ⚠️ **Publicar ANTES do build.** (O login do Firebase
+   nesta máquina expirou em 07/10/2026: `npx firebase login --reauth`.)
+7. "Fica depois da etapa da montagem": é o lugar do controle no fluxo —
+   Montagem → lançamento do escritório → rua → entregue.
 
 ## Fases
 

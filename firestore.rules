@@ -81,15 +81,17 @@ service cloud.firestore {
         || (ehOperador()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
-                           'saidaEm', 'saidaMotorista', 'saidaPor'])
+                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio'])
             && meu().get('setores', []).hasAny(['expedicao', 'entrega']))
         // Expedição: além das etapas, marca a SAÍDA da rota (é quem carrega o
         // caminhão e sabe a hora que ele saiu). Continua sem poder dar a entrega,
         // que é o que move o pedido para `entregues`.
+        // `baixaEscritorio` = o lançamento do Controle de entrega (nota chegou,
+        // pedido finalizado e saiu) — a expedição também lança (07/10/2026).
         || (ehExpedicao()
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['etapas', 'etapa', 'etapaPor', 'etapaEm',
-                           'saidaEm', 'saidaMotorista', 'saidaPor']));
+                           'saidaEm', 'saidaMotorista', 'saidaPor', 'baixaEscritorio']));
     }
 
     // Entregues: staff escreve e lê tudo. O VENDEDOR lê só as entregas dos

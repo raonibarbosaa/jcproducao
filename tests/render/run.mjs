@@ -133,13 +133,15 @@ const ESPERA = {
   tFiltroCor: ['SACOLA PLASTICA 30X40', 'oculto(s) pelo filtro'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
   // Controle de entrega: a planilha do escritório virou tela
-  ceCasca: ['Controle de entrega', 'Nº do pedido', 'OUTUBRO 2026', 'Todas as situações', 'Imprimir', 'CSV'],
-  ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Marcar PRONTO', 'R$ 448,00'],
-  cePronto: ['CREDIMOVEIS', 'PRONTO · será entregue', 'baixado pelo escritório', 'Motorista…', 'MATEUS', 'Saiu para entrega', 'ENTREGUE'],
-  ceSaiu: ['SAIU PARA ENTREGA', 'MATEUS', 'Não entregou (voltou)', 'ENTREGUE'],
+  ceCasca: ['Controle de entrega', 'Nº do pedido', 'Lançados pelo escritório', '2 pedido(s)', '1 será entregue', '1 não entregou',
+    '#6215', '#6206', 'Todas as situações', 'Imprimir', 'CSV'],
+  ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Motorista…', 'Lançar: finalizado e saiu', 'R$ 448,00'],
+  ceProntoFabrica: ['PRONTO pela fábrica', 'ainda não lançado', 'Lançar: finalizado e saiu'],
+  ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS'],
+  ceVoltou: ['NÃO ENTREGOU', 'aguardando sair de novo', 'Motorista…', 'Saiu de novo', 'ENTREGUE por PAULO'],
   ceEntregue: ['SPAÇO', 'Pedido já entregue', 'ENTREGUE · remessa 1', 'PAULO', 'Não há mais nada a marcar'],
-  ceExpedicao: ['Saiu para entrega', 'entrega: só o escritório', 'disabled=""'],
-  ceTabela: ['#6215', '#6206', '#5900', 'CREDIMOVEIS', 'SERÁ ENTREGUE', 'SAIU P/ ENTREGA', 'ENTREGUE', '🏢 escritório', '🏭 fábrica', 'MATEUS', 'PAULO', 'R$ 408,00', '3 linha(s)'],
+  ceExpedicao: ['Não entregou (voltou)', 'entregue: financeiro ou dono'],
+  ceTabela: ['#6215', '#6206', 'CREDIMOVEIS', 'BEBE DE MAE', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', 'MATEUS', 'PAULO', 'R$ 448,00', '2 pedido(s)'],
 }
 
 // o que NÃO pode aparecer
@@ -156,9 +158,10 @@ const PROIBE = {
   tDuas: ['Cor da impressão ⚠', 'escolha 2', 'Falta a'],  // duas escolhidas = completo
   tFiltroPlast: ['SACOLA PAPEL P02', 'Laminação'],
   tFiltroPapel: ['SACOLA PLASTICA 30X40', 'Cor da impressão'],
-  ceEntregue: ['Marcar PRONTO', 'Saiu para entrega'],   // entregue por inteiro: nada a marcar
-  ceExpedicao: ['R$'],                                  // expedição não vê valor
-  ceSaiu: ['Saiu para entrega'],                        // já saiu: só o voltar
+  ceEntregue: ['Lançar', 'ENTREGUE por'],               // entregue por inteiro: nada a marcar
+  ceExpedicao: ['R$', '📦 ENTREGUE'],                  // expedição não vê valor nem entrega
+  ceLancado: ['Lançar: finalizado'],                    // já lançado: não lança de novo
+  ceCasca: ['#6999', '#5738'],                          // a fábrica sozinha não entra na lista
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
   qOfLigada: ['CAIO', 'Concluir produto', 'OF inteira'],   // sem OF e exigência ligada: fora do quadro; 1 produto = só "Concluir OF"

@@ -45,9 +45,12 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > mesmo dia. **Fase A (helpers `baixaEscritorio`, `situacaoBaixa`,
 > `preparaRemessa`, `linhasControleEntrega` + testes) e Fase B (tela
 > `ControleEntrega.jsx`, aba `controle` para dono/designer/financeiro/expedição e
-> operador de expedição/entrega; render em `test:tela`) FEITAS**; a Rota já grava
-> a remessa por `preparaRemessa`. ⚠️ Não publicada ainda (build + gh-pages; sem
-> rules novas). Fase C é a próxima.
+> operador de expedição/entrega; render em `test:tela`) FEITAS e REVISADAS no
+> mesmo dia**: só entra na lista o que o escritório LANÇOU (nº + motorista =
+> finalizado e saiu, pedido inteiro); ENTREGUE só financeiro/dono e sai da lista.
+> ⚠️ A revisão pede `firestore.rules` publicadas ANTES do build
+> (`baixaEscritorio` no hasOnly da expedição) — login do Firebase expirado em
+> 07/10/2026. Fase C é a próxima.
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

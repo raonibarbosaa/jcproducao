@@ -4131,8 +4131,9 @@ export function podeBaixarNoControle(perfil, setores) {
   const meus = (setores || []).map(normSetor)
   return meus.includes('expedicao') || meus.includes('entrega')
 }
-// A ENTREGA (que abre a cobrança) é só do escritório — decisão do dono em 07/10/2026.
-export const podeEntregarNoControle = (perfil) => ['dono', 'designer', 'financeiro'].includes(perfil)
+// A ENTREGA (que abre a cobrança) é do FINANCEIRO — e do dono (decisão do dono
+// em 07/10/2026, revisada no mesmo dia: o designer lança, não entrega).
+export const podeEntregarNoControle = (perfil) => ['dono', 'financeiro'].includes(perfil)
 
 // Situação de cada item para o card: o que está na fábrica (solto), o que já
 // está embalado esperando o ✓ Expedir, o que está pronto, o que foi entregue.
@@ -4176,7 +4177,7 @@ export function situacaoBaixa(p, itensCad) {
 // (um por item × etapa de origem, com `origem: 'escritorio'`), os campos que o
 // pedido ganha e o que foi recusado. `movidos` vazio = nada a gravar.
 // Devolve MAPA, então vai envolvido em `carimbaTempos` (regra da casa).
-export function baixaEscritorio(p, idxs, quem, itensCad, agora) {
+export function baixaEscritorio(p, idxs, quem, itensCad, agora, { inteiro = false } = {}) {
   const t = agora || new Date().toISOString()
   const alvo = new Set(idxs || (p?.itens || []).map((_, i) => i))
   const sit = situacaoBaixa(p, itensCad)
@@ -4197,6 +4198,33 @@ export function baixaEscritorio(p, idxs, quem, itensCad, agora) {
     const guarda = {
       ...(ant?.desde ? { desde: ant.desde } : {}),
       ...(ant?.tempos ? { tempos: ant.tempos } : {}),
+    }
+    // LANÇAMENTO INTEIRO (decisão do dono em 07/10/2026): o escritório declara
+    // o pedido todo finalizado. A parte solta de um item já embalado vira um
+    // volume próprio com a quantidade PEDIDA e `semPesagem: true` — não é o
+    // peso da balança, e o campo diz isso; sem ele o resto ficaria preso na
+    // fábrica contra o que o escritório acabou de declarar.
+    if (alvo.has(i) && s.recusa && inteiro) {
+      const base0 = movePorVolume(p, i, s.volumesParaExpedir, 'expedido', assina)
+        || { ...(ant || {}), por: assina, em: t }
+      mapa[s.key] = {
+        ...base0,
+        montagem: 0,
+        produzido: arredondaQtd((Number(ant?.produzido) || 0) + s.recusa.qtd),
+        volumes: [
+          ...(base0.volumes || volumesDoItem(p, i).map((v) => ({ id: v.id, qtd: v.qtd, et: v.et }))),
+          { id: `${t}-esc`, qtd: s.recusa.qtd, et: 'expedido', semPesagem: true },
+        ],
+        por: assina, em: t,
+      }
+      const volsAntes = volumesDoItem(p, i).filter((v) => s.volumesParaExpedir.includes(v.id))
+      const qtdVol = arredondaQtd(volsAntes.reduce((sm, v) => sm + v.qtd, 0))
+      movidos.push({ idx: i, key: s.key, produto: s.produto, qtd: arredondaQtd(qtdVol + s.recusa.qtd),
+        de: [...(volsAntes.length ? ['expedicao'] : []), ...s.onde.filter((o) => o.etapa !== 'expedicao').map((o) => o.etapa)],
+        volumes: volsAntes.length + 1, semPesagem: s.recusa.qtd })
+      if (volsAntes.length) registros.push({ ...base(s), de: 'expedicao', qtd: qtdVol, volumes: volsAntes.length })
+      for (const o of s.onde.filter((o) => o.etapa !== 'expedicao')) registros.push({ ...base(s), de: o.etapa, qtd: o.qtd, semPesagem: true })
+      return
     }
     if (alvo.has(i) && s.recusa) recusados.push({ idx: i, key: s.key, produto: s.produto, ...s.recusa })
     if (alvo.has(i) && s.baixavel) {
@@ -4247,6 +4275,32 @@ export function baixaEscritorio(p, idxs, quem, itensCad, agora) {
       : {},
   }
 }
+
+// O LANÇAMENTO do Controle de entrega: a nota chegou, o pedido está finalizado
+// e SAIU com o motorista. Uma ação só (decisão do dono em 07/10/2026): baixa
+// INTEIRA do que ainda estava na fábrica + carimbo do escritório + saída.
+// Pedido que a fábrica já tinha baixado também é lançado — é o lançamento,
+// não a etapa, que põe o pedido na lista do escritório.
+// Devolve null sem motorista: a saída sem quem levou não existe.
+export function lancarControle(p, quem, motorista, itensCad, agora) {
+  const t = agora || new Date().toISOString()
+  const mot = String(motorista || '').trim()
+  if (!mot) return null
+  const b = baixaEscritorio(p, null, quem, itensCad, t, { inteiro: true })
+  const assina = quem?.executorNome || quem?.porNome || ''
+  return {
+    ...b,
+    campos: {
+      // carimbo do lançamento (mesmo nome do carimbo da baixa — é o que a
+      // lista lê, e o que a rule da expedição libera)
+      baixaEscritorio: { em: t, por: assina, uid: quem?.executorUid || quem?.porUid || '', motorista: mot },
+      saidaEm: t, saidaMotorista: mot, saidaPor: assina,
+    },
+    // etapas só muda se algo se moveu; o pedido já pronto recebe só os campos
+    gravaEtapas: b.movidos.length > 0,
+  }
+}
+export const lancadoNoControle = (p) => !!p?.baixaEscritorio?.em
 
 // De onde veio a baixa para `expedido` deste pedido/remessa.
 export const origemDaBaixa = (p) =>
@@ -4302,15 +4356,15 @@ export function preparaRemessa(p, motorista, quem, agora) {
   }
 }
 
-// ---------- a TABELA DO MÊS (a planilha, derivada do banco) ----------
-// Uma linha por estado: pedido vivo com algo `expedido` = SERÁ ENTREGUE (ou
-// SAIU, se `saidaEm`); remessa em `entregues` = ENTREGUE. Pedido com remessa
-// parcial aparece duas vezes, como na planilha quando vai em duas viagens.
-// Nada disso é coleção: é VISÃO sobre `pedidos` + `entregues`.
-export const SITUACAO_CONTROLE = { PRONTO: 'pronto', SAIU: 'saiu', ENTREGUE: 'entregue' }
-export const NOME_SITUACAO_CONTROLE = {
-  pronto: 'SERÁ ENTREGUE', saiu: 'SAIU P/ ENTREGA', entregue: 'ENTREGUE',
-}
+// ---------- a LISTA DO ESCRITÓRIO (a planilha, derivada do banco) ----------
+// Só entra o que o escritório LANÇOU (`baixaEscritorio`) e ainda não foi
+// entregue — pedido que a fábrica baixou sozinha não aparece até alguém
+// digitar o número (decisão do dono em 07/10/2026). Entregue SAI da lista: o
+// histórico é a aba Entregues. Nada disso é coleção: é VISÃO sobre `pedidos`.
+//   SERÁ ENTREGUE = lançado e na rua (saída marcada)
+//   NÃO ENTREGOU  = lançado, voltou no caminhão (saída apagada); sai de novo
+export const SITUACAO_CONTROLE = { SERA: 'sera', VOLTOU: 'voltou' }
+export const NOME_SITUACAO_CONTROLE = { sera: 'SERÁ ENTREGUE', voltou: 'NÃO ENTREGOU' }
 
 // 'YYYY-MM' pelas partes LOCAIS (em UTC-3 o ISO cai no mês anterior na virada)
 export const mesDe = (iso) => {
@@ -4338,75 +4392,48 @@ export function prontoDesde(p) {
   return { iso: maior, exato }
 }
 
-export function linhasControleEntrega(pedidos, entregues, { mes, situacao, clientes, vendedores } = {}) {
+export function linhasControleEntrega(pedidos, { situacao, clientes, vendedores } = {}) {
   const linhas = []
   for (const p of pedidos || []) {
-    const prontos = idxProntos(p)
-    if (!prontos.length) continue
+    if (!lancadoNoControle(p)) continue
     const saiu = saiuParaEntrega(p)
-    const desde = prontoDesde(p)
-    const quando = saiu ? p.saidaEm : desde.iso
+    const lanc = p.baixaEscritorio
     linhas.push({
-      chave: `${p.idVenda}|${saiu ? 'saiu' : 'pronto'}`,
-      situacao: saiu ? SITUACAO_CONTROLE.SAIU : SITUACAO_CONTROLE.PRONTO,
+      chave: String(p.idVenda ?? ''),
+      situacao: saiu ? SITUACAO_CONTROLE.SERA : SITUACAO_CONTROLE.VOLTOU,
       idVenda: String(p.idVenda ?? ''),
       cliente: nomeCliente(p.cliente, clientes),
       cidade: p.cidade || '',
       rota: vendedores ? rotaDe(p, vendedores) : (p.rota || ''),
       vendedor: p.vendedor || '',
       valor: Number(p.valorTotal) || 0,
-      quando: quando || '',
-      aproximado: !saiu && !desde.exato,
-      motorista: saiu ? (p.saidaMotorista || '') : '',
-      origem: origemDaBaixa(p),
-      itens: prontos.length,
-      itensTotal: (p.itens || []).length,
-      parcial: prontos.length < (p.itens || []).length,
-      remessa: 0,
+      lancadoEm: lanc.em || '',
+      lancadoPor: lanc.por || '',
+      saidaEm: saiu ? p.saidaEm : '',
+      motorista: saiu ? (p.saidaMotorista || '') : (lanc.motorista || ''),
+      itens: (p.itens || []).length,
+      remessas: Number(p.remessas) || 0,      // entregas parciais já feitas
+      emProducao: (p.itens || []).some((_, i) => qtdEmProducao(p, i) > 0),
       docId: p.id || String(p.idVenda ?? ''),
     })
   }
-  for (const e of entregues || []) {
-    linhas.push({
-      chave: `${e.idVenda ?? e.id}|entregue|${e.remessa || 1}`,
-      situacao: SITUACAO_CONTROLE.ENTREGUE,
-      idVenda: String(e.idVenda ?? e.id ?? ''),
-      cliente: nomeCliente(e.cliente, clientes),
-      cidade: e.cidade || '',
-      rota: vendedores ? rotaDe(e, vendedores) : (e.rota || ''),
-      vendedor: e.vendedor || '',
-      valor: Number(e.valorTotal) || 0,
-      quando: e.entregueEm || '',
-      aproximado: false,
-      motorista: e.motorista || '',
-      origem: origemDaBaixa(e),
-      itens: (e.itens || []).length,
-      itensTotal: (e.itens || []).length + (Number(e.itensPendentes) || 0),
-      parcial: !!e.parcial,
-      remessa: Number(e.remessa) || 1,
-      pago: !!e.pago,
-      docId: e.id || '',
-    })
-  }
-  for (const l of linhas) l.mes = mesDe(l.quando)
+  for (const l of linhas) l.mes = mesDe(l.lancadoEm)
   return linhas
-    .filter((l) => !mes || l.mes === mes)
     .filter((l) => !situacao || l.situacao === situacao)
-    .sort((a, b) => (b.quando || '').localeCompare(a.quando || '') || a.idVenda.localeCompare(b.idVenda))
+    .sort((a, b) => (b.lancadoEm || '').localeCompare(a.lancadoEm || '') || a.idVenda.localeCompare(b.idVenda))
 }
 
 // meses que existem nas linhas, do mais novo para o mais velho
 export const mesesDoControle = (linhas) =>
   [...new Set((linhas || []).map((l) => l.mes).filter(Boolean))].sort().reverse()
 
-// totais da tabela (valor só para quem vê valor — a tela decide se mostra)
+// totais da lista (valor só para quem vê valor — a tela decide se mostra)
 export function totaisDoControle(linhas) {
-  const t = { linhas: 0, pronto: 0, saiu: 0, entregue: 0, valor: 0, escritorio: 0 }
+  const t = { linhas: 0, sera: 0, voltou: 0, valor: 0 }
   for (const l of linhas || []) {
     t.linhas++
     t[l.situacao] = (t[l.situacao] || 0) + 1
     t.valor += l.valor || 0
-    if (l.origem === ORIGEM_BAIXA.ESCRITORIO) t.escritorio++
   }
   return t
 }

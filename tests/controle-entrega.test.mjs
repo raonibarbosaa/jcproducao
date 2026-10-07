@@ -5,7 +5,7 @@
 import {
   baixaEscritorio, situacaoBaixa, podeBaixarNoControle, podeEntregarNoControle,
   preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle,
-  origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA,
+  origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA, lancarControle, lancadoNoControle,
   qtdNaEtapa, volumesDoItem, idxProntos, itensParaCarga, temTrabalhoNaProducao,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k } from './_harness.mjs'
@@ -98,7 +98,7 @@ ok('expedição baixa', podeBaixarNoControle('expedicao'))
 ok('operador de expedição baixa (2º eixo)', podeBaixarNoControle('operador', ['expedicao']))
 t('operador do silk não', podeBaixarNoControle('operador', ['PRODUCAO']), false)
 t('vendedor não', podeBaixarNoControle('vendedor'), false)
-t('entrega: só escritório', ['dono', 'designer', 'financeiro', 'expedicao'].map(podeEntregarNoControle), [true, true, true, false])
+t('entrega: dono e financeiro, só', ['dono', 'designer', 'financeiro', 'expedicao'].map(podeEntregarNoControle), [true, false, true, false])
 
 // ---------- 6. a remessa (extraída da Rota) ----------
 const r1 = preparaRemessa(d1, 'MATEUS', 'Ana', AGORA)
@@ -123,34 +123,47 @@ ok('misto: acabou', r6.acabou)
 t('volume virou entregue', volumesDoItem({ ...p6, etapas: r6.etapas }, 0)[0].et, 'entregue')
 t('quantidade virou entregue', qtdNaEtapa({ ...p6, etapas: r6.etapas }, 1, 'entregue'), 50)
 
-// ---------- 7. a tabela do mês ----------
+// ---------- 7. o LANÇAMENTO (uma ação só: finalizado + saiu) ----------
+t('sem motorista não lança', lancarControle(p1, QUEM, '', CAD, AGORA), null)
+const l1 = lancarControle(p1, QUEM, 'MATEUS', CAD, AGORA)
+ok('lançou e moveu os 2 itens', l1.gravaEtapas && l1.movidos.length === 2)
+t('campos: carimbo + saída com o motorista', [l1.campos.baixaEscritorio.motorista, l1.campos.saidaMotorista, l1.campos.saidaEm], ['MATEUS', 'MATEUS', AGORA])
+ok('fica lançado', lancadoNoControle({ ...p1, ...l1.campos }))
+// pedido que a fábrica JÁ tinha baixado: lança igual, sem mexer em etapas
+const l3 = lancarControle(p3, QUEM, 'PAULO', CAD, AGORA)
+t('já pronto: nada se move, mas lança', [l3.gravaEtapas, l3.movidos.length, !!l3.campos.baixaEscritorio], [false, 0, true])
+// INTEIRO: a parte solta do item embalado vira volume SEM PESAGEM
+const l2 = lancarControle(p2, QUEM, 'MATEUS', CAD, AGORA)
+t('inteiro: nada recusado', l2.recusados, [])
+const d2 = { ...p2, etapas: l2.etapas }
+t('tudo expedido (227 pesadas + 273 declaradas)', qtdNaEtapa(d2, 0, 'expedido'), 500)
+t('nada ficou na gráfica', qtdNaEtapa(d2, 0, 'GRAFICA'), 0)
+const volsL2 = l2.etapas[k(p2, 0)].volumes
+t('3 volumes: 2 da balança + 1 sem pesagem', volsL2.map((v) => !!v.semPesagem), [false, false, true])
+t('o volume declarado leva a quantidade PEDIDA', volsL2[2].qtd, 273)
+t('produzido fecha o lote', l2.etapas[k(p2, 0)].produzido, 500)
+ok('auditoria marca a parte sem pesagem', l2.registros.some((r) => r.semPesagem && r.de === 'GRAFICA' && r.qtd === 273))
+
+// ---------- 8. a lista do escritório ----------
 t('mesDe usa partes locais', mesDe('2026-10-07T14:00:00.000Z').length, 7)
 t('rótulo como a aba da planilha', rotuloMes('2026-10'), 'OUTUBRO 2026')
-const pronto = { ...d1, ...b1.campos }
-const saiu = { ...pedido({ id: '6215', cliente: 'CREDIMOVEIS', valorTotal: 1443.2, itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } } }),
-  saidaEm: '2026-10-05T10:00:00.000Z', saidaMotorista: 'PAULO' }
-const naFabrica = pedido({ id: '7000', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }] })
-const remessa = { id: '5900-1', idVenda: '5900', cliente: 'SPAÇO', cidade: 'ITABAIANA', valorTotal: 408, remessa: 1, parcial: false, motorista: 'PAULO', entregueEm: '2026-10-03T12:00:00.000Z', itens: [{ produto: 'X', qtd: 1 }] }
-const remessaSet = { ...remessa, id: '5800-1', idVenda: '5800', entregueEm: '2026-09-20T12:00:00.000Z', origem: 'conciliacao-planilha' }
-const linhas = linhasControleEntrega([pronto, saiu, naFabrica], [remessa, remessaSet])
-t('pedido na fábrica NÃO entra', linhas.some((l) => l.idVenda === '7000'), false)
-t('4 linhas, mais nova primeiro', linhas.map((l) => `${l.idVenda}:${l.situacao}`),
-  ['5738:pronto', '6215:saiu', '5900:entregue', '5800:entregue'])
-t('origem por linha', linhas.map((l) => l.origem), ['escritorio', 'fabrica', 'fabrica', 'conciliacao'])
-t('motorista só quando saiu/entregou', linhas.map((l) => l.motorista), ['', 'PAULO', 'PAULO', 'PAULO'])
-t('meses disponíveis', mesesDoControle(linhas), ['2026-10', '2026-09'])
-t('filtro por mês', linhasControleEntrega([pronto, saiu], [remessa, remessaSet], { mes: '2026-09' }).map((l) => l.idVenda), ['5800'])
-t('filtro por situação', linhasControleEntrega([pronto, saiu], [remessa], { situacao: 'entregue' }).length, 1)
+const lancado = { ...d1, ...l1.campos }
+const voltou = { ...lancado, idVenda: '6215', saidaEm: undefined, saidaMotorista: undefined }
+delete voltou.saidaEm; delete voltou.saidaMotorista
+const soFabrica = pedido({ id: '7000', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } } })
+const linhas = linhasControleEntrega([lancado, voltou, soFabrica, naFabricaOuNada()])
+function naFabricaOuNada() { return pedido({ id: '7001', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }] }) }
+t('só o que o escritório lançou entra (a fábrica sozinha, não)', linhas.map((l) => l.idVenda).sort(), ['5738', '6215'])
+t('situação: na rua × voltou', linhas.map((l) => `${l.idVenda}:${l.situacao}`).sort(), ['5738:sera', '6215:voltou'])
+t('motorista: quem está levando, ou quem levou da última vez', linhas.map((l) => l.motorista), ['MATEUS', 'MATEUS'])
+t('filtro por situação', linhasControleEntrega([lancado, voltou], { situacao: 'voltou' }).map((l) => l.idVenda), ['6215'])
 const tot = totaisDoControle(linhas)
-t('totais', [tot.linhas, tot.pronto, tot.saiu, tot.entregue, tot.escritorio], [4, 1, 1, 2, 1])
-t('valor somado', Math.round(tot.valor * 100) / 100, 448 + 1443.2 + 408 + 408)
-// remessa PARCIAL (só o item 0 saiu, fatiado como a Rota faz) + o item 1 ainda
-// pronto no galpão = duas linhas do mesmo pedido
-const r7 = preparaRemessa({ ...d1, _todos: d1.itens, _idxs: [0], itens: [d1.itens[0]] }, 'MATEUS', 'Ana', AGORA)
-t('fatiado: remessa parcial com 1 pendente', [r7.remessa.parcial, r7.remessa.itensPendentes], [true, 1])
-const linhasParc = linhasControleEntrega(
-  [{ ...d1, etapas: r7.etapas, remessas: 1 }],
-  [{ ...r7.remessa, id: r7.docId }])
-t('parcial aparece duas vezes', linhasParc.map((l) => l.situacao).sort(), ['entregue', 'pronto'])
+t('totais', [tot.linhas, tot.sera, tot.voltou], [2, 1, 1])
+t('valor somado', tot.valor, 896)
+t('meses', mesesDoControle(linhas), ['2026-10'])
+// entregue SAI da lista: depois da remessa inteira o pedido some de `pedidos`
+const r8 = preparaRemessa(lancado, 'MATEUS', 'Anny', AGORA)
+ok('remessa inteira apaga o pedido (acabou)', r8.acabou)
+ok('e a remessa guarda o carimbo do lançamento (origem para relatórios)', !!r8.remessa.baixaEscritorio)
 
 export default resultado('controle-entrega')
