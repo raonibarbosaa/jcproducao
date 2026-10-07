@@ -505,14 +505,22 @@ export function carimbaTempos(p, mapaNovo, agora) {
     if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return
     const antes = distribuicaoDoItem(p, i)
     const dep = distribuicaoDoItem(depois, i)
-    const desde = { ...(entrada.desde || {}) }
-    const tempos = { ...(entrada.tempos || {}) }
+    const velho = doMapaDoItem(p?.etapas, p, i)
+    // ⚠️ O relógio vem da entrada ANTIGA. Os construtores de mapa remontam a
+    // entrada de cada item (o movido por `moveQtdItem`/`movePorVolume`, os
+    // outros "congelados" no formato novo) SEM `desde`/`tempos` — e lendo só a
+    // entrada nova, cada movimento ZERAVA o relógio do item movido e dos
+    // vizinhos: `desde` recomeçava no fallback e `tempos` acumulado sumia
+    // (bug achado em 07/10/2026). Aqui é o lugar único do carimbo, então é
+    // aqui que ele se preserva; a entrada nova só ganha quando traz o campo.
+    const desde = { ...(velho?.desde || {}), ...(entrada.desde || {}) }
+    const tempos = { ...(velho?.tempos || {}), ...(entrada.tempos || {}) }
     // De quando este item está parado, na falta de carimbo: a última
     // movimentação, senão a entrada do pedido no sistema. É o que salva a
     // PRIMEIRA passagem de cada item — no dia em que o relógio entra no ar
     // ninguém tem carimbo, e sem isto toda fila que já existia fecharia com
     // zero e as etapas cheias seriam remarcadas como recém-chegadas.
-    const antigo = doMapaDoItem(p?.etapas, p, i)?.em || p?.importadoEm || p?.dataVenda || t
+    const antigo = velho?.em || p?.importadoEm || p?.dataVenda || t
     for (const et of new Set([...Object.keys(antes), ...Object.keys(dep)])) {
       const tinha = (antes[et] || 0) > 0
       const tem = (dep[et] || 0) > 0

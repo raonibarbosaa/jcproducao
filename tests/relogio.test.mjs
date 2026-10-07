@@ -1,7 +1,8 @@
 // RELÓGIO DA FILA — base da estatística de produção.
 import {
   carimbaTempos, tempoNaEtapa, desdeNaEtapa, idadeDoItem, idadeDoPedido,
-  fmtDuracao, diasDe, mapaEtapasComQtd,
+  fmtDuracao, diasDe, mapaEtapasComQtd, mapaEtapasMovendoVolumes, mapaEtapasCom,
+  fechaMontagemEmVolumes,
 } from '../src/utils.js'
 import { t, ok, resultado, pedido, k, MS_DIA } from './_harness.mjs'
 
@@ -57,5 +58,43 @@ t('dias inteiros', [diasDe(3 * MS_DIA + 4 * 3600000), diasDe(null)], [3, null])
 // ---------- o carimbo entra pelo caminho normal ----------
 const viaMapa = mapaEtapasComQtd(um(), [{ idx: 0, de: 'GRAFICA', para: 'montagem', qtd: 100 }], 'Ana')
 ok('mapaEtapasComQtd devolve o mapa JÁ com relógio', !!viaMapa[k(um())].desde.montagem)
+
+
+
+// ---------- ⚠️ MOVER NÃO PODE ZERAR O RELÓGIO (bug de 07/10/2026) ----------
+// Os construtores remontam a entrada sem `desde`/`tempos`; o carimbo tem que
+// vir da entrada ANTIGA. Antes, mover UM item zerava o relógio dele E o dos
+// vizinhos do mesmo pedido — a estatística de fila saía subnotificada em todo
+// pedido com 2+ itens.
+const dois = (etapas) => pedido({
+  itens: [{ produto: 'SACOLA PAPEL P02', qtd: 100, linha: 'GRAFICA' }, { produto: 'SACOLA PLASTICA 30X40', qtd: 50, linha: 'PRODUCAO' }],
+  etapas, importadoEm: T0,
+})
+const comRelogio = dois({
+  0: { montagem: 100, desde: { montagem: T1 }, tempos: { GRAFICA: 3 * MS_DIA } },
+  1: { montagem: 50, desde: { montagem: T1 }, tempos: { PRODUCAO: MS_DIA } },
+})
+// (a) por QUANTIDADE: move o item 1, o item 0 fica
+const q = mapaEtapasComQtd(comRelogio, [{ idx: 1, de: 'montagem', para: 'expedicao', qtd: 50 }], 'Ana')
+t('vizinho congelado mantém o desde', q[k(comRelogio, 0)].desde.montagem, T1)
+t('vizinho congelado mantém o tempos', q[k(comRelogio, 0)].tempos.GRAFICA, 3 * MS_DIA)
+t('o MOVIDO mantém o tempos acumulado da linha', q[k(comRelogio, 1)].tempos.PRODUCAO, MS_DIA)
+ok('e fecha a montagem com o tempo real (desde T1), não zero', q[k(comRelogio, 1)].tempos.montagem > 0)
+// (b) por VOLUME
+const emb = dois({
+  0: { montagem: 0, produzido: 100, volumes: [{ id: 'a', qtd: 98, et: 'expedicao' }], desde: { expedicao: T1 }, tempos: { GRAFICA: 2 * MS_DIA, montagem: MS_DIA } },
+  1: { montagem: 50, desde: { montagem: T1 }, tempos: { PRODUCAO: MS_DIA } },
+})
+const v = mapaEtapasMovendoVolumes(emb, [{ idx: 0, ids: ['a'], para: 'expedido' }], 'Ana')
+t('volume movido: tempos da gráfica e da montagem continuam', [v[k(emb, 0)].tempos.GRAFICA, v[k(emb, 0)].tempos.montagem], [2 * MS_DIA, MS_DIA])
+t('vizinho do volume mantém o desde', v[k(emb, 1)].desde.montagem, T1)
+// (c) mapaEtapasCom (destino inteiro)
+const c = mapaEtapasCom(comRelogio, [1], 'expedicao', 'Ana')
+t('mapaEtapasCom: vizinho mantém tempos', c[k(comRelogio, 0)].tempos.GRAFICA, 3 * MS_DIA)
+// (d) fechar a montagem em volumes (entrada; quem carimba é a tela, no mapa)
+const fechado = fechaMontagemEmVolumes(comRelogio, 0, [{ qtd: 99 }], 100, 'Ana')
+const mapaFechado = carimbaTempos(comRelogio, { ...comRelogio.etapas, [k(comRelogio, 0)]: fechado }, T2)
+t('fechar a montagem preserva o tempos da gráfica', mapaFechado[k(comRelogio, 0)].tempos.GRAFICA, 3 * MS_DIA)
+t('e fecha a montagem com os 2 dias (T1→T2)', mapaFechado[k(comRelogio, 0)].tempos.montagem, 2 * MS_DIA)
 
 export default resultado('relogio')

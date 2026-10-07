@@ -91,6 +91,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
   2. Etapa que **continuava** com quantidade era remarcada como recém-chegada
      quando outra parte do item se movia. Só carimba `agora` quando a etapa
      estava vazia antes; senão preserva o início.
+  3. **(07/10/2026) Mover um item ZERAVA o relógio dele e dos vizinhos.** Os
+     construtores remontam a entrada de cada item (`moveQtdItem`,
+     `movePorVolume`, os congelamentos) **sem** `desde`/`tempos`, e o
+     `carimbaTempos` lia só a entrada NOVA: `desde` recomeçava no fallback e o
+     `tempos` acumulado sumia — em todo pedido com 2+ itens. Agora o carimbo
+     lê `desde`/`tempos` da entrada ANTIGA e a nova só ganha quando traz o
+     campo. Ficou no `carimbaTempos` porque é o lugar único; os testes de
+     `relogio.test.mjs` cobrem os três construtores e o fechamento em volumes.
+     ⚠️ Os tempos gravados ANTES disso estão subnotificados — não comparar
+     mês a mês atravessando 07/10/2026.
 - **Leitura:** `tempoNaEtapa`, `desdeNaEtapa`, `idadeDoItem` (desde a importação —
   inclui a triagem, que some de todo relatório de chão de fábrica),
   `idadeDoPedido` (o item mais antigo ainda em produção), `fmtDuracao`, `diasDe`.
