@@ -4859,3 +4859,14 @@ export function resumoWhatsSaida(w) {
   return `WhatsApp não enviado: ${w.detalhe || w.motivo || 'erro'}`
 }
 
+
+// ============================================================
+// VERSÃO DO BUILD (08/10/2026) — ver `AvisoVersao` e vite.config.js.
+// Só diz "mudou" quando os DOIS lados existem e são diferentes: resposta
+// vazia (rede, 404 no dev, JSON quebrado) não pode pedir recarga à toa, e um
+// aviso que aparece sem motivo é um aviso que ninguém mais obedece.
+// ============================================================
+export function versaoMudou(atual, remota) {
+  const a = String(atual || '').trim(), r = String(remota || '').trim()
+  return !!a && !!r && a !== r
+}

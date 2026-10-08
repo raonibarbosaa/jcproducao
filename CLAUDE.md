@@ -1306,6 +1306,17 @@ está pronto AGORA (uma foto do momento); a carga é o documento de uma viagem.
   por pedaço exato**, então 5111 nunca traz 5118.
 
 ## Navegação / usabilidade
+- **`AvisoVersao` (08/10/2026):** cada build grava um id (`__BUILD_ID__`, via
+  `define` no `vite.config.js`: hash do git + carimbo) no código e em
+  `dist/version.json` (plugin `versaoJson`, só no build do site, não no SSR do
+  `test:tela`). O componente, no `Layout`, busca o `version.json` com
+  `cache: 'no-store'` ao abrir, ao voltar para a aba e a cada 10 min, e mostra
+  a faixa "Saiu uma versão nova — Recarregar" quando difere (`versaoMudou`,
+  que ignora resposta vazia para não avisar à toa). É AVISO, nunca recarga
+  automática: recarregar no meio de uma triagem não salva jogaria o trabalho
+  fora. Nasceu do incidente dos apelidos (aba com build antigo rodando um dia
+  depois do deploy). ⚠️ O `version.json` tem que ir junto no deploy (está no
+  `dist`, então o fluxo normal já leva).
 - **`PainelEdicao` (FEITO):** em Cadastros o formulário de edição é renderizado no TOPO
   da página. Quem clicava em "Editar" num card lá embaixo não via nada acontecer e achava
   que o botão estava quebrado. O componente traz o formulário para a tela ao abrir e o faz
@@ -1506,6 +1517,34 @@ função que devolve MAPA**.
   passou a ouvir a coleção e mescla igual. Helpers `idCliente`,
   `dadosCliente`, `mesclaClientes`, `clientesParaMigrar` com testes em
   `tests/clientes-colecao.test.mjs`.
+  ⚠️ **INCIDENTE 08/10/2026 — "todos os apelidos voltaram para a razão
+  social" (designer, por áudio).** NADA foi perdido: a coleção tinha 1.334
+  docs criados na migração de 07/10 ~19h e nenhum alterado depois (985 com
+  apelido, 349 sem — os que nunca tiveram). A causa foi uma **aba com o BUILD
+  ANTIGO ainda aberta** no PC do designer (SPA com hash: nunca recarrega
+  sozinha): o build antigo lê o apelido SÓ do array em `config/cadastros`, e
+  a migração apagou esse campo → para aquela aba, todo cliente ficou sem
+  apelido. Ele começou a redigitar (24 apelidos foram parar no array de
+  novo, com grafia diferente dos originais) e o build novo os ignorava
+  (coleção ganha). **Remédio: recarregar a página.** Lições: (1) deploy que
+  muda ONDE o dado mora precisa de aviso "recarregue" / verificação de versão
+  no app — FEITO no mesmo dia, ver `AvisoVersao`; (2) deixar a migração para alguns dias depois
+  do deploy, quando ninguém mais está no build antigo. De brinde, a
+  investigação achou e fechou um bug LATENTE: a captura automática do import
+  gravava `{ razao, nome: '' }` com merge, e com a lista de clientes
+  incompleta (coleção ainda chegando, offline, rules negando) apagaria o
+  apelido de todo mundo. Agora `dadosClienteNovo` grava só `razao`;
+  `clientesProntos`/`clientesErro` no `CadastrosContext` dizem se a coleção
+  já respondeu (snapshot do servidor, ou do cache com conteúdo) e a captura
+  é PULADA com aviso no modal quando não; `mesclaClientes` usa o apelido do
+  array quando o doc da coleção está sem apelido e `clientesParaMigrar`
+  devolve esse `nome` à coleção (merge só do campo). Testes no fim de
+  `tests/clientes-colecao.test.mjs`. **Como ler a coleção sem o CLI** (as
+  credenciais do `firebase` expiram): logado no site, o token de sessão está
+  no IndexedDB `firebaseLocalStorageDb` e serve na REST
+  `firestore.googleapis.com/v1/projects/producaojcsacolas/databases/(default)/documents/...`,
+  que devolve `createTime`/`updateTime` por doc — foi o que provou que nada
+  tinha sido regravado.
   ⚠️ **Rules novas (`match /clientes`, mesma regra do config): publicar ANTES
   do build.** Se não publicar, a leitura da coleção morre com permission-denied
   e a tela continua com o array legado (rede de segurança), mas o import e o

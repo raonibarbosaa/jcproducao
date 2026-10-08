@@ -5,6 +5,7 @@ import { veAssistenteVoz } from '../utils.js'
 import Footer from './Footer.jsx'
 import VoltarAoTopo from './VoltarAoTopo.jsx'
 import MeuPin from './MeuPin.jsx'
+import AvisoVersao from './AvisoVersao.jsx'
 
 const LABEL = {
   triagem: 'Triagem',
@@ -82,6 +83,7 @@ export default function Layout({ abas, contadores, children }) {
       {meuPin && <MeuPin onFechar={() => setMeuPin(false)} />}
 
       <VoltarAoTopo desviaDaVoz={veAssistenteVoz(perfil)} />
+      <AvisoVersao />
     </div>
   )
 }

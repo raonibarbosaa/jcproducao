@@ -1452,3 +1452,16 @@ tr.sit-producao td { color: var(--text-dim); }
 .ctl-origem { font-size: 12px; white-space: nowrap; }
 .ctl-puxou { font-size: 13px; }
 .ctl-puxou.forte { color: var(--warn); }
+
+/* aviso de versão nova (AvisoVersao.jsx) — fixo embaixo, acima de tudo */
+.aviso-versao {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 400; max-width: calc(100vw - 32px);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+  padding: 12px 16px; border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  border: 2px solid var(--accent); box-shadow: 0 8px 28px rgba(0,0,0,.35);
+  font-size: 14px;
+}
+.aviso-versao button { white-space: nowrap; }
+@media print { .aviso-versao { display: none; } }
