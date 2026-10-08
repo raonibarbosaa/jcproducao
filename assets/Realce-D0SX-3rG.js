@@ -1,1 +1,0 @@
-import{j as t}from"./react-BE3N8IZe.js";import{K as s}from"./index-zSYjregu.js";function a({texto:i,termo:c}){const r=String(i??""),n=s(c||"");if(!n)return r;const e=s(r).indexOf(n);return e<0?r:t.jsxs(t.Fragment,{children:[r.slice(0,e),t.jsx("mark",{className:"hl",children:r.slice(e,e+n.length)}),r.slice(e+n.length)]})}export{a as R};
