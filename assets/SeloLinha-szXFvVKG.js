@@ -1,1 +1,0 @@
-import{j as t}from"./react-BE3N8IZe.js";import{dn as r,x as e,w as o}from"./index-Dk6s_UBS.js";function m({linha:s}){return!s||!r[s]?null:t.jsx("span",{className:"selo-linha",style:{background:o[s]},title:e[s],children:r[s]})}export{m as S};
