@@ -1,0 +1,1 @@
+import{j as o}from"./react-BE3N8IZe.js";import{dm as l,z as n,aH as a}from"./index-Dk6s_UBS.js";function c({cores:e}){const s=l(e);return s.length?o.jsxs("span",{className:"selo-cor",title:`Impressão: ${a(s)}`,children:[s.map(r=>o.jsx("span",{className:"selo-cor-bola",style:{background:n(r)}},r)),o.jsx("span",{className:"selo-cor-nm",children:a(s)})]}):null}export{c as S};
