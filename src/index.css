@@ -1448,3 +1448,7 @@ mark.hl {
 .ctl-sit.producao { color: var(--text-dim); border-color: var(--border); background: rgba(127,127,127,0.10); }
 tr.sit-producao td { color: var(--text-dim); }
 .ctl-fase { font-size: 12px; white-space: nowrap; }
+/* E4 — de onde o escritório puxou */
+.ctl-origem { font-size: 12px; white-space: nowrap; }
+.ctl-puxou { font-size: 13px; }
+.ctl-puxou.forte { color: var(--warn); }

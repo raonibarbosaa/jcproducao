@@ -373,7 +373,7 @@ precisar de leitura agregada da `auditoria` por outro perfil, aí sim.
   `saidaEm` (lançar e saiu com), e não mais só pelo lançar.
 - **Rules: nada a publicar** — mesmos campos já liberados para a expedição.
 
-### E4 — Quem deu baixa em cada etapa: a fábrica ou o escritório
+### E4 — Quem deu baixa em cada etapa: a fábrica ou o escritório — ✅ FEITA 08/10/2026
 
 > "A operação não está finalizando os pedidos na produção; o escritório é que
 > está. Quando o escritório diz pronto, o sistema dá baixa em todos os outros
@@ -405,6 +405,15 @@ precisar de leitura agregada da `auditoria` por outro perfil, aí sim.
   no pedido é um resumo para a lista — vive no doc até o pedido virar remessa
   (vai junto para `entregues` pelo spread, então Entregues também sabe).
 - Rules: campo dentro de `baixaEscritorio`, já liberado. Nada a publicar.
+- **Como ficou:** `resumoPuxado(registros)` agrupa os registros de auditoria do
+  lançamento por posto (`ondeProcurar`, montagem por material), conta itens
+  DISTINTOS e ordena pelo fluxo; `lancarControle` grava
+  `baixaEscritorio.puxou`; `rotuloOrigem(origem, puxou)` é a fonte única do
+  rótulo (tabela e CSV): "🏭 fábrica" · "🏢 escritório · puxou de X (n), Y (m)"
+  · "🏢 escritório · só o carimbo" · "🏢 escritório" (lançamento ANTERIOR à E4,
+  sem `puxou`: null, não []). O card mostra a frase por extenso. ⚠️ Volume já
+  embalado esperando o ✓ Expedir conta como "puxou de Expedição": a fábrica
+  embalou, mas não clicou — é exatamente o clique que o relatório procura.
 
 ### Decisões do dono (08/10/2026)
 

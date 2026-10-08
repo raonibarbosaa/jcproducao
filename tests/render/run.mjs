@@ -142,8 +142,8 @@ const ESPERA = {
   ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Motorista…', 'Lançar: finalizado e saiu', 'R$ 448,00'],
   ceProntoFabrica: ['PRONTO pela fábrica', 'ainda não lançado', 'Lançar: finalizado e saiu'],
   // o seletor de motorista fica também depois da saída (08/10/2026): dá para entregar por outro nome
-  ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS', 'Motorista…'],
-  ceVoltou: ['NÃO ENTREGOU', 'aguardando sair de novo', 'Motorista…', 'Saiu de novo', 'ENTREGUE por PAULO'],
+  ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS', 'Motorista…', 'Puxou da fábrica: GRÁFICA (1 item), Montagem Papel (1 item)'],
+  ceVoltou: ['NÃO ENTREGOU', 'aguardando sair de novo', 'Motorista…', 'Saiu de novo', 'ENTREGUE por PAULO', 'já tinha finalizado tudo pelo processo'],
   ceEntregue: ['SPAÇO', 'Pedido já entregue', 'ENTREGUE · remessa 1', 'PAULO', 'Não há mais nada a marcar'],
   ceExpedicao: ['Não entregou (voltou)', 'entregue: financeiro ou dono'],
   ceResumoEsc: ['Baixas do escritório por setor', '3 item(ns) de 2 pedido(s)', '1 sem pesagem', 'OUTUBRO 2026', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300 un Papel', '20 kg Plástico'],
@@ -168,7 +168,7 @@ const ESPERA = {
   avisoDesligado: ['ENTREGUE por MATEUS'],
   integ: ['Integrações', 'Endereço do Esmero', 'Avisar o cliente ao lançar', 'Modelo da mensagem', 'Como vai sair:', 'Atual Modas', '#5111', 'com Juninho', 'producaojcsacolas'],
   ceTabela: ['#6215', '#6206', '#6999', '#5738', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'BETEK KIDS', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'EM PRODUÇÃO',
-    'SILK SCREEN · GRÁFICA · Montagem Papel', 'prev. ', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '4 pedido(s)', '<th>Fase</th>'],
+    'SILK SCREEN · GRÁFICA · Montagem Papel', 'prev. ', 'MATEUS', 'PAULO', '🏢 escritório · puxou de GRÁFICA (1), Montagem Papel (1)', '🏢 escritório · só o carimbo', '🏭 fábrica', 'R$ 448,00', '4 pedido(s)', '<th>Fase</th>'],
 }
 
 // o que NÃO pode aparecer

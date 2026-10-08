@@ -19,11 +19,12 @@ const naFabrica = ped('5738', 'BETEK KIDS', { 0: { montagem: 200 } })
 const prontoFabrica = ped('6999', 'SO FABRICA', { 0: { expedido: 500 }, 1: { expedido: 20 } })
 // lançado pelo escritório e na rua
 const lancado = ped('6215', 'CREDIMOVEIS', { 0: { expedido: 500 }, 1: { expedido: 20 } },
-  { baixaEscritorio: { em: '2026-10-07T12:00:00.000Z', por: 'Anny', motorista: 'MATEUS' },
+  { baixaEscritorio: { em: '2026-10-07T12:00:00.000Z', por: 'Anny', motorista: 'MATEUS',
+      puxou: [{ etapa: 'GRAFICA', posto: 'GRÁFICA', itens: 1 }, { etapa: 'montagem', posto: 'Montagem Papel', itens: 1 }] },
     saidaEm: '2026-10-07T12:00:00.000Z', saidaMotorista: 'MATEUS' })
 // lançado, voltou no caminhão
 const voltou = ped('6206', 'BEBE DE MAE', { 0: { expedido: 500 }, 1: { expedido: 20 } },
-  { baixaEscritorio: { em: '2026-10-06T09:00:00.000Z', por: 'Anny', motorista: 'PAULO' } })
+  { baixaEscritorio: { em: '2026-10-06T09:00:00.000Z', por: 'Anny', motorista: 'PAULO', puxou: [] } })
 // já entregue (só remessa)
 const remessa = { id: '5900-1', idVenda: '5900', cliente: 'SPAÇO', cidade: 'ITABAIANA', rota: 'ROTA 02', vendedor: 'PAULO', valorTotal: 408,
   remessa: 1, parcial: false, motorista: 'PAULO', entregueEm: '2026-10-03T12:00:00.000Z', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 500 }] }

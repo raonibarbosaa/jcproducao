@@ -5,6 +5,7 @@
 import {
   baixaEscritorio, situacaoBaixa, podeBaixarNoControle, podeEntregarNoControle,
   preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle, faseDoPedido, MODO_NM,
+  resumoPuxado, fmtPuxou, rotuloOrigem,
   origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA, lancarControle, lancadoNoControle,
   avisosEntregaAbertos, fechaAvisoPeloLancamento, podeFecharAviso, resumoBaixasEscritorio, fmtPorMaterial,
   qtdNaEtapa, volumesDoItem, idxProntos, itensParaCarga, temTrabalhoNaProducao,
@@ -130,9 +131,26 @@ const l1 = lancarControle(p1, QUEM, 'MATEUS', CAD, AGORA)
 ok('lançou e moveu os 2 itens', l1.gravaEtapas && l1.movidos.length === 2)
 t('campos: carimbo + saída com o motorista', [l1.campos.baixaEscritorio.motorista, l1.campos.saidaMotorista, l1.campos.saidaEm], ['MATEUS', 'MATEUS', AGORA])
 ok('fica lançado', lancadoNoControle({ ...p1, ...l1.campos }))
+// E4: o carimbo guarda DE ONDE o escritório puxou, no nome do posto, na ordem do fluxo
+ok('puxou é a lista dos postos de origem', Array.isArray(l1.campos.baixaEscritorio.puxou) && l1.campos.baixaEscritorio.puxou.length > 0)
+t('puxou bate com os registros de auditoria', l1.campos.baixaEscritorio.puxou.reduce((n, x) => n + x.itens, 0) >= 1, true)
+t('resumoPuxado agrupa por posto, conta itens distintos e ordena pelo fluxo',
+  resumoPuxado([
+    { de: 'montagem', material: 'papel', itemKey: 'A' }, { de: 'montagem', material: 'papel', itemKey: 'B' },
+    { de: 'GLICHE', material: 'plastico', itemKey: 'C' }, { de: 'GLICHE', material: 'plastico', itemKey: 'C' },
+    { de: 'expedicao', material: 'papel', itemKey: 'A' },
+  ]),
+  [{ etapa: 'GLICHE', posto: MODO_NM.GLICHE, itens: 1 }, { etapa: 'montagem', posto: 'Montagem Papel', itens: 2 }, { etapa: 'expedicao', posto: 'Expedição', itens: 1 }])
+t('fmtPuxou', fmtPuxou([{ posto: 'Clichê', itens: 1 }, { posto: 'Montagem Papel', itens: 2 }]), 'Clichê (1), Montagem Papel (2)')
+t('rótulo: fábrica', rotuloOrigem('fabrica'), '🏭 fábrica')
+t('rótulo: escritório antigo (sem detalhe)', rotuloOrigem('escritorio', null), '🏢 escritório')
+t('rótulo: escritório só carimbou', rotuloOrigem('escritorio', []), '🏢 escritório · só o carimbo')
+t('rótulo: escritório puxou', rotuloOrigem('escritorio', [{ posto: 'Clichê', itens: 1 }]), '🏢 escritório · puxou de Clichê (1)')
+t('rótulo: em produção', rotuloOrigem(''), '—')
 // pedido que a fábrica JÁ tinha baixado: lança igual, sem mexer em etapas
 const l3 = lancarControle(p3, QUEM, 'PAULO', CAD, AGORA)
 t('já pronto: nada se move, mas lança', [l3.gravaEtapas, l3.movidos.length, !!l3.campos.baixaEscritorio], [false, 0, true])
+t('já pronto: puxou vazio = só o carimbo', l3.campos.baixaEscritorio.puxou, [])
 // INTEIRO: a parte solta do item embalado vira volume SEM PESAGEM
 const l2 = lancarControle(p2, QUEM, 'MATEUS', CAD, AGORA)
 t('inteiro: nada recusado', l2.recusados, [])
@@ -166,6 +184,7 @@ t('origem diz de quem foi a baixa (em produção não tem baixa)', Object.fromEn
 t('motorista: quem está levando, ou quem levou da última vez', Object.fromEntries(linhas.map((l) => [l.idVenda, l.motorista])),
   { 5738: 'MATEUS', 6215: 'MATEUS', 7000: '', 7001: '', 7002: 'PAULO' })
 t('a fase do que está na fábrica', linhas.find((l) => l.idVenda === '7001').fase, [MODO_NM.GRAFICA])
+t('a linha leva o puxou do carimbo (e null quando não há)', [Array.isArray(linhas.find((l) => l.idVenda === '5738').puxou), linhas.find((l) => l.idVenda === '7000').puxou], [true, null])
 t('pronto por inteiro não tem fase', linhas.find((l) => l.idVenda === '7000').fase, [])
 t('filtro por origem não traz o que está em produção', linhasControleEntrega([lancado, naFabricaAinda], { origem: 'fabrica' }).length, 0)
 t('filtro por situação isola a produção', linhasControleEntrega([lancado, naFabricaAinda], { situacao: 'producao' }).map((l) => l.idVenda), ['7001'])

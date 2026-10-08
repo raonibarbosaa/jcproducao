@@ -61,7 +61,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > número; E4 = Origem por pedido diz DE ONDE o escritório puxou): ver o fim de
 > `CONTROLE_ENTREGA.md`. **Decisões fechadas em 08/10/2026**; ordem E2 → E4 →
 > E3 → E1. **E2 FEITA e no ar em 08/10/2026** (`faseDoPedido`, situação
-> `producao`, coluna Fase). Pendência: expedição ver/editar valor depois.
+> `producao`, coluna Fase). **E4 FEITA e no ar em 08/10/2026**
+> (`baixaEscritorio.puxou` + `rotuloOrigem`). Pendência: expedição ver/editar
+> valor depois.
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

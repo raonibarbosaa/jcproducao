@@ -5,7 +5,7 @@ import {
   buscaGlobal, situacaoBaixa, lancadoNoControle, situacaoEntrega,
   comprometimentoDeCargas, linhasControleEntrega, totaisDoControle,
   podeBaixarNoControle, podeEntregarNoControle, quemAssina, pegarIP,
-  NOME_SITUACAO_CONTROLE, SITUACAO_CONTROLE, ORIGEM_BAIXA,
+  NOME_SITUACAO_CONTROLE, SITUACAO_CONTROLE, ORIGEM_BAIXA, rotuloOrigem, fmtPuxou,
   saiuParaEntrega, nomeCliente, ondeProcurar,
   fmtData, fmtDataHora, fmtMoeda, fmtQtd, doDoc, previsaoDe, situacaoPrazo,
   indexaProblemas, problemasDoPedido, ehErroEntrega, nomeCampoErro, quemFez,
@@ -207,6 +207,14 @@ export function CardControle({ r, comp, cargas, planos, clientes, itensCad, term
           </span>
         )}
       </div>
+      {/* E4: o que a fábrica deixou de baixar no sistema e o escritório puxou */}
+      {lancado && Array.isArray(p.baixaEscritorio.puxou) && (
+        <div className={`loc-linha ctl-puxou${p.baixaEscritorio.puxou.length ? ' forte' : ''}`}>
+          {p.baixaEscritorio.puxou.length
+            ? <span>🏢 Puxou da fábrica: {p.baixaEscritorio.puxou.map((x) => `${x.posto} (${x.itens} ${x.itens === 1 ? 'item' : 'itens'})`).join(', ')}</span>
+            : <span>🏭 A fábrica já tinha finalizado tudo pelo processo — o escritório só carimbou</span>}
+        </div>
+      )}
 
       {avisoEntregue.map((x) => (
         <div key={x.id} className="loc-alerta forte">
@@ -333,7 +341,7 @@ export function TabelaControle({ linhas, totais, veValor, onAbrir }) {
                   : l.situacao === SITUACAO_CONTROLE.PRODUCAO && l.previsao ? <small>prev. {fmtData(l.previsao)}</small> : '—'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{l.saidaEm ? fmtData(l.saidaEm) : '—'}</td>
               <td>{l.motorista || '—'}</td>
-              <td>{!l.origem ? '—' : l.origem === ORIGEM_BAIXA.ESCRITORIO ? '🏢 escritório' : '🏭 fábrica'}</td>
+              <td className="ctl-origem">{rotuloOrigem(l.origem, l.puxou)}</td>
             </tr>
           ))}
         </tbody>
@@ -356,7 +364,7 @@ function baixarCsv(linhas, veValor) {
   const linhasCsv = linhas.map((l) => [
     l.idVenda, l.cliente, l.cidade, l.rota, l.vendedor,
     ...(veValor ? [String(l.valor || 0).replace('.', ',')] : []),
-    NOME_SITUACAO_CONTROLE[l.situacao], (l.fase || []).join(' · '), l.quando ? fmtData(l.quando) : '', l.saidaEm ? fmtData(l.saidaEm) : '', l.motorista, l.origem,
+    NOME_SITUACAO_CONTROLE[l.situacao], (l.fase || []).join(' · '), l.quando ? fmtData(l.quando) : '', l.saidaEm ? fmtData(l.saidaEm) : '', l.motorista, rotuloOrigem(l.origem, l.puxou),
   ].map(esc).join(';'))
   const blob = new Blob(['﻿' + [cab.map(esc).join(';'), ...linhasCsv].join('\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')

@@ -4333,6 +4333,38 @@ export function baixaEscritorio(p, idxs, quem, itensCad, agora, { inteiro = fals
 // Pedido que a fábrica já tinha baixado também é lançado — é o lançamento,
 // não a etapa, que põe o pedido na lista do escritório.
 // Devolve null sem motorista: a saída sem quem levou não existe.
+// DE ONDE O ESCRITÓRIO PUXOU (Fase E4, 08/10/2026). A baixa em cascata grava um
+// registro de auditoria por item × etapa de origem; aqui vira o resumo que o
+// carimbo do lançamento guarda, para a lista dizer por pedido o que a fábrica
+// deixou de fazer no sistema: [{ etapa, posto, itens }], no nome do posto
+// (montagem por material), na ordem do fluxo. [] = a fábrica já tinha
+// finalizado tudo (só o carimbo). A auditoria continua sendo a fonte histórica.
+export function resumoPuxado(registros) {
+  const m = new Map()
+  for (const r of registros || []) {
+    if (!r?.de) continue
+    const posto = ondeProcurar(r.de, r.material)
+    const e = m.get(posto) || { etapa: r.de, posto, itens: new Set() }
+    e.itens.add(r.itemKey || r.produto || String(m.size))
+    m.set(posto, e)
+  }
+  return [...m.values()]
+    .sort((a, b) => ordemEtapaLocal(a.etapa) - ordemEtapaLocal(b.etapa) || a.posto.localeCompare(b.posto))
+    .map((e) => ({ etapa: e.etapa, posto: e.posto, itens: e.itens.size }))
+}
+export const fmtPuxou = (puxou) =>
+  (puxou || []).map((x) => `${x.posto} (${x.itens})`).join(', ')
+
+// O rótulo da coluna Origem: fábrica × escritório, e no escritório DE ONDE
+// puxou. `puxou` null/undefined = lançamento anterior à E4 (sem detalhe).
+export function rotuloOrigem(origem, puxou) {
+  if (!origem) return '—'
+  if (origem !== ORIGEM_BAIXA.ESCRITORIO) return origem === ORIGEM_BAIXA.CONCILIACAO ? '📄 conciliação' : '🏭 fábrica'
+  if (!Array.isArray(puxou)) return '🏢 escritório'
+  if (!puxou.length) return '🏢 escritório · só o carimbo'
+  return `🏢 escritório · puxou de ${fmtPuxou(puxou)}`
+}
+
 export function lancarControle(p, quem, motorista, itensCad, agora) {
   const t = agora || new Date().toISOString()
   const mot = String(motorista || '').trim()
@@ -4343,8 +4375,9 @@ export function lancarControle(p, quem, motorista, itensCad, agora) {
     ...b,
     campos: {
       // carimbo do lançamento (mesmo nome do carimbo da baixa — é o que a
-      // lista lê, e o que a rule da expedição libera)
-      baixaEscritorio: { em: t, por: assina, uid: quem?.executorUid || quem?.porUid || '', motorista: mot },
+      // lista lê, e o que a rule da expedição libera). `puxou` = de onde o
+      // escritório tirou o que a fábrica não baixou (E4).
+      baixaEscritorio: { em: t, por: assina, uid: quem?.executorUid || quem?.porUid || '', motorista: mot, puxou: resumoPuxado(b.registros) },
       saidaEm: t, saidaMotorista: mot, saidaPor: assina,
     },
     // etapas só muda se algo se moveu; o pedido já pronto recebe só os campos
@@ -4511,6 +4544,8 @@ export function linhasControleEntrega(pedidos, { situacao, origem, clientes, ven
       aproximado: !lancado && !desde.exato,
       lancadoEm: lanc.em || '',
       lancadoPor: lanc.por || '',
+      // E4: de onde o escritório puxou (null = lançamento antigo, sem detalhe)
+      puxou: Array.isArray(lanc.puxou) ? lanc.puxou : null,
       saidaEm: saiu ? p.saidaEm : '',
       motorista: saiu ? (p.saidaMotorista || '') : (lanc.motorista || ''),
       itens: prontos.length,
