@@ -12,14 +12,14 @@ import {
   LAMINACOES, acabamentoDoItem, acabamentoItemOk, acabamentosCompletos, temAcabamento,
   coresAtivas, nomeCor, hexCor, coresDoItem, corOk, itemPedeCor, coresCompletas, statusDaTriagem, pendenteNaTriagem,
   MATERIAIS, itemPassaNaTriagem, pedidoPassaNaTriagem, itensSemCor,
-  filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem, idCliente, dadosCliente,
+  filtraPedidos, vendedoresDe, resumoFiltros, materialDoItem, keyDoItem, idCliente, dadosCliente, dadosClienteNovo,
 } from '../utils.js'
 import DataEntrega from '../components/DataEntrega.jsx'
 import FiltrosBar from '../components/FiltrosBar.jsx'
 import SeloCor from '../components/SeloCor.jsx'
 
 export default function Triagem({ pedidos }) {
-  const { vendedores, clientes, itens, carregando: cadCarregando } = useCadastros()
+  const { vendedores, clientes, clientesProntos = true, clientesErro = '', itens, carregando: cadCarregando } = useCadastros()
   const { perfil } = useAuth()
   const ehDono = perfil === 'dono'
   const fileRef = useRef(null)
@@ -144,13 +144,23 @@ export default function Triagem({ pedidos }) {
       // e ainda NÃO está cadastrada, cria entrada com apelido vazio.
       // Cliente já cadastrado (mesmo com apelido vazio) é deixado em paz.
       setMsg('Conferindo clientes e itens…')
+      // ⚠️ Só compara contra a lista quando a coleção já RESPONDEU. Com a lista
+      // incompleta (coleção ainda chegando, offline, rules negando) toda razão
+      // social parece nova e a captura regravaria o cadastro inteiro (bug
+      // latente fechado em 08/10/2026 — ver `dadosClienteNovo`). Nesse caso a
+      // captura é PULADA e o modal diz por quê; o import dos pedidos segue.
+      const capturaPulada = clientesProntos ? '' : (clientesErro
+        ? `o cadastro de clientes não pôde ser lido (${clientesErro})`
+        : 'o cadastro de clientes ainda não tinha terminado de carregar')
       const razoesNovas = new Map() // razao normalizada -> razao original (1a vez vista)
-      for (const p of aImportar) {
-        const razao = (p.cliente || '').trim()
-        if (!razao) continue
-        if (achaCliente(razao, clientes)) continue
-        const key = normaliza(razao)
-        if (!razoesNovas.has(key)) razoesNovas.set(key, razao)
+      if (!capturaPulada) {
+        for (const p of aImportar) {
+          const razao = (p.cliente || '').trim()
+          if (!razao) continue
+          if (achaCliente(razao, clientes)) continue
+          const key = normaliza(razao)
+          if (!razoesNovas.has(key)) razoesNovas.set(key, razao)
+        }
       }
       const clientesNovos = [...razoesNovas.values()].map((razao) => ({ razao, nome: '' }))
 
@@ -176,7 +186,8 @@ export default function Triagem({ pedidos }) {
         const batch = writeBatch(db)
         for (const c of clientesNovos.slice(i, i + 450)) {
           const id = idCliente(c.razao)
-          if (id) batch.set(doc(db, 'clientes', id), dadosCliente(c), { merge: true })
+          // só a razão: `nome: ''` com merge APAGARIA um apelido já existente
+          if (id) batch.set(doc(db, 'clientes', id), dadosClienteNovo(c.razao), { merge: true })
         }
         await batch.commit()
       }
@@ -195,6 +206,7 @@ export default function Triagem({ pedidos }) {
         atualizadosNormais,
         ignorados: jaEntregues,
         clientesNovos,
+        capturaPulada,
         itensNovos,
       })
       setMsg('')
@@ -860,7 +872,7 @@ export function CardTriagem({ p, onSalvar, onCidade, onExcluir, clientes, itensC
 // e permite definir apelido dos clientes novos sem sair do modal.
 // ============================================================
 function ModalImportacao({ resultado, clientes, itens, onFechar }) {
-  const { origem, totalLinhas, totalPedidos, novos, atualizadosMantidos, atualizadosNormais, ignorados, clientesNovos, itensNovos = [] } = resultado
+  const { origem, totalLinhas, totalPedidos, novos, atualizadosMantidos, atualizadosNormais, ignorados, clientesNovos, capturaPulada = '', itensNovos = [] } = resultado
 
   // soma valores (só dos importados, sem os ignorados)
   const importados = [...novos, ...atualizadosNormais, ...atualizadosMantidos]
@@ -901,6 +913,15 @@ function ModalImportacao({ resultado, clientes, itens, onFechar }) {
             <span className="chip">👤 {vendedoresSet.size} vendedor(es)</span>
             <span className="chip">📅 {periodo}</span>
           </div>
+
+          {/* a captura não rodou: a lista de clientes não estava completa */}
+          {capturaPulada && (
+            <div className="aviso-captura" style={{ marginBottom: 16, padding: 10, border: '1px dashed var(--warn, #d08a00)', borderRadius: 8, fontSize: 13 }}>
+              ⚠️ A captura automática de clientes novos <b>não rodou</b> nesta importação: {capturaPulada}.
+              Os pedidos foram importados normalmente; razão social nova aparece nos cards até ganhar apelido.
+              Recarregue a página e importe de novo para capturar.
+            </div>
+          )}
 
           {/* Clientes novos capturados — com edição de apelido inline */}
           {clientesNovos.length > 0 && (

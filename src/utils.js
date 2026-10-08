@@ -4713,10 +4713,31 @@ export function dadosCliente(c) {
   return { ...resto, razao: String(c?.razao || '').trim(), nome: String(c?.nome || '').trim() }
 }
 
+// ⚠️ O que a CAPTURA AUTOMÁTICA do import grava: SÓ a razão social, nunca
+// `nome`. Até 08/10/2026 gravava `{ razao, nome: '' }` com merge — e
+// `nome: ''` é um valor como outro qualquer para o merge: numa importação
+// feita com a lista de clientes INCOMPLETA (coleção ainda chegando, offline,
+// rules negando) toda razão social pareceria nova e o apelido de todo mundo
+// seria apagado. Bug latente achado na investigação do incidente de
+// 08/10/2026 (que teve outra causa — ver CLAUDE.md), fechado antes de
+// acontecer. Com merge e sem o campo, doc que já existe fica como está; doc
+// novo nasce sem `nome`, e `nomeCliente` já trata ausente como "sem apelido".
+export function dadosClienteNovo(razao) {
+  return { razao: String(razao || '').trim() }
+}
+
 // coleção + array antigo, sem repetir: a COLEÇÃO ganha (pode ter apelido mais
 // novo); quem só existe no array sai marcado `_legado` — é o que a tela de
 // Cadastros usa para saber que ainda há o que migrar e para apagar no lugar
 // certo. Ordem: por nome de exibição (ou razão), para a lista ser legível.
+const temApelido = (c) => !!(c?.nome && String(c.nome).trim())
+
+// ⚠️ Com uma exceção (08/10/2026): doc da coleção SEM apelido e o mesmo
+// cliente no array antigo COM apelido → vale o apelido do array. Depois da
+// migração o array só volta a existir por uma aba com o BUILD ANTIGO ainda
+// aberta (é ela que grava apelido no array) — e o que o designer digita lá
+// não pode sumir só porque o doc novo nasceu sem apelido. A migração copia
+// esse `nome` para a coleção. Doc da coleção COM apelido continua ganhando.
 export function mesclaClientes(colecao, legado) {
   const m = new Map()
   for (const c of colecao || []) {
@@ -4725,19 +4746,27 @@ export function mesclaClientes(colecao, legado) {
   }
   for (const c of legado || []) {
     const k = idCliente(c?.razao)
-    if (k && !m.has(k)) m.set(k, { ...c, _legado: true })
+    if (!k) continue
+    const ja = m.get(k)
+    if (!ja) m.set(k, { ...c, _legado: true })
+    else if (!temApelido(ja) && temApelido(c)) m.set(k, { ...ja, nome: String(c.nome).trim() })
   }
   return [...m.values()].sort((a, b) =>
     normaliza(a.nome || a.razao).localeCompare(normaliza(b.nome || b.razao)))
 }
 
-// o que falta copiar do array antigo para a coleção (o que já está lá ganha)
+// o que falta copiar do array antigo para a coleção (o que já está lá ganha).
+// Doc que já existe na coleção mas SEM apelido, com apelido no array, entra
+// só com `{ nome }` (merge): devolve o apelido sem mexer no resto do doc.
 export function clientesParaMigrar(colecao, legado) {
-  const ja = new Set((colecao || []).map((c) => idCliente(c?.razao)).filter(Boolean))
+  const ja = new Map()
+  for (const c of colecao || []) { const k = idCliente(c?.razao); if (k && !ja.has(k)) ja.set(k, c) }
   const out = new Map()
   for (const c of legado || []) {
     const k = idCliente(c?.razao)
-    if (k && !ja.has(k) && !out.has(k)) out.set(k, dadosCliente(c))
+    if (!k || out.has(k)) continue
+    if (!ja.has(k)) out.set(k, dadosCliente(c))
+    else if (!temApelido(ja.get(k)) && temApelido(c)) out.set(k, { nome: String(c.nome).trim() })
   }
   return [...out.entries()].map(([id, dados]) => ({ id, dados }))
 }
@@ -4829,3 +4858,4 @@ export function resumoWhatsSaida(w) {
   if (w.status === STATUS_WHATS.ENVIADO) return `WhatsApp enviado${w.cliente ? ` para ${w.cliente}` : ''}${w.numero ? ` pelo ${w.numero}` : ''}`
   return `WhatsApp não enviado: ${w.detalhe || w.motivo || 'erro'}`
 }
+

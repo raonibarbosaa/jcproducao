@@ -17,6 +17,11 @@ export function CadastrosProvider({ children }) {
   const [vendedores, setVendedores] = useState([])
   const [clientesCol, setClientesCol] = useState([])       // coleção `clientes`
   const [clientesLegado, setClientesLegado] = useState([]) // ainda em config/cadastros
+  // a coleção já respondeu do SERVIDOR (ou do cache com conteúdo)? Enquanto
+  // não, a lista de clientes está INCOMPLETA e quem compara contra ela (a
+  // captura automática do import) não pode gravar — ver `dadosClienteNovo`.
+  const [clientesProntos, setClientesProntos] = useState(false)
+  const [clientesErro, setClientesErro] = useState('')
   const [itens, setItens] = useState([])
   const [motoristas, setMotoristas] = useState([])
   // parâmetros de logística (hoje só a capacidade do caminhão, em kg)
@@ -75,10 +80,18 @@ export function CadastrosProvider({ children }) {
   // tela continua funcionando com o array legado — publicar as rules ANTES do
   // build continua sendo a regra da casa, isto é só a rede de segurança.
   useEffect(() => {
-    if (!user) { setClientesCol([]); return undefined }
+    if (!user) { setClientesCol([]); setClientesProntos(false); setClientesErro(''); return undefined }
+    setClientesProntos(false); setClientesErro('')
     return onSnapshot(collection(db, 'clientes'),
-      (snap) => setClientesCol(snap.docs.map(doDoc)),
-      (e) => { console.error('Erro ao ler clientes:', e); setClientesCol([]) })
+      (snap) => {
+        setClientesCol(snap.docs.map(doDoc))
+        // cache vazio em aparelho que nunca viu a coleção (ou offline) não é
+        // "carregado": é justamente a lista vazia que faria todo cliente
+        // parecer novo
+        setClientesProntos(!(snap.metadata.fromCache && snap.empty))
+        setClientesErro('')
+      },
+      (e) => { console.error('Erro ao ler clientes:', e); setClientesCol([]); setClientesProntos(false); setClientesErro(e?.code || e?.message || 'erro') })
   }, [user?.uid])
 
   useEffect(() => {
@@ -92,7 +105,7 @@ export function CadastrosProvider({ children }) {
   const clientes = useMemo(() => mesclaClientes(clientesCol, clientesLegado), [clientesCol, clientesLegado])
 
   return (
-    <CadCtx.Provider value={{ vendedores, clientes, clientesLegado, itens, motoristas, logistica, cores, esmero, carregando }}>
+    <CadCtx.Provider value={{ vendedores, clientes, clientesLegado, clientesProntos, clientesErro, itens, motoristas, logistica, cores, esmero, carregando }}>
       {children}
     </CadCtx.Provider>
   )
