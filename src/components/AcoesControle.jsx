@@ -100,10 +100,24 @@ export function useAcoesControle({ quem, nome, perfil, clientes, itensCad, podeL
     } finally { fim() }
   }
 
+  // Trocar o motorista de um pedido que JÁ SAIU (escolheram o nome errado no
+  // lançamento). Só o campo da saída: o lançamento continua registrado.
+  async function trocarMotorista(p, motorista) {
+    if (!podeLancar || salvando || !motorista) return
+    setSalvando(`mot-${p.idVenda}`)
+    try {
+      await updateDoc(doc(db, 'pedidos', String(p.idVenda)), { saidaMotorista: motorista })
+    } catch (e) {
+      alert('Não foi possível trocar o motorista: ' + (e.code || e.message))
+    } finally { fim() }
+  }
+
   // ENTREGUE: a mesma remessa da Rota (`preparaRemessa`). Financeiro e dono.
-  async function entregar(p) {
+  // `escolhido` = o motorista marcado na tela na hora de entregar (08/10/2026:
+  // antes o nome ficava preso ao da saída e ninguém conseguia trocar).
+  async function entregar(p, escolhido) {
     if (!podeEntregar || salvando) return
-    const motorista = p.saidaMotorista || p.baixaEscritorio?.motorista || ''
+    const motorista = escolhido || p.saidaMotorista || p.baixaEscritorio?.motorista || ''
     const r = preparaRemessa(p, motorista, nome)
     if (!r) { alert('Nada expedido neste pedido — lance antes.'); return }
     if (!confirm(`Confirmar ENTREGA do pedido #${p.idVenda} — ${nomeCliente(p.cliente, clientes)}${motorista ? ` por ${motorista}` : ''}?\n\nEle sai do Controle de entrega e vai para Entregues.`)) return
@@ -123,7 +137,7 @@ export function useAcoesControle({ quem, nome, perfil, clientes, itensCad, podeL
     } finally { fim() }
   }
 
-  return { salvando, lancar, voltou, sairDeNovo, entregar, reenviarAviso }
+  return { salvando, lancar, voltou, sairDeNovo, entregar, reenviarAviso, trocarMotorista }
 }
 
 // A barra de botões do pedido (o mesmo bloco na aba Controle e no Localizar).
@@ -137,6 +151,18 @@ export default function AcoesControle({ p, motoristas, podeLancar, podeEntregar,
   const ocupado = !!acoes?.salvando
   const mot = motorista || p.saidaMotorista || p.baixaEscritorio?.motorista || ''
   const prontos = idxProntos(p)
+  // O seletor aparece sempre que alguma ação usa o motorista: lançar, sair de
+  // novo, ENTREGAR e trocar a saída. Antes sumia depois da saída, e o
+  // "ENTREGUE por" ficava preso ao nome escolhido no lançamento. Motorista da
+  // saída que não está mais no cadastro (inativo) continua na lista, senão o
+  // campo abriria em branco e pareceria que ninguém saiu com o pedido.
+  const lista = (motoristas || []).some((m) => m.nome === mot) || !mot
+    ? (motoristas || [])
+    : [{ nome: mot }, ...(motoristas || [])]
+  const usaMotorista = (podeLancar && (!lancado || !saiu))
+    || (podeLancar && lancado && saiu)
+    || (podeEntregar && lancado && prontos.length > 0)
+  const trocou = !!(podeLancar && lancado && saiu && motorista && motorista !== (p.saidaMotorista || ''))
   const w = p.whatsSaida
   const esmeroLigado = !!(esmero?.ativo && esmero?.url)
   // o chip do aviso: enviado (verde) × não enviado (vermelho, com o motivo) ×
@@ -157,27 +183,32 @@ export default function AcoesControle({ p, motoristas, podeLancar, podeEntregar,
   return (
     <div className="ctl-acoes no-print">
       {chipWhats}
-      {podeLancar && (!lancado || !saiu) && (motoristas || []).length > 0 && (
-        <select className="filtro-input" value={motorista} onChange={(e) => setMotorista(e.target.value)} disabled={ocupado}>
+      {usaMotorista && lista.length > 0 && (
+        <select className="filtro-input" value={mot} onChange={(e) => setMotorista(e.target.value)} disabled={ocupado}>
           <option value="">Motorista…</option>
-          {motoristas.map((m) => <option key={m.id || m.nome} value={m.nome}>{m.nome}</option>)}
+          {lista.map((m) => <option key={m.id || m.nome} value={m.nome}>{m.nome}</option>)}
         </select>
       )}
+      {trocou && (
+        <button className="btn" disabled={ocupado} onClick={() => acoes.trocarMotorista(p, motorista)}>
+          🚚 Trocar motorista da saída para {motorista}
+        </button>
+      )}
       {podeLancar && !lancado && (
-        <button className="btn primary" disabled={ocupado || !motorista} onClick={() => acoes.lancar(p, motorista, problemas)}>
-          ✔ Lançar: finalizado e saiu{motorista ? ` com ${motorista}` : ''}
+        <button className="btn primary" disabled={ocupado || !mot} onClick={() => acoes.lancar(p, mot, problemas)}>
+          ✔ Lançar: finalizado e saiu{mot ? ` com ${mot}` : ''}
         </button>
       )}
       {podeLancar && lancado && !saiu && (
-        <button className="btn primary" disabled={ocupado || !motorista} onClick={() => acoes.sairDeNovo(p, motorista)}>
-          🚚 Saiu de novo{motorista ? ` com ${motorista}` : ''}
+        <button className="btn primary" disabled={ocupado || !mot} onClick={() => acoes.sairDeNovo(p, mot)}>
+          🚚 Saiu de novo{mot ? ` com ${mot}` : ''}
         </button>
       )}
       {podeLancar && lancado && saiu && (
         <button className="btn" disabled={ocupado} onClick={() => acoes.voltou(p)}>↩ Não entregou (voltou)</button>
       )}
       {podeEntregar && lancado && prontos.length > 0 && (
-        <button className="btn ok" disabled={ocupado} onClick={() => acoes.entregar(p)}>
+        <button className="btn ok" disabled={ocupado} onClick={() => acoes.entregar(p, mot)}>
           📦 ENTREGUE{mot ? ` por ${mot}` : ''}
         </button>
       )}

@@ -140,7 +140,8 @@ const ESPERA = {
     '2 lançado(s) pelo escritório', '#6215', '#6206', '#6999', 'Todas as situações', 'Fábrica e escritório', 'Imprimir', 'CSV'],
   ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Motorista…', 'Lançar: finalizado e saiu', 'R$ 448,00'],
   ceProntoFabrica: ['PRONTO pela fábrica', 'ainda não lançado', 'Lançar: finalizado e saiu'],
-  ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS'],
+  // o seletor de motorista fica também depois da saída (08/10/2026): dá para entregar por outro nome
+  ceLancado: ['CREDIMOVEIS', 'SERÁ ENTREGUE', 'com MATEUS', 'lançado', 'Anny', 'Não entregou (voltou)', 'ENTREGUE por MATEUS', 'Motorista…'],
   ceVoltou: ['NÃO ENTREGOU', 'aguardando sair de novo', 'Motorista…', 'Saiu de novo', 'ENTREGUE por PAULO'],
   ceEntregue: ['SPAÇO', 'Pedido já entregue', 'ENTREGUE · remessa 1', 'PAULO', 'Não há mais nada a marcar'],
   ceExpedicao: ['Não entregou (voltou)', 'entregue: financeiro ou dono'],
