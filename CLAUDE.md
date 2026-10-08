@@ -55,6 +55,13 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > "já foi entregue" quando quem lança é staff). **Fase D FEITA**: bloco "Baixas do
 > escritório por setor × mês" + filtro de origem na aba Auditoria (só o dono lê
 > `auditoria`, por isso não foi para Relatórios). Desenho inteiro no ar.
+> **Fase E — desenho ABERTO em 08/10/2026** (valor real digitado pelo
+> escritório com `valorDe(p)` como fonte única; lista mostra também EM
+> PRODUÇÃO com a coluna Fase; "pronto sem saída" e "em expedição" ao digitar o
+> número; E4 = Origem por pedido diz DE ONDE o escritório puxou): ver o fim de
+> `CONTROLE_ENTREGA.md`. **Decisões fechadas em 08/10/2026**; ordem E2 → E4 →
+> E3 → E1. **E2 FEITA e no ar em 08/10/2026** (`faseDoPedido`, situação
+> `producao`, coluna Fase). Pendência: expedição ver/editar valor depois.
 
 > **Financeiro** (contas a receber, cheques, comissões, bancos): ver
 > [`FINANCEIRO.md`](FINANCEIRO.md). **Fase 1 (contas a receber) NO CÓDIGO** desde

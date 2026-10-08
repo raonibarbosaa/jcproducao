@@ -4416,8 +4416,28 @@ export function preparaRemessa(p, motorista, quem, agora) {
 //   SERÁ ENTREGUE = na rua (saída marcada — pelo lançamento, pela Rota ou pela carga)
 //   PRONTO        = pronto no galpão, ainda sem saída (a fábrica baixou, ninguém lançou)
 //   NÃO ENTREGOU  = foi lançado, voltou no caminhão (saída apagada); sai de novo
-export const SITUACAO_CONTROLE = { SERA: 'sera', PRONTO: 'pronto', VOLTOU: 'voltou' }
-export const NOME_SITUACAO_CONTROLE = { sera: 'SERÁ ENTREGUE', pronto: 'PRONTO', voltou: 'NÃO ENTREGOU' }
+// 'producao' = ainda na fábrica (Fase E2, 08/10/2026): entra na lista para o
+// escritório consultar a FASE sem ir ao quadro. Não tem baixa nem origem.
+export const SITUACAO_CONTROLE = { SERA: 'sera', PRONTO: 'pronto', VOLTOU: 'voltou', PRODUCAO: 'producao' }
+export const NOME_SITUACAO_CONTROLE = { sera: 'SERÁ ENTREGUE', pronto: 'PRONTO', voltou: 'NÃO ENTREGOU', producao: 'EM PRODUÇÃO' }
+
+// A FASE do pedido para a lista do escritório: as paradas DISTINTAS do que
+// ainda não está pronto, no nome do posto ("SILK SCREEN", "Montagem Papel",
+// "Expedição"), na ordem do fluxo. Pedido dividido lista todas; item sem linha
+// = "Triagem". Pronto/entregue não entram — a situação já diz isso.
+export function faseDoPedido(p, itensCad) {
+  const vistos = new Map()   // rótulo -> ordem no fluxo
+  ;(p?.itens || []).forEach((it, i) => {
+    const mat = materialDoItem(it, itensCad)
+    for (const par of paradasDoItem(p, i)) {
+      if (par.etapa === 'expedido' || par.etapa === 'entregue') continue
+      const rotulo = par.etapa === 'triagem' ? 'Triagem' : ondeProcurar(par.etapa, mat)
+      // montagem por material: a ordem é a da montagem, desempate pelo nome
+      if (!vistos.has(rotulo)) vistos.set(rotulo, ordemEtapaLocal(par.etapa))
+    }
+  })
+  return [...vistos.entries()].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0])).map(([r]) => r)
+}
 
 // 'YYYY-MM' pelas partes LOCAIS (em UTC-3 o ISO cai no mês anterior na virada)
 export const mesDe = (iso) => {
@@ -4445,11 +4465,33 @@ export function prontoDesde(p) {
   return { iso: maior, exato }
 }
 
-export function linhasControleEntrega(pedidos, { situacao, origem, clientes, vendedores } = {}) {
+export function linhasControleEntrega(pedidos, { situacao, origem, clientes, vendedores, itensCad } = {}) {
   const linhas = []
   for (const p of pedidos || []) {
     const prontos = idxProntos(p)
-    if (!prontos.length) continue
+    // ainda na fábrica (nada pronto): entra como EM PRODUÇÃO com a fase, para
+    // o escritório consultar — sem baixa, sem origem, sem motorista
+    if (!prontos.length) {
+      if (!temTrabalhoNaProducao(p)) continue
+      linhas.push({
+        chave: String(p.idVenda ?? ''),
+        situacao: SITUACAO_CONTROLE.PRODUCAO,
+        idVenda: String(p.idVenda ?? ''),
+        cliente: nomeCliente(p.cliente, clientes),
+        cidade: p.cidade || '',
+        rota: vendedores ? rotaDe(p, vendedores) : (p.rota || ''),
+        vendedor: p.vendedor || '',
+        valor: Number(p.valorTotal) || 0,
+        origem: '',
+        fase: faseDoPedido(p, itensCad),
+        previsao: p.previsao || '',
+        quando: '', aproximado: false, lancadoEm: '', lancadoPor: '', saidaEm: '', motorista: '',
+        itens: 0, itensTotal: (p.itens || []).length, parcial: false,
+        remessas: Number(p.remessas) || 0,
+        docId: p.id || String(p.idVenda ?? ''),
+      })
+      continue
+    }
     const saiu = saiuParaEntrega(p)
     const lancado = lancadoNoControle(p)
     const lanc = p.baixaEscritorio || {}
@@ -4475,14 +4517,24 @@ export function linhasControleEntrega(pedidos, { situacao, origem, clientes, ven
       itensTotal: (p.itens || []).length,
       parcial: prontos.length < (p.itens || []).length,   // parte ainda na fábrica
       remessas: Number(p.remessas) || 0,                   // entregas parciais já feitas
+      // onde está o RESTO, quando parte continua na fábrica
+      fase: prontos.length < (p.itens || []).length ? faseDoPedido(p, itensCad) : [],
+      previsao: p.previsao || '',
       docId: p.id || String(p.idVenda ?? ''),
     })
   }
   for (const l of linhas) l.mes = mesDe(l.quando)
+  // na rua e pronto primeiro (o mais recente no topo); em produção depois, pela
+  // previsão de entrega (o mais urgente no topo)
+  const emProducao = (l) => (l.situacao === SITUACAO_CONTROLE.PRODUCAO ? 1 : 0)
   return linhas
     .filter((l) => !situacao || l.situacao === situacao)
     .filter((l) => !origem || l.origem === origem)
-    .sort((a, b) => (b.quando || '').localeCompare(a.quando || '') || a.idVenda.localeCompare(b.idVenda))
+    .sort((a, b) => emProducao(a) - emProducao(b)
+      || (emProducao(a)
+        ? (a.previsao || '9999').localeCompare(b.previsao || '9999')
+        : (b.quando || '').localeCompare(a.quando || ''))
+      || a.idVenda.localeCompare(b.idVenda, undefined, { numeric: true }))
 }
 
 // meses que existem nas linhas, do mais novo para o mais velho
@@ -4491,7 +4543,7 @@ export const mesesDoControle = (linhas) =>
 
 // totais da lista (valor só para quem vê valor — a tela decide se mostra)
 export function totaisDoControle(linhas) {
-  const t = { linhas: 0, sera: 0, pronto: 0, voltou: 0, valor: 0, escritorio: 0 }
+  const t = { linhas: 0, sera: 0, pronto: 0, voltou: 0, producao: 0, valor: 0, escritorio: 0 }
   for (const l of linhas || []) {
     t.linhas++
     t[l.situacao] = (t[l.situacao] || 0) + 1

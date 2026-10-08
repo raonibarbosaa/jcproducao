@@ -136,8 +136,9 @@ const ESPERA = {
   tFiltroCor: ['SACOLA PLASTICA 30X40', 'oculto(s) pelo filtro'],
   tQuadroCor: ['SACOLA PLASTICA 30X40', 'Impressão: Rosa', '>Rosa<'],
   // Controle de entrega: a planilha do escritório virou tela
-  ceCasca: ['Controle de entrega', 'Nº do pedido', 'Prontos e na rua', '3 pedido(s)', '1 será entregue', '1 pronto(s) sem saída', '1 não entregou',
-    '2 lançado(s) pelo escritório', '#6215', '#6206', '#6999', 'Todas as situações', 'Fábrica e escritório', 'Imprimir', 'CSV'],
+  // Fase E2: o que está na fábrica entra como EM PRODUÇÃO, com a fase
+  ceCasca: ['Controle de entrega', 'Nº do pedido', '📋 Pedidos', '4 pedido(s)', '1 será entregue', '1 pronto(s) sem saída', '1 não entregou', '1 em produção',
+    '2 lançado(s) pelo escritório', '#6215', '#6206', '#6999', '#5738', 'EM PRODUÇÃO', 'Todas as situações', 'Fábrica e escritório', 'Imprimir', 'CSV'],
   ceFabrica: ['BETEK KIDS', '5738', 'NA FÁBRICA', 'GRÁFICA', 'Montagem Papel', 'SILK SCREEN', '300', '200', 'Motorista…', 'Lançar: finalizado e saiu', 'R$ 448,00'],
   ceProntoFabrica: ['PRONTO pela fábrica', 'ainda não lançado', 'Lançar: finalizado e saiu'],
   // o seletor de motorista fica também depois da saída (08/10/2026): dá para entregar por outro nome
@@ -166,7 +167,8 @@ const ESPERA = {
   avisoNenhum: ['cliente ainda não avisado no WhatsApp', '💬 Avisar no WhatsApp'],
   avisoDesligado: ['ENTREGUE por MATEUS'],
   integ: ['Integrações', 'Endereço do Esmero', 'Avisar o cliente ao lançar', 'Modelo da mensagem', 'Como vai sair:', 'Atual Modas', '#5111', 'com Juninho', 'producaojcsacolas'],
-  ceTabela: ['#6215', '#6206', '#6999', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '3 pedido(s)'],
+  ceTabela: ['#6215', '#6206', '#6999', '#5738', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'BETEK KIDS', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'EM PRODUÇÃO',
+    'SILK SCREEN · GRÁFICA · Montagem Papel', 'prev. ', 'MATEUS', 'PAULO', '🏢 escritório', '🏭 fábrica', 'R$ 448,00', '4 pedido(s)', '<th>Fase</th>'],
 }
 
 // o que NÃO pode aparecer
@@ -186,7 +188,6 @@ const PROIBE = {
   ceEntregue: ['Lançar', 'ENTREGUE por'],               // entregue por inteiro: nada a marcar
   ceExpedicao: ['R$', '📦 ENTREGUE'],                  // expedição não vê valor nem entrega
   ceLancado: ['Lançar: finalizado'],                    // já lançado: não lança de novo
-  ceCasca: ['#5738'],                                   // na fábrica ainda: fora da lista
   tFiltroCor: ['SACOLA PAPEL P02'],
   tNovo: ['oculto(s)'],   // sem filtro, nada escondido
   qOfLigada: ['CAIO', 'Concluir produto', 'OF inteira'],   // sem OF e exigência ligada: fora do quadro; 1 produto = só "Concluir OF"

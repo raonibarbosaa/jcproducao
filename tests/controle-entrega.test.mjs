@@ -4,7 +4,7 @@
 // não entrega duas vezes, e a tabela do mês é VISÃO sobre o banco.
 import {
   baixaEscritorio, situacaoBaixa, podeBaixarNoControle, podeEntregarNoControle,
-  preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle,
+  preparaRemessa, linhasControleEntrega, mesesDoControle, totaisDoControle, faseDoPedido, MODO_NM,
   origemDaBaixa, mesDe, rotuloMes, ORIGEM_BAIXA, lancarControle, lancadoNoControle,
   avisosEntregaAbertos, fechaAvisoPeloLancamento, podeFecharAviso, resumoBaixasEscritorio, fmtPorMaterial,
   qtdNaEtapa, volumesDoItem, idxProntos, itensParaCarga, temTrabalhoNaProducao,
@@ -155,18 +155,34 @@ const soFabrica = pedido({ id: '7000', itens: [{ produto: 'SACOLA PAPEL P02', qt
 const fabricaSaiu = { ...pedido({ id: '7002', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }], etapas: { 0: { expedido: 10 } } }), saidaEm: '2026-10-05T10:00:00.000Z', saidaMotorista: 'PAULO' }
 const naFabricaAinda = pedido({ id: '7001', itens: [{ produto: 'SACOLA PAPEL P02', qtd: 10 }] })
 const linhas = linhasControleEntrega([lancado, voltou, soFabrica, fabricaSaiu, naFabricaAinda])
-t('entra tudo que está pronto; o que ainda está na fábrica, não', linhas.map((l) => l.idVenda).sort(), ['5738', '6215', '7000', '7002'])
-t('situação: na rua × pronto sem saída × voltou', Object.fromEntries(linhas.map((l) => [l.idVenda, l.situacao])),
-  { 5738: 'sera', 6215: 'voltou', 7000: 'pronto', 7002: 'sera' })
-t('origem diz de quem foi a baixa', Object.fromEntries(linhas.map((l) => [l.idVenda, l.origem])),
-  { 5738: 'escritorio', 6215: 'escritorio', 7000: 'fabrica', 7002: 'fabrica' })
+// Fase E2 (08/10/2026): o que ainda está na fábrica ENTRA, como EM PRODUÇÃO,
+// com a fase — e por último na lista, pela previsão
+t('entra tudo: pronto, na rua e EM PRODUÇÃO', linhas.map((l) => l.idVenda).sort(), ['5738', '6215', '7000', '7001', '7002'])
+t('em produção vai para o fim da lista', linhas[linhas.length - 1].idVenda, '7001')
+t('situação: na rua × pronto sem saída × voltou × em produção', Object.fromEntries(linhas.map((l) => [l.idVenda, l.situacao])),
+  { 5738: 'sera', 6215: 'voltou', 7000: 'pronto', 7001: 'producao', 7002: 'sera' })
+t('origem diz de quem foi a baixa (em produção não tem baixa)', Object.fromEntries(linhas.map((l) => [l.idVenda, l.origem])),
+  { 5738: 'escritorio', 6215: 'escritorio', 7000: 'fabrica', 7001: '', 7002: 'fabrica' })
 t('motorista: quem está levando, ou quem levou da última vez', Object.fromEntries(linhas.map((l) => [l.idVenda, l.motorista])),
-  { 5738: 'MATEUS', 6215: 'MATEUS', 7000: '', 7002: 'PAULO' })
+  { 5738: 'MATEUS', 6215: 'MATEUS', 7000: '', 7001: '', 7002: 'PAULO' })
+t('a fase do que está na fábrica', linhas.find((l) => l.idVenda === '7001').fase, [MODO_NM.GRAFICA])
+t('pronto por inteiro não tem fase', linhas.find((l) => l.idVenda === '7000').fase, [])
+t('filtro por origem não traz o que está em produção', linhasControleEntrega([lancado, naFabricaAinda], { origem: 'fabrica' }).length, 0)
+t('filtro por situação isola a produção', linhasControleEntrega([lancado, naFabricaAinda], { situacao: 'producao' }).map((l) => l.idVenda), ['7001'])
+// pedido dividido: as paradas DISTINTAS, na ordem do fluxo, montagem por material
+const dividido = pedido({ id: '7003', itens: [
+  { produto: 'SACOLA PAPEL P02', qtd: 500, linha: 'GRAFICA' },
+  { produto: 'SACOLA PLASTICA 30X40', qtd: 20, linha: 'PRODUCAO' },
+  { produto: 'ETIQUETA ADESIVA', qtd: 100, linha: 'GRAFICA' },
+], etapas: { 0: { montagem: 200 }, 2: { expedido: 100 } } })
+t('fase lista cada parada uma vez, na ordem do fluxo', faseDoPedido(dividido, CAD), [MODO_NM.PRODUCAO, MODO_NM.GRAFICA, 'Montagem Papel'])
+t('pronto parcial mostra onde está o RESTO', linhasControleEntrega([dividido]).find((l) => l.idVenda === '7003').fase, [MODO_NM.PRODUCAO, MODO_NM.GRAFICA, 'Montagem Papel'])
+t('sem linha = Triagem', faseDoPedido({ idVenda: '1', itens: [{ produto: 'X', qtd: 1 }] }, CAD), ['Triagem'])
 t('filtro por situação', linhasControleEntrega([lancado, voltou, soFabrica], { situacao: 'pronto' }).map((l) => l.idVenda), ['7000'])
 t('filtro por origem', linhasControleEntrega([lancado, voltou, soFabrica], { origem: 'fabrica' }).map((l) => l.idVenda), ['7000'])
 const tot = totaisDoControle(linhas)
-t('totais', [tot.linhas, tot.sera, tot.pronto, tot.voltou, tot.escritorio], [4, 2, 1, 1, 2])
-t('valor somado', tot.valor, 448 + 448 + 50)
+t('totais', [tot.linhas, tot.sera, tot.pronto, tot.voltou, tot.producao, tot.escritorio], [5, 2, 1, 1, 1, 2])
+t('valor somado (em produção entra com o valor do vendedor)', tot.valor, 448 + 448 + 50 + (naFabricaAinda.valorTotal || 0))
 t('meses', mesesDoControle(linhas), ['2026-10'])
 // entregue SAI da lista: depois da remessa inteira o pedido some de `pedidos`
 const r8 = preparaRemessa(lancado, 'MATEUS', 'Anny', AGORA)

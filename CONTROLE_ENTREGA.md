@@ -286,3 +286,143 @@ precisar de leitura agregada da `auditoria` por outro perfil, aí sim.
   em Entregas; marcar aqui duplicaria a verdade.
 - **O card escolhe sozinho** quando a busca devolve 1 pedido ou quando o número
   digitado casa inteiro com o primeiro; senão mostra a lista para tocar.
+
+## Fase E — desenho ABERTO (08/10/2026): valor real, fase na lista, pronto sem saída
+
+> Pedido do dono em 08/10/2026, depois de usar a tela por um dia: (1) o valor
+> que o vendedor lançou no Posseidon não é o que foi entregue — vendeu 100 kg,
+> saíram 110 — e o escritório precisa corrigir o VALOR (as quantidades não);
+> (2) a lista precisa mostrar também o que está EM PRODUÇÃO e em que fase, para
+> o escritório consultar sem ir ao quadro; (3) ao digitar o número, poder pôr o
+> pedido em expedição ou como pronto, sem precisar marcar a saída na hora.
+
+### E1 — Valor real do pedido
+
+- **Dois valores, lado a lado, e o do vendedor nunca some.** `valorTotal`
+  continua sendo o do Posseidon (o import o sobrescreve a cada planilha).
+  O escritório grava **`valorReal`** (+ `valorRealPor`, `valorRealEm`, no
+  padrão de `previsaoManual`). O reimport **preserva** `valorReal`: o
+  `batch.set(..., { merge: true })` do import só toca nos campos que a
+  planilha traz. ✅ Conferido no código em 08/10/2026.
+- **Fonte única de leitura: `valorDe(p)` = `valorReal ?? valorTotal`.** Toda
+  tela que mostra R$ passa a usar isso — Controle (card e tabela, com a marca
+  ✎ e o valor do vendedor no tooltip), Rota (cabeçalho da parada), Entregues
+  (a remessa já leva `valorReal` pelo spread de `preparaRemessa`), Financeiro
+  (`valorDaEntrega` lê `valorReal` antes de `valorTotal`), Meus Pedidos,
+  Relatórios. Dois lugares lendo campos diferentes = duas verdades.
+- **Onde edita:** no card do Controle, campo R$ ao lado do valor do vendedor
+  ("Vendedor R$ 1.880,00 → Real R$ [2.068,00]"), com "↺ voltar ao do vendedor"
+  (`deleteField`, como a data manual). Mostra a diferença (+10%).
+- **Quem edita:** quem tem `veValor` — dono e financeiro. A expedição não vê
+  valor hoje (decisão antiga); **a decidir** se o funcionário do escritório
+  que confere a nota é financeiro (então nada muda) ou se a expedição também
+  precisa — nesse caso `veValor` abre para ela e `valorReal*` entra no
+  `hasOnly` das rules (publicar antes do build).
+- **Comissão e cobrança (a decidir com o dono):** FINANCEIRO.md diz "comissão
+  por FATURAMENTO sobre o `valorTotal`". Se o cliente paga o real, a cobrança
+  é o real; a comissão provavelmente também (é o faturado). Proposta: as duas
+  sobre `valorDe(p)`.
+- ⚠️ **Não recalcular `valor = qtd × preço`** a partir de nada: o real é
+  DIGITADO pelo escritório, que conferiu a nota. (Mesma regra do relatório
+  analítico do Posseidon.)
+
+### E2 — A lista mostra também o que está EM PRODUÇÃO, com a fase — ✅ FEITA 08/10/2026
+
+- `linhasControleEntrega` ganha os pedidos categorizados que ainda têm
+  trabalho na fábrica e nada pronto: situação nova **EM PRODUÇÃO**
+  (`SITUACAO_CONTROLE.PRODUCAO`), e a coluna **Fase** passa a existir para
+  todas as linhas: a etapa mais atrasada do pedido traduzida por
+  `ondeProcurar` ("Clichê", "Montagem Papel", "Expedição"); pedido dividido
+  lista as paradas distintas ("Clichê · Montagem Papel"); item sem linha =
+  "Triagem". Pedido PRONTO parcial mostra na Fase onde está o resto.
+- Entra **por padrão** (foi o pedido: "quero que apareça em produção
+  também"), ordenado na rua → pronto → em produção, com o filtro de situação
+  para isolar e o contador no título ("… · 296 em produção"). A lista deixa
+  de se chamar "Prontos e na rua"; vira "Pedidos" com os contadores.
+- O **card** já mostra a fase por ITEM (`situacaoBaixa.onde` +
+  `ondeProcurar`) — isso fica como está. O que falta é a lista.
+- CSV e impressão ganham a coluna. Só leitura: **sem rule nova**.
+- **Como ficou:** `faseDoPedido(p, itensCad)` (paradas distintas via
+  `paradasDoItem` + `ondeProcurar`, na ordem de `ordemEtapaLocal`);
+  `linhasControleEntrega` recebe `itensCad` e devolve `fase` e `previsao` em
+  toda linha (EM PRODUÇÃO com `origem: ''`, fora dos filtros de origem, por
+  último na lista e ordenada pela previsão; PRONTO parcial mostra onde está o
+  resto); `totaisDoControle.producao`. ⚠️ O "Pronto em" da linha em produção
+  mostra `prev. dd/mm`; `previsao` só em formato ISO completo — data só
+  "AAAA-MM-DD" é lida como UTC e cai no dia anterior (o arreio de render
+  confirma: a fixture '2026-10-10' sai 09/10).
+
+### E3 — "Finalizado (pronto)" sem a saída — e o vocabulário do escritório
+
+- **Vocabulário fechado pelo dono em 08/10/2026:** PRONTO = finalizado, no
+  galpão · **EXPEDIDO = saiu para entrega** · ENTREGUE = fim do ciclo, só o
+  financeiro (e o dono). ⚠️ No BANCO a etapa `expedido` continua sendo
+  "pronto no galpão" (é o que Rota/Entregas/Localizar leem) e a saída é
+  `saidaEm`. A tela do escritório fala a língua dele: PRONTO → SAIU/SERÁ
+  ENTREGUE → ENTREGUE. **Não existe parada "em expedição" para o escritório**
+  (o Princípio 4 fica como está); a coluna Expedição do quadro é da fábrica.
+- Hoje "Lançar" = finalizado **e saiu** (motorista obrigatório). Entra ao lado
+  dele **"✔ Finalizado (pronto)"** = `baixaEscritorio(inteiro)` → `expedido`
+  + carimbo `baixaEscritorio`, SEM `saidaEm`. Cai na situação PRONTO com
+  origem 🏢. Depois, **"🚚 Saiu com {motorista}"** (o botão "Saiu de novo"
+  renomeado) marca a saída. Helper: `prontoEscritorio(p, quem, itensCad)` =
+  `lancarControle` sem motorista. "Lançar: finalizado e saiu" continua, para
+  quando a nota chega com o caminhão já na rua.
+- **O aviso no WhatsApp pelo Esmero sai na SAÍDA**, não no pronto: o evento é
+  "saiu para entrega". `avisar` passa a ser chamado por toda ação que grava
+  `saidaEm` (lançar e saiu com), e não mais só pelo lançar.
+- **Rules: nada a publicar** — mesmos campos já liberados para a expedição.
+
+### E4 — Quem deu baixa em cada etapa: a fábrica ou o escritório
+
+> "A operação não está finalizando os pedidos na produção; o escritório é que
+> está. Quando o escritório diz pronto, o sistema dá baixa em todos os outros
+> processos automático — e a gente precisa saber quais pedidos foram baixados
+> pelo escritório e quais pela fábrica nas linhas, por exemplo o clichê deu
+> baixa, a montagem do plástico deu baixa, então foi para pronto pelo processo
+> correto, não foi puxado pro escritório." (dono, 08/10/2026)
+
+- **A baixa em cascata já existe:** `baixaEscritorio(inteiro)` move o que
+  ainda estava na linha, na montagem ou na expedição direto para `expedido`,
+  por quantidade (ou por volume, no que a fábrica já embalou), com um registro
+  de `auditoria` por item × etapa de ORIGEM e `origem: 'escritorio'`. O
+  relatório "Baixas do escritório por setor × mês" (Fase D, aba Auditoria) já
+  diz de qual setor o escritório mais puxa.
+- **O que falta é POR PEDIDO, na lista.** Hoje a coluna Origem é binária
+  (🏭 fábrica × 🏢 escritório) e diz só se houve lançamento. Passa a dizer **de
+  onde o escritório puxou**: no lançamento/pronto, o carimbo guarda
+  `baixaEscritorio.puxou = [{ etapa, itens }]` (agrupado dos `movidos` por
+  etapa de origem — ex.: `[{etapa:'GLICHE', itens:1}, {etapa:'montagem',
+  itens:2}]`). A coluna Origem mostra:
+  - 🏭 **fábrica** — tudo baixado nos postos, pelo processo correto;
+  - 🏢 **escritório · puxou de Clichê (1), Montagem Papel (2)** — o que a
+    fábrica deixou de fazer no sistema;
+  - 🏢 **escritório · só o carimbo** — a fábrica já tinha finalizado tudo; o
+    escritório só lançou (`puxou` vazio).
+  O card do pedido mostra o mesmo bloco por extenso, com o setor traduzido por
+  `ondeProcurar` (montagem por material). CSV ganha a coluna.
+- **A fonte histórica continua sendo a `auditoria`** (append-only). O `puxou`
+  no pedido é um resumo para a lista — vive no doc até o pedido virar remessa
+  (vai junto para `entregues` pelo spread, então Entregues também sabe).
+- Rules: campo dentro de `baixaEscritorio`, já liberado. Nada a publicar.
+
+### Decisões do dono (08/10/2026)
+
+1. ✅ **Valor real:** quem edita agora é quem vê valor (dono e financeiro).
+   **PENDÊNCIA registrada:** a expedição também passa a ver e editar depois —
+   exige `veValor` para ela e `valorReal*` no `hasOnly` das rules.
+2. ✅ **Comissão e cobrança sobre o VALOR REAL** (`valorDe(p)`). Atualizar o
+   FINANCEIRO.md: "comissão sobre o valorTotal" vira "sobre `valorDe`".
+3. ✅ **Vocabulário:** expedido = saiu para entrega; entregue = fim do ciclo,
+   só o financeiro. Sem parada "em expedição" para o escritório (E3).
+4. ✅ **Pronto pelo escritório baixa tudo em cascata** (já é assim) e fica
+   registrado DE ONDE puxou, por pedido (E4), além do relatório por setor que
+   já existe.
+5. ✅ Em produção entra na lista por padrão, com a Fase (E2).
+
+### Ordem
+E2 (só leitura) → E4 (carimbo `puxou` + Origem detalhada; junto com E3 porque
+é o mesmo carimbo) → E3 (pronto sem saída, "saiu com", aviso na saída) → E1
+(valor real + `valorDe` em todas as telas + FINANCEIRO.md). Testes de utils
+(`valorDe`, linhas com fase, `prontoEscritorio`, `puxou`) e de render (tabela
+com fase e origem detalhada, card com valor real e os botões).

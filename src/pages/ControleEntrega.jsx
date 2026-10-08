@@ -70,8 +70,8 @@ export default function ControleEntrega({ pedidos, problemas }) {
 
   // a lista: VISÃO sobre `pedidos` — tudo que está pronto e não foi entregue
   const todasLinhas = useMemo(
-    () => linhasControleEntrega(base, { clientes, vendedores: cadastros }),
-    [base, clientes, cadastros])
+    () => linhasControleEntrega(base, { clientes, vendedores: cadastros, itensCad }),
+    [base, clientes, cadastros, itensCad])
   const linhas = todasLinhas.filter((l) => (!situacao || l.situacao === situacao) && (!origem || l.origem === origem))
   const totais = totaisDoControle(linhas)
 
@@ -144,8 +144,8 @@ export default function ControleEntrega({ pedidos, problemas }) {
 
       {/* ---------- a planilha: o que o escritório lançou e ainda não foi entregue ---------- */}
       <div className="toolbar ctl-toolbar">
-        <h2 className="ctl-titulo">📋 Prontos e na rua
-          <small>{totais.linhas} pedido(s) · {totais.sera} será entregue · {totais.pronto} pronto(s) sem saída · {totais.voltou} não entregou
+        <h2 className="ctl-titulo">📋 Pedidos
+          <small>{totais.linhas} pedido(s) · {totais.sera} será entregue · {totais.pronto} pronto(s) sem saída · {totais.voltou} não entregou · {totais.producao} em produção
             {totais.escritorio > 0 && <> · {totais.escritorio} lançado(s) pelo escritório</>}
             {veValor && totais.valor > 0 && <> · {fmtMoeda(totais.valor)}</>}</small>
         </h2>
@@ -310,7 +310,7 @@ export function TabelaControle({ linhas, totais, veValor, onAbrir }) {
           <tr>
             <th>Nº</th><th>Cliente</th><th>Cidade</th><th>Rota</th><th>Vendedor</th>
             {veValor && <th className="q">Valor</th>}
-            <th>Situação</th><th>Pronto em</th><th>Saiu</th><th>Quem entregou</th><th>Origem</th>
+            <th>Situação</th><th>Fase</th><th>Pronto em</th><th>Saiu</th><th>Quem entregou</th><th>Origem</th>
           </tr>
         </thead>
         <tbody>
@@ -325,11 +325,15 @@ export function TabelaControle({ linhas, totais, veValor, onAbrir }) {
               <td>{l.vendedor || '—'}</td>
               {veValor && <td className="q">{l.valor ? fmtMoeda(l.valor) : '—'}</td>}
               <td><span className={`ctl-sit ${l.situacao}`}>{NOME_SITUACAO_CONTROLE[l.situacao]}</span></td>
-              <td style={{ whiteSpace: 'nowrap' }} title={l.lancadoPor ? `lançado por ${l.lancadoPor}` : 'baixa da fábrica'}>
-                {l.quando ? `${l.aproximado ? '~' : ''}${fmtData(l.quando)}` : '—'}</td>
+              {/* a FASE: onde o pedido (ou o resto dele) está na fábrica — o que
+                  o escritório consulta sem ir ao quadro (Fase E2) */}
+              <td className="ctl-fase">{(l.fase || []).length ? l.fase.join(' · ') : '—'}</td>
+              <td style={{ whiteSpace: 'nowrap' }} title={l.situacao === SITUACAO_CONTROLE.PRODUCAO ? 'previsão de entrega' : l.lancadoPor ? `lançado por ${l.lancadoPor}` : 'baixa da fábrica'}>
+                {l.quando ? `${l.aproximado ? '~' : ''}${fmtData(l.quando)}`
+                  : l.situacao === SITUACAO_CONTROLE.PRODUCAO && l.previsao ? <small>prev. {fmtData(l.previsao)}</small> : '—'}</td>
               <td style={{ whiteSpace: 'nowrap' }}>{l.saidaEm ? fmtData(l.saidaEm) : '—'}</td>
               <td>{l.motorista || '—'}</td>
-              <td>{l.origem === ORIGEM_BAIXA.ESCRITORIO ? '🏢 escritório' : '🏭 fábrica'}</td>
+              <td>{!l.origem ? '—' : l.origem === ORIGEM_BAIXA.ESCRITORIO ? '🏢 escritório' : '🏭 fábrica'}</td>
             </tr>
           ))}
         </tbody>
@@ -337,7 +341,7 @@ export function TabelaControle({ linhas, totais, veValor, onAbrir }) {
           <tr>
             <td colSpan={5}>{totais.linhas} pedido(s)</td>
             {veValor && <td className="q">{fmtMoeda(totais.valor)}</td>}
-            <td colSpan={5}>{totais.sera} será entregue · {totais.pronto} pronto(s) · {totais.voltou} não entregou</td>
+            <td colSpan={6}>{totais.sera} será entregue · {totais.pronto} pronto(s) · {totais.voltou} não entregou · {totais.producao} em produção</td>
           </tr>
         </tfoot>
       </table>
@@ -347,12 +351,12 @@ export function TabelaControle({ linhas, totais, veValor, onAbrir }) {
 
 // CSV — para a transição, enquanto o escritório ainda quer "a planilha"
 function baixarCsv(linhas, veValor) {
-  const cab = ['Pedido', 'Cliente', 'Cidade', 'Rota', 'Vendedor', ...(veValor ? ['Valor'] : []), 'Situação', 'Pronto em', 'Saiu', 'Quem entregou', 'Origem']
+  const cab = ['Pedido', 'Cliente', 'Cidade', 'Rota', 'Vendedor', ...(veValor ? ['Valor'] : []), 'Situação', 'Fase', 'Pronto em', 'Saiu', 'Quem entregou', 'Origem']
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
   const linhasCsv = linhas.map((l) => [
     l.idVenda, l.cliente, l.cidade, l.rota, l.vendedor,
     ...(veValor ? [String(l.valor || 0).replace('.', ',')] : []),
-    NOME_SITUACAO_CONTROLE[l.situacao], l.quando ? fmtData(l.quando) : '', l.saidaEm ? fmtData(l.saidaEm) : '', l.motorista, l.origem,
+    NOME_SITUACAO_CONTROLE[l.situacao], (l.fase || []).join(' · '), l.quando ? fmtData(l.quando) : '', l.saidaEm ? fmtData(l.saidaEm) : '', l.motorista, l.origem,
   ].map(esc).join(';'))
   const blob = new Blob(['﻿' + [cab.map(esc).join(';'), ...linhasCsv].join('\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')

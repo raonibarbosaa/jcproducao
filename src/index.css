@@ -1444,3 +1444,7 @@ mark.hl {
 .ctl-whats.erro { background: rgba(220,60,60,.12); }
 .ctl-whats small { color: var(--text-faint); }
 .ctl-whats .btn { margin-left: auto; }
+/* Controle de entrega — EM PRODUÇÃO na lista (Fase E2) */
+.ctl-sit.producao { color: var(--text-dim); border-color: var(--border); background: rgba(127,127,127,0.10); }
+tr.sit-producao td { color: var(--text-dim); }
+.ctl-fase { font-size: 12px; white-space: nowrap; }
