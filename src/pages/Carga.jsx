@@ -293,7 +293,7 @@ export default function Carga({ pedidos }) {
       const ok = confirm(planoPorData(plano)
         ? `O pedido #${p.idVenda} tem entrega em ${fmtData(p.previsao)}, `
           + `depois desta viagem (até ${fmtData(plano.dataEntrega + 'T00:00:00')}).\n\n`
-          + `${p.cliente || ''} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n\n`
+          + `${nomeCliente(p.cliente, clientes)} · ${p.rota || 'SEM ROTA'} (${p.cidade || 'sem cidade'})\n\n`
           + `Antecipar e levar nesta viagem?`
         : outroVend
           ? `⚠ O pedido #${p.idVenda} é de OUTRO VENDEDOR.\n\n`
