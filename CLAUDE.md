@@ -74,6 +74,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > FATURAMENTO (`dataVenda`) sobre o `valorTotal`; `empresa` (JC Sacolas × JC
 > Plástico) é eixo obrigatório em todo lançamento desde o primeiro.
 
+> **Cheques** (origem, situação e destino de cada folha; cheque de terceiro
+> repassado a fornecedor): **desenho FECHADO em 20/10/2026** em
+> [`CHEQUES.md`](CHEQUES.md). Decisões: só controle (não mexe em cobrança nem
+> caixa), núcleo portátil em `src/lib/cheques.js` para servir também ao
+> TotaliFinance, cadastro de Fornecedores, só dono/financeiro, cheque pode
+> pagar fornecedor da outra empresa (marcado), carteira da Zeus lançada à mão,
+> compensação marcada à mão, 50–300 folhas/mês. **C1 FEITA em 20/10/2026**
+> (núcleo portátil `src/lib/cheques.js` — não importa nada — + 122 asserções
+> em `tests/cheques.test.mjs`). Próxima = C2 (Fornecedores).
+
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
 > em produção por encomenda a peça passa a maior parte do tempo esperando, e é a
