@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { doc, setDoc, writeBatch, updateDoc, deleteField } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import PainelEdicao from '../components/PainelEdicao.jsx'
@@ -6,7 +6,10 @@ import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { SEED_VENDEDORES, normaliza, casaBusca, TIPOS_ITEM, UNIDADES_ITEM, unidadeNome, fmtMoeda, fmtQtd, PESO_PADRAO,
   coresDoCadastro, slugCor, problemaDaCor, idCliente, dadosCliente, clientesParaMigrar,
-  TEXTO_AVISO_SAIDA_PADRAO, textoAvisoSaida } from '../utils.js'
+  TEXTO_AVISO_SAIDA_PADRAO, textoAvisoSaida, veFinanceiro } from '../utils.js'
+import { useFornecedores, gravaFornecedores, conferirFornecedor } from '../hooks/useFornecedores.js'
+import { salvaFornecedor, alternaAtivoFornecedor, problemasDoFornecedor, ordenaFornecedores,
+  fornecedoresAtivos, fornecedorAtivo } from '../lib/fornecedores.js'
 import SubTabs from '../components/SubTabs.jsx'
 
 const REF = () => doc(db, 'config', 'cadastros')
@@ -23,6 +26,8 @@ const ABAS_CADASTRO = [
   { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
   // ponte com o Esmero (aviso ao cliente no WhatsApp): só o dono liga/desliga
   { id: 'integracoes', label: 'Integrações', perfis: ['dono'] },
+  // para quem o cheque é repassado: assunto de dinheiro, então dono e financeiro
+  { id: 'fornecedores', label: 'Fornecedores', perfis: ['dono', 'financeiro'] },
 ]
 
 export default function Cadastros() {
@@ -39,6 +44,7 @@ export default function Cadastros() {
       {aba === 'cores'      && <AbaCores />}
       {aba === 'vendedores' && <AbaVendedores />}
       {aba === 'integracoes' && <AbaIntegracoes />}
+      {aba === 'fornecedores' && <AbaFornecedores />}
     </>
   )
 }
@@ -1068,5 +1074,206 @@ export function AbaIntegracoes() {
         </div>
       </div>
     </>
+  )
+}
+
+// ============================================================
+// ABA FORNECEDORES — para quem o cheque é repassado (CHEQUES.md, C2)
+// ============================================================
+// UM documento (`configFinanceiro/fornecedores`), só dono e financeiro. Não
+// tem excluir: o id do fornecedor fica gravado no cheque repassado, e apagar o
+// cadastro apagaria a resposta de "para onde o cheque foi". Desativado some da
+// seleção do repasse e continua nos cheques antigos.
+export function AbaFornecedores() {
+  const { perfil, nome, user } = useAuth()
+  const ligado = veFinanceiro(perfil)
+  const estado = useFornecedores(ligado)
+  if (!ligado) return <div className="empty">O cadastro de fornecedores é do financeiro e do dono.</div>
+  const quem = { por: nome || '', porUid: user?.uid || '' }
+  const salvar = (form, idAtual) => gravaFornecedores(
+    (lista) => salvaFornecedor(lista, form, idAtual, { por: quem.por }),
+    { ...quem, conferir: conferirFornecedor(form, idAtual) })
+  const alternar = (id) => gravaFornecedores(
+    (lista) => alternaAtivoFornecedor(lista, id, { por: quem.por }), quem)
+  return <PainelFornecedores {...estado} onSalvar={salvar} onAlternar={alternar} />
+}
+
+// a parte que desenha — separada do hook para o teste de tela montar com dados
+export function PainelFornecedores({ lista, pronto, erro, onSalvar, onAlternar }) {
+  const [editando, setEditando] = useState(null) // id em edição, ou 'novo'
+  const [busca, setBusca] = useState('')
+  const [msg, setMsg] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  const ordenados = useMemo(() => ordenaFornecedores(lista), [lista])
+  const filtrados = useMemo(() => {
+    const t = busca.trim()
+    if (!t) return ordenados
+    const dig = t.replace(/\D/g, '')
+    return ordenados.filter((f) => casaBusca(t, f.nome, f.contato)
+      || (dig.length >= 3 && String(f.documento || '').replace(/\D/g, '').includes(dig)))
+  }, [ordenados, busca])
+  const ativos = fornecedoresAtivos(lista).length
+
+  async function salvar(form) {
+    setSalvando(true)
+    try {
+      await onSalvar(form, editando === 'novo' ? '' : editando)
+      setMsg(editando === 'novo' ? 'Fornecedor cadastrado.' : 'Fornecedor salvo.')
+      setEditando(null)
+    } finally { setSalvando(false) }
+  }
+  async function alternar(f) {
+    if (fornecedorAtivo(f) && !confirm(`Desativar "${f.nome}"?\n\nEle some da escolha do repasse, mas continua nos cheques que já foram para ele.`)) return
+    setSalvando(true)
+    try {
+      await onAlternar(f.id)
+      setMsg(fornecedorAtivo(f) ? 'Fornecedor desativado.' : 'Fornecedor reativado.')
+    } catch (e) {
+      alert('Não foi possível salvar: ' + (e.code || e.message))
+    } finally { setSalvando(false) }
+  }
+
+  return (
+    <>
+      <div className="toolbar">
+        <h1 className="page-title">Cadastros
+          <small>{lista.length} fornecedor(es) · {ativos} ativo(s)</small>
+        </h1>
+        <div className="spacer" />
+        <button className="btn primary" disabled={!pronto || salvando} onClick={() => setEditando('novo')}>
+          + Novo fornecedor
+        </button>
+      </div>
+
+      <div style={{ fontSize: 13, color: 'var(--text-dim)', margin: '0 0 14px', maxWidth: 720 }}>
+        Para quem a empresa <b>repassa cheques</b>. É daqui que sai a escolha do fornecedor no repasse, e é
+        por este cadastro que se responde "para onde foi este cheque". Fornecedor <b>inativo</b> some da
+        escolha, mas continua nos cheques que já foram para ele — por isso não há excluir.
+      </div>
+
+      {erro && (
+        <div className="login-err" style={{ marginBottom: 14 }}>
+          Não foi possível ler o cadastro de fornecedores ({erro}).
+          {erro === 'permission-denied' && ' As regras do Firestore com "configFinanceiro" precisam estar publicadas.'}
+        </div>
+      )}
+      {!pronto && !erro && <div className="empty">Carregando fornecedores…</div>}
+      {msg && <div className="filter-pill" style={{ marginBottom: 14 }}>{msg}</div>}
+
+      {editando !== null && (
+        <PainelEdicao>
+          <FormFornecedor lista={lista} salvando={salvando}
+            inicial={editando === 'novo' ? null : lista.find((f) => f.id === editando)}
+            onSalvar={salvar} onCancelar={() => setEditando(null)} />
+        </PainelEdicao>
+      )}
+
+      {pronto && lista.length > 0 && (
+        <div className="field" style={{ maxWidth: 360, marginBottom: 14 }}>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CNPJ ou contato…" />
+        </div>
+      )}
+
+      {pronto && (lista.length === 0 ? (
+        <div className="empty">
+          <div className="big">🏭</div>
+          Nenhum fornecedor cadastrado.<br />
+          Clique em <b>Novo fornecedor</b> para cadastrar o primeiro.
+        </div>
+      ) : filtrados.length === 0 ? (
+        <div className="empty">Nenhum fornecedor com “{busca}”.</div>
+      ) : (
+        <div className="cards">
+          {filtrados.map((f) => (
+            <CardFornecedor key={f.id} f={f} salvando={salvando}
+              onEditar={() => setEditando(f.id)} onAlternar={() => alternar(f)} />
+          ))}
+        </div>
+      ))}
+    </>
+  )
+}
+
+function CardFornecedor({ f, salvando, onEditar, onAlternar }) {
+  const inativo = !fornecedorAtivo(f)
+  return (
+    <div className="card em_dia" style={inativo ? { opacity: 0.55 } : null}>
+      <div className="card-top">
+        <div className="cliente">{f.nome}</div>
+        {inativo
+          ? <div className="idv" style={{ color: 'var(--warn)' }}>inativo</div>
+          : <div className="idv" style={{ color: 'var(--ok)' }}>ativo</div>}
+      </div>
+      <div className="meta-row">
+        {f.documento
+          ? <span className="chip">🪪 {f.documento}</span>
+          : <span className="chip" style={{ color: 'var(--text-faint)' }}>sem CNPJ/CPF</span>}
+        {f.telefone && <span className="chip">📞 {f.telefone}</span>}
+        {f.contato && <span className="chip">👤 {f.contato}</span>}
+      </div>
+      {f.obs && <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>{f.obs}</div>}
+      <div className="modo-btns">
+        <button className="modo-btn" disabled={salvando} onClick={onEditar}>Editar</button>
+        <button className="modo-btn" disabled={salvando} onClick={onAlternar}>{inativo ? 'Reativar' : 'Desativar'}</button>
+      </div>
+    </div>
+  )
+}
+
+export function FormFornecedor({ lista, inicial, salvando, onSalvar, onCancelar }) {
+  const [form, setForm] = useState({
+    nome: inicial?.nome || '', documento: inicial?.documento || '',
+    telefone: inicial?.telefone || '', contato: inicial?.contato || '', obs: inicial?.obs || '',
+  })
+  const [erros, setErros] = useState([])
+  const muda = (campo) => (e) => { setForm({ ...form, [campo]: e.target.value }); setErros([]) }
+
+  async function salvar() {
+    const p = problemasDoFornecedor(form, lista, inicial?.id || '')
+    if (p.erros.length) { setErros(p.erros); return }
+    if (p.avisos.length && !confirm(`${p.avisos.join('\n')}\n\nSalvar mesmo assim?`)) return
+    try {
+      await onSalvar(form)
+    } catch (e) {
+      // a transação confere de novo contra o SERVIDOR: outra pessoa pode ter
+      // cadastrado o mesmo CNPJ enquanto este formulário estava aberto
+      setErros([e?.message || String(e)])
+    }
+  }
+
+  return (
+    <div className="card em_dia" style={{ marginBottom: 18, borderLeftColor: 'var(--accent)' }}>
+      <h3 style={{ marginBottom: 12 }}>{inicial ? 'Editar fornecedor' : 'Novo fornecedor'}</h3>
+      {erros.length > 0 && <div className="login-err" style={{ marginBottom: 10 }}>{erros.join(' ')}</div>}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="field" style={{ flex: 1, minWidth: 220 }}>
+          <label>Nome</label>
+          <input value={form.nome} autoFocus onChange={muda('nome')} placeholder="Resinas do Nordeste Ltda" />
+        </div>
+        <div className="field" style={{ flex: '0 0 210px' }}>
+          <label>CNPJ / CPF (opcional)</label>
+          <input value={form.documento} onChange={muda('documento')} placeholder="00.000.000/0000-00" inputMode="numeric" />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="field" style={{ flex: '0 0 200px' }}>
+          <label>Telefone</label>
+          <input value={form.telefone} onChange={muda('telefone')} placeholder="(79) 99999-0000" />
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 180 }}>
+          <label>Contato</label>
+          <input value={form.contato} onChange={muda('contato')} placeholder="Com quem falar" />
+        </div>
+      </div>
+      <div className="field">
+        <label>Observação</label>
+        <input value={form.obs} onChange={muda('obs')} placeholder="O que fornece, como paga…" />
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="btn primary" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+        <button className="btn" onClick={onCancelar} disabled={salvando}>Cancelar</button>
+      </div>
+    </div>
   )
 }

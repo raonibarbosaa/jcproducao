@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx'), aviso: join(aqui, 'aviso.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx'), aviso: join(aqui, 'aviso.jsx'), fornecedores: join(aqui, 'fornecedores.jsx') } },
   },
   resolve: {
     alias: [
@@ -48,6 +48,7 @@ const bruto = {
   ...(await import(join(OUT, 'paginas.js'))).roda(),
   ...(await import(join(OUT, 'clientes.js'))).roda(),
   ...(await import(join(OUT, 'aviso.js'))).roda(),
+  ...(await import(join(OUT, 'fornecedores.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -169,6 +170,15 @@ const ESPERA = {
   integ: ['Integrações', 'Endereço do Esmero', 'Avisar o cliente ao lançar', 'Modelo da mensagem', 'Como vai sair:', 'Atual Modas', '#5111', 'com Juninho', 'producaojcsacolas'],
   ceTabela: ['#6215', '#6206', '#6999', '#5738', 'CREDIMOVEIS', 'BEBE DE MAE', 'SO FABRICA', 'BETEK KIDS', 'SERÁ ENTREGUE', 'NÃO ENTREGOU', '>PRONTO<', 'EM PRODUÇÃO',
     'SILK SCREEN · GRÁFICA · Montagem Papel', 'prev. ', 'MATEUS', 'PAULO', '🏢 escritório · puxou de GRÁFICA (1), Montagem Papel (1)', '🏢 escritório · só o carimbo', '🏭 fábrica', 'R$ 448,00', '4 pedido(s)', '<th>Fase</th>'],
+  // fornecedores (cheques C2): ativos primeiro, inativo marcado, sem excluir
+  fnLista: ['2 fornecedor(es) · 1 ativo(s)', '+ Novo fornecedor', 'Resinas do Nordeste', '11.222.333/0001-81', 'Marcos',
+    'Tintas Sergipe', 'sem CNPJ/CPF', 'inativo', 'Reativar', 'Desativar', 'Buscar por nome, CNPJ ou contato'],
+  fnVazio: ['Nenhum fornecedor cadastrado', '+ Novo fornecedor'],
+  fnCarregando: ['Carregando fornecedores'],
+  fnNegado: ['Não foi possível ler o cadastro de fornecedores', 'configFinanceiro'],
+  fnForm: ['Editar fornecedor', 'Resinas do Nordeste', 'CNPJ / CPF (opcional)', 'Contato', 'Observação', 'Salvar'],
+  fnAba: ['Carregando fornecedores', '+ Novo fornecedor'],
+  fnDesigner: ['é do financeiro e do dono'],
 }
 
 // o que NÃO pode aparecer
@@ -203,6 +213,9 @@ const PROIBE = {
   cliLegado: ['Ingrid Antiga'],            // a coleção ganha do array
   avisoOk: ['Reenviar', 'Avisar no WhatsApp'],   // já enviado: nada a fazer
   avisoDesligado: ['WhatsApp'],                   // ponte desligada e sem registro: nenhum chip
+  fnLista: ['Excluir', 'Carregando'],             // fornecedor não se apaga; lista pronta não "carrega"
+  fnCarregando: ['Nenhum fornecedor cadastrado'], // lista que não chegou NÃO é lista vazia (regra 1.7)
+  fnDesigner: ['Resinas', '+ Novo fornecedor'],   // designer não vê o cadastro
 }
 
 let mal = 0

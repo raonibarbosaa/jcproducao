@@ -133,6 +133,17 @@ service cloud.firestore {
       allow write: if ehStaff();
     }
 
+    // Cadastros do FINANCEIRO (CHEQUES.md, C2 — 20/10/2026). Fica fora de
+    // `config/` de propósito: aquele documento é lido por TODO perfil
+    // (operador, vendedor), e o CNPJ/telefone de fornecedor é assunto de
+    // dinheiro. Hoje: `configFinanceiro/fornecedores` = { lista }.
+    // Não se apaga: o id do fornecedor fica gravado no cheque repassado.
+    match /configFinanceiro/{doc} {
+      allow read: if ehFinanceiro();
+      allow create, update: if ehFinanceiro();
+      allow delete: if false;
+    }
+
     // Clientes (de/para razão social → apelido), coleção própria desde
     // 07/10/2026 — antes era o array `clientes` dentro de config/cadastros, e
     // cada apelido salvo reenviava o documento inteiro a todo aparelho. Mesma

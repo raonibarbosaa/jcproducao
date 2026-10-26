@@ -188,13 +188,30 @@ podem mudar por linha.
   mês — o relatório existe para ela.
 
 ## Fornecedores — Cadastros › Fornecedores
-- **Coleção própria `fornecedores/{id}`**, não array em `config/cadastros`:
-  a lição dos clientes (07/10/2026) — array em documento único reenvia tudo a
-  cada edição e esbarra no limite de 1 MiB.
+- **UM documento, `configFinanceiro/fornecedores` = `{ lista }`** (mudou na
+  C2: o desenho dizia coleção própria). É lista pequena, lida inteira e só
+  pelo financeiro — coleção cobraria uma leitura POR FORNECEDOR a cada
+  abertura, e foi exatamente assim que os 1.334 clientes estouraram a cota em
+  08/10/2026 (regra 1.2 da skill de desempenho). Conta: 1 leitura por
+  abertura × 2 perfis.
+- **Fora de `config/`** de propósito: aquele documento é lido por todo perfil
+  (operador, vendedor), e CNPJ/telefone de fornecedor é assunto de dinheiro.
+  Rule própria, só `ehFinanceiro()`, `delete: if false`.
+- **Gravação por transação** (`gravaFornecedores`): lê a lista do SERVIDOR,
+  aplica a mudança sobre ela e grava. Nunca regrava a partir de uma lista que
+  a tela ainda não recebeu (regra 1.7), e dono + financeiro editando juntos
+  não perdem a mudança um do outro. O CNPJ repetido é conferido de novo
+  dentro da transação.
 - Campos (o subconjunto do `Supplier` do TotaliFinance, para casar os dois):
-  `nome, documento, telefone, contato, obs, ativo`. Inativo some da seleção e
-  fica no histórico (padrão dos motoristas).
-- Sub-aba visível só para dono e financeiro.
+  `id, nome, documento, telefone, contato, obs, ativo` + quem criou/alterou.
+- **O id nunca sai do nome** (`forn_…`): renomear não desliga os cheques que
+  já foram para ele. **Não existe excluir** — desativado some da escolha do
+  repasse e continua nos cheques antigos.
+- CNPJ/CPF opcional, mas com dígito conferido; **CNPJ repetido é erro**,
+  **nome repetido é aviso** (nome fantasia pode coincidir).
+- Sub-aba visível só para dono e financeiro. Hook `useFornecedores` fica FORA
+  do `CadastrosContext` (que todo perfil lê — daria permission-denied ao resto
+  da fábrica).
 - Fica pronto para o Contas a Pagar (Fase 5 do FINANCEIRO.md).
 
 ## A tela — aba `cheques` (dono e financeiro)
@@ -293,7 +310,11 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
     o histórico guarda todos os depósitos e repasses que já houve.
   - A busca recebe o casamento de texto **injetado** (`casaBusca` no JC), e o
     teste confere que o núcleo não tem nenhum `import`.
-- **C2 — Fornecedores.** Coleção, sub-aba em Cadastros, rules.
+- **C2 — Fornecedores.** ✅ **FEITA (20/10/2026)** — documento único em
+  `configFinanceiro/fornecedores`, sub-aba em Cadastros, rules, regra pura em
+  `src/lib/fornecedores.js` (26 asserções), hook `src/hooks/useFornecedores.js`,
+  render em `test:tela`. ✅ **Rules publicadas em 26/10/2026** (`match
+  /configFinanceiro`).
 - **C3 — Aba Cheques.** Lançar lote, Carteira/Depositados/Devolvidos/
   Localizar, ficha com histórico, depositar/compensar/devolver/reapresentar/
   resgatar/cancelar/corrigir. Rules de `cheques`. Render em `test:tela`.
@@ -315,5 +336,13 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
   prazo normal (D+2) sem ninguém marcar — sem presumir nada sozinho.
 - **50 a 300 por mês** (até ~3.600 por ano) confirma a escolha de assinar só
   as vivas e ler o arquivo sob demanda.
+  ⚠️ **Conta a refazer na C3 (regra 1.1):** com pré-datado de até 120 dias, a
+  CARTEIRA pode ter 4 meses de folhas ao mesmo tempo — com 300/mês são
+  ~1.200 vivas. 1.200 × 2 perfis × ~10 aberturas/dia = 24 mil leituras/dia
+  no pior caso, perto da metade da cota gratuita. O cache persistente corta
+  isso quando a aba volta em menos de ~30 min, mas não zera. Antes de codar a
+  C3, decidir: assinar só depositados + devolvidos (poucos) e ler a carteira
+  por janela de "bom para" (ex.: próximos 30 dias + vencidos), com o resto sob
+  demanda.
 - **Ainda sem resposta (não trava):** os vídeos tinham áudio que não deu para
   ouvir aqui; se havia explicação falada, entra depois.

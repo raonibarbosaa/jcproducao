@@ -82,7 +82,10 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > pagar fornecedor da outra empresa (marcado), carteira da Zeus lançada à mão,
 > compensação marcada à mão, 50–300 folhas/mês. **C1 FEITA em 20/10/2026**
 > (núcleo portátil `src/lib/cheques.js` — não importa nada — + 122 asserções
-> em `tests/cheques.test.mjs`). Próxima = C2 (Fornecedores).
+> em `tests/cheques.test.mjs`). **C2 FEITA em 20/10/2026**: Fornecedores
+> num documento só (`configFinanceiro/fornecedores`, rule própria — ✅
+> publicada em 26/10/2026), gravado por transação, sem excluir. Próxima = C3
+> (aba Cheques) — refazer antes a conta de leituras da carteira (ver CHEQUES.md).
 
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
