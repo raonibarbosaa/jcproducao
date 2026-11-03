@@ -93,7 +93,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > no ar em 03/11/2026 (`099cef6`). **C4 FEITA e no ar em 03/11/2026** (`3d1a330`; repasse a
 > fornecedor com recibo impresso, aba Repassados por fornecedor/entrega,
 > resumo entre empresas; `repassadoEm` gravado para a consulta; sem rule nova).
-> Próxima = C5 (conferência da gaveta impressa + cheques do pedido no Localizar).
+> **C5 FEITA em 03/11/2026**: conferência da gaveta impressa (carteira +
+> devolvidos) e cheques do pedido no Localizar (só financeiro). **O desenho
+> do CHEQUES.md está todo feito.**
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
 > dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou

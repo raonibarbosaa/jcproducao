@@ -120,3 +120,36 @@ export function useChequesRepassados(ligado = false, corte = '') {
   }, [ligado, corte])
   return estado
 }
+
+// Os cheques dos pedidos que o LOCALIZAR está mostrando (C5). Só roda para quem
+// vê dinheiro (`ligado`) e só com pedidos na tela: `idVenda in [...]`, de 30
+// em 30 (limite do `in`). Cada folha achada é uma leitura — poucas por busca.
+// Devolve um Map idVenda → cheques.
+export function useChequesDosPedidos(ids, ligado = false) {
+  const chave = [...new Set((ids || []).map(String).filter(Boolean))].sort().join(',')
+  const [estado, setEstado] = useState({ porPedido: new Map(), erro: '' })
+  useEffect(() => {
+    const lista = chave ? chave.split(',') : []
+    if (!ligado || !lista.length) { setEstado({ porPedido: new Map(), erro: '' }); return undefined }
+    const partes = []
+    for (let i = 0; i < lista.length; i += 30) partes.push(lista.slice(i, i + 30))
+    const achados = partes.map(() => [])
+    const junta = () => {
+      const m = new Map()
+      for (const c of achados.flat()) {
+        const k = String(c.idVenda)
+        if (!m.has(k)) m.set(k, [])
+        m.get(k).push(c)
+      }
+      setEstado({ porPedido: m, erro: '' })
+    }
+    const us = partes.map((ps, i) => onSnapshot(query(col(), where('idVenda', 'in', ps)),
+      (snap) => { achados[i] = snap.docs.map(doDoc); junta() },
+      (e) => {
+        console.error('cheques do pedido:', e)
+        setEstado((s) => ({ ...s, erro: e?.code || e?.message || 'erro' }))
+      }))
+    return () => us.forEach((u) => u())
+  }, [chave, ligado])
+  return estado
+}

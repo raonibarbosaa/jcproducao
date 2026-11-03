@@ -383,6 +383,18 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
     Repassados aberta, o bloco das listas simples era desenhado sem lista.
 - **C5 — Fechamento.** Conferência da gaveta impressa; no Localizar (só para
   quem `veFinanceiro`) os cheques daquele pedido.
+  ✅ **FEITA (03/11/2026).** Sem rule nova.
+  - **A gaveta é carteira + DEVOLVIDOS** (`gaveta`): o banco e o fornecedor
+    devolvem o papel, e ele fica com a empresa até alguém resolver. Folha
+    impressa com um ☐ por folha, os dois blocos, total e "Conferido por /
+    Data". Com o filtro de empresa ligado, a folha **declara** que é só
+    daquela empresa — senão a folha da outra pareceria "faltando".
+  - **Cheques do pedido no Localizar** (`ChequesDoPedido` +
+    `useChequesDosPedidos`): linha de resumo ("3 cheque(s) · R$ … — 1 em
+    carteira · 1 repassado") e, com o card aberto, folha a folha (repassada
+    diz para quem). Consulta `idVenda in [pedidos da tela]` de 30 em 30, **só
+    para quem vê dinheiro e só com termo digitado** — para os outros perfis
+    ela nem roda. Cancelado não conta.
 
 ## Consequências das últimas decisões
 - **Lançar os antigos à mão** = o lançamento em lote precisa aceitar **data de

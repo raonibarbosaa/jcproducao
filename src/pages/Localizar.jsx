@@ -9,7 +9,10 @@ import {
   pesoDaLista, situacaoPrazo, previsaoDe, doDoc, indexaProblemas, problemasDoPedido,
   nomeCampoErro, ehErroEntrega, saiuParaEntrega,
   quemFez, podeBaixarNoControle, podeEntregarNoControle, quemAssina, pegarIP, lancadoNoControle,
+  veFinanceiro, fmtDia,
 } from '../utils.js'
+import { resumoChequesDoPedido, nomeSituacao, nomeBanco } from '../lib/cheques.js'
+import { useChequesDosPedidos } from '../hooks/useCheques.js'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useEntregues } from '../hooks/useEntregues.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -86,6 +89,11 @@ export default function Localizar({ pedidos, problemas }) {
   const res = useMemo(() => buscaGlobal(termo, { pedidos: base, entregues, clientes }), [termo, base, entregues, clientes])
   const comp = useMemo(() => comprometimentoDeCargas(cargas), [cargas])
   const mapaProblemas = useMemo(() => indexaProblemas(problemas), [problemas])
+  // CHEQUES do pedido (Cheques C5): só para quem vê dinheiro, e só dos pedidos
+  // que estão na tela — a consulta nem roda para os outros perfis
+  const veCheques = veFinanceiro(perfil)
+  const idsNaTela = useMemo(() => res.itens.map((r) => r.idVenda), [res])
+  const { porPedido: chequesPorPedido } = useChequesDosPedidos(idsNaTela, veCheques && !!termoLimpo)
   const semAcesso = [...Object.entries(negado).filter(([, v]) => v).map(([k]) => k), ...(entreguesNegado ? ['entregues'] : [])]
 
   const alterna = (id) => setAbertos((a) => ({ ...a, [id]: !a[id] }))
@@ -235,6 +243,7 @@ export default function Localizar({ pedidos, problemas }) {
           aberto={!!abertos[r.idVenda] || res.itens.length === 1}
           onAlterna={() => alterna(r.idVenda)}
           problemas={problemasDoPedido(mapaProblemas, r.idVenda)}
+          cheques={veCheques ? (chequesPorPedido.get(String(r.idVenda)) || []) : null}
           onTirarPlano={tirarDoPlano} onLiberarCarga={liberarDaCarga} onCancelarSaida={cancelarSaida}
           controle={{ acoes, motoristas: motoristasAtivos, podeLancar, podeEntregar }} />
       ))}
@@ -244,7 +253,7 @@ export default function Localizar({ pedidos, problemas }) {
 
 // ---------- um pedido ----------
 function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor,
-                     podeLiberar, salvando, aberto, onAlterna, problemas,
+                     podeLiberar, salvando, aberto, onAlterna, problemas, cheques,
                      onTirarPlano, onLiberarCarga, onCancelarSaida, controle }) {
   const p = r.p
   const ref = p || r.remessas[r.remessas.length - 1] || {}
@@ -277,6 +286,9 @@ function CardLocal({ r, comp, cargas, planos, clientes, itensCad, termo, veValor
 
       {/* ---- a resposta, em uma linha ---- */}
       <Situacao p={p} sit={sit} resumo={resumo} peso={peso} />
+
+      {/* cheques deste pedido — só o financeiro recebe a lista (null = não vê) */}
+      {cheques?.length > 0 && <ChequesDoPedido cheques={cheques} aberto={aberto} />}
 
       {/* ---- avisos que mudam o que a expedição faz ---- */}
       {problemas.filter((x) => x.status === 'aberto').map((x) => (
@@ -494,6 +506,32 @@ function Logistica({ p, sit, podeLiberar, salvando, onTirarPlano, onLiberarCarga
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ---------- os cheques do pedido (Cheques C5) ----------
+// Uma linha com o resumo; aberto o card, folha a folha. Quem procura o pedido
+// quer saber "como ele pagou e onde está esse dinheiro" sem trocar de aba.
+export function ChequesDoPedido({ cheques, aberto }) {
+  const r = resumoChequesDoPedido(cheques)
+  if (!r.qtd) return null
+  return (
+    <div className="loc-cheques">
+      <div>💳 <b>{r.qtd} cheque(s) · {fmtMoeda(r.valor)}</b>
+        {' — '}{r.porSituacao.map((x) => `${x.qtd} ${nomeSituacao(x.situacao).toLowerCase()}`).join(' · ')}</div>
+      {aberto && (
+        <ul>
+          {r.folhas.map((c) => (
+            <li key={c.id}>
+              nº {c.numero} · {c.banco?.nome || nomeBanco(c.banco?.codigo)} · bom para {fmtDia(c.bomPara)}
+              {' · '}<b>{fmtMoeda(c.valor)}</b> · {nomeSituacao(c.situacao)}
+              {c.situacao === 'repassado' && c.destino?.fornecedorNome ? ` (${c.destino.fornecedorNome})` : ''}
+              {c.terceiro ? ' · de terceiro' : ''}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

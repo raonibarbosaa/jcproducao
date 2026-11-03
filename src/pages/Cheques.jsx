@@ -19,7 +19,7 @@ import {
   podeReapresentar, devolucoesDe, ultimaDevolucao, devolvidoPeloFornecedor, irmasDoLote,
   diasParaBomPara, diasDepositado, compensacaoAtrasada, totaisCheques, ordenaPorBomPara,
   filtraCheques, historicoDe, situacaoBate, entreEmpresas, chaveCheque, fmtDoc, ehViva,
-  repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo,
+  repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, gaveta,
 } from '../lib/cheques.js'
 import {
   useChequesVivos, useChequesArquivo, useChequesRepassados, gravaLote, novoLoteId, chequesComChaves,
@@ -197,6 +197,11 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
       {vivos?.pronto && lista && (
         <>
           <Explica aba={aba} />
+          {aba === 'carteira' && (
+            <button className="btn chq-gaveta-btn no-print" onClick={() => setImprimir({ gaveta: true })}>
+              🖨 Conferência da gaveta
+            </button>
+          )}
           <BarraSelecao cheques={marcadosCheques} onAcao={(para) => setEvento({ para, cheques: marcadosCheques })}
             onLimpar={() => setMarcados([])} />
           <ListaCheques cheques={lista} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
@@ -251,7 +256,9 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
           onFechar={() => setAbertoId('')} />
       )}
     </div>
-    {imprimir && <ReciboRepasse repasse={imprimir} fornecedores={fornecedores} clientes={clientes} />}
+    {imprimir && (imprimir.gaveta
+      ? <ConferenciaGaveta cheques={daEmpresa} empresa={empresa} clientes={clientes} hoje={hoje} />
+      : <ReciboRepasse repasse={imprimir} fornecedores={fornecedores} clientes={clientes} />)}
     </>
   )
 }
@@ -1088,5 +1095,58 @@ export function AbaRepassados({ estado, periodo, onPeriodo, empresa, fornecedore
         </div>
       ))}
     </>
+  )
+}
+
+// ============================================================
+// CONFERÊNCIA DA GAVETA (C5) — o que o sistema diz que está aqui, no papel
+// ============================================================
+// Para bater com as folhas físicas: um quadradinho por folha. Entra a carteira
+// E os devolvidos (o banco e o fornecedor devolvem o papel). Com o filtro de
+// empresa ligado, a folha DECLARA que é parte — senão passaria por gaveta
+// inteira e uma folha "faltando" seria só da outra empresa.
+export function ConferenciaGaveta({ cheques, empresa, clientes, hoje }) {
+  const g = gaveta(cheques)
+  const bloco = (titulo, lista, valor) => (
+    <>
+      <div className="pr-vend">{titulo} — {lista.length} folha(s) · {fmtMoeda(valor)}</div>
+      {lista.length ? (
+        <table className="chq-recibo-tab">
+          <thead><tr><th>✓</th><th>Nº</th><th>Banco / ag / conta</th><th>Emitente</th><th>Cliente · pedido</th>
+            <th>Bom para</th><th className="q">Valor</th></tr></thead>
+          <tbody>
+            {lista.map((c) => (
+              <tr key={c.id}>
+                <td className="chq-box">☐</td>
+                <td>{c.numero}</td>
+                <td>{c.banco?.codigo} {c.banco?.nome || nomeBanco(c.banco?.codigo)} · {c.agencia} · {c.conta}</td>
+                <td>{c.emitente?.nome}{c.terceiro ? ' (terceiro)' : ''}</td>
+                <td>{nomeCliente(c.cliente, clientes)}{c.idVenda ? ` · #${c.idVenda}` : ''}</td>
+                <td>{fmtDia(c.bomPara)}</td>
+                <td className="q">{fmtMoeda(c.valor)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : <p>Nenhuma.</p>}
+    </>
+  )
+  return (
+    <div className="print-only chq-recibo">
+      <div className="pr-head">
+        <h1>Conferência da gaveta de cheques</h1>
+        <div className="meta">{fmtDia(hoje)}<br />{empresa ? `só ${nomeEmpresa(empresa)}` : 'as duas empresas'}
+          <br />{g.qtd} folha(s) · {fmtMoeda(g.valor)}</div>
+      </div>
+      {empresa && <p><b>⚠ Só os cheques da {nomeEmpresa(empresa)}.</b> As folhas da outra empresa não estão nesta lista.</p>}
+      {bloco('Em carteira', g.carteira, g.valorCarteira)}
+      {bloco('Devolvidos (a folha voltou para a empresa)', g.devolvidos, g.valorDevolvidos)}
+      <p className="chq-recibo-txt">Marque cada folha encontrada. Folha que está na gaveta e não está aqui,
+        ou que está aqui e não foi achada, precisa ser acertada no sistema.</p>
+      <div className="chq-recibo-ass">
+        <div><span />Conferido por</div>
+        <div><span />Data</div>
+      </div>
+    </div>
   )
 }

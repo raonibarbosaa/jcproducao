@@ -1479,6 +1479,7 @@ tr.sit-producao td { color: var(--text-dim); }
   .chq-recibo-ass { display: flex; gap: 24px; margin-top: 26px; }
   .chq-recibo-ass > div { flex: 1; font-size: 11px; }
   .chq-recibo-ass span { display: block; border-top: 1px solid #000; margin-bottom: 3px; height: 0; }
+  .chq-recibo .chq-box { width: 18px; text-align: center; font-size: 14px; }
 }
 .chq-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
   background: var(--surface-2); border: 1px solid var(--ok); color: var(--text); border-radius: 10px;
@@ -1554,6 +1555,11 @@ tr.sit-producao td { color: var(--text-dim); }
 .chq-folha-rep .chq-folha-msg { color: var(--warn); }
 .chq-soma { margin-top: 6px; font-size: 13.5px; }
 .chq-dica-aviso { color: var(--warn); }
+.chq-gaveta-btn { margin: 0 0 10px; }
+/* Localizar: os cheques do pedido (C5) */
+.loc-cheques { margin-top: 8px; font-size: 13px; border-left: 3px solid var(--accent); padding: 4px 0 4px 10px; }
+.loc-cheques ul { margin: 4px 0 0; padding-left: 16px; color: var(--text-dim); }
+.loc-cheques li { margin: 2px 0; }
 /* aba Repassados: fornecedor → entrega (o recibo) → folhas */
 .chq-entre { border: 1px solid var(--warn); border-radius: 10px; padding: 10px 12px; margin: 4px 0 12px;
   font-size: 13.5px; line-height: 1.6; }

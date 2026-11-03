@@ -10,6 +10,7 @@ import {
   diasDepositado, compensacaoAtrasada, podeDepositarHoje, filtraCheques, irmasDoLote,
   nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
+  gaveta, resumoChequesDoPedido,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -328,5 +329,16 @@ t('repassadoEm fica mesmo depois de voltar e ser reapresentada (o destino não)'
 t('e acompanha o ÚLTIMO repasse', a1volta.repassadoEm, '2026-11-12')
 t('o repassado antigo entra pela gaveta e vai ao fornecedor', [jaRepassado.situacao, jaRepassado.destino.fornecedorNome, jaRepassado.historico.length],
   ['repassado', 'RESINAS NE', 2])
+
+// ---------- a gaveta e o pedido (C5) ----------
+const g = gaveta([...lista, { ...c1, id: 'z', situacao: 'compensado' }])
+t('na gaveta: carteira e devolvidos (o papel voltou), nada mais', [g.carteira.map((c) => c.id), g.devolvidos.map((c) => c.id)],
+  [['a', 'b', 'c'], ['d']])
+t('com os totais', [g.qtd, g.valor, g.valorCarteira, g.valorDevolvidos], [4, 1468, 1101, 367])
+const rp5458 = resumoChequesDoPedido(lista)
+t('cheques do pedido por situação, sem os cancelados', rp5458.porSituacao.map((x) => [x.situacao, x.qtd, x.valor]),
+  [['carteira', 3, 1101], ['devolvido', 1, 367], ['repassado', 2, 467]])
+t('total do pedido', [rp5458.qtd, rp5458.valor], [6, 1935])
+t('pedido sem cheque', resumoChequesDoPedido([]), { qtd: 0, valor: 0, porSituacao: [], folhas: [] })
 
 export default resultado('cheques')

@@ -877,6 +877,32 @@ export function cortePeriodo(periodo, hoje) {
 }
 
 // ============================================================
+// A GAVETA e o PEDIDO (fase C5)
+// ============================================================
+// O que o sistema diz que está FISICAMENTE com a empresa — para bater com o
+// papel. É a carteira E os devolvidos: o banco (e o fornecedor) devolvem a
+// folha, e ela volta para a gaveta até alguém resolver.
+export function gaveta(cheques) {
+  const lista = (cheques || []).filter((c) => c?.situacao === 'carteira' || c?.situacao === 'devolvido')
+  const carteira = ordenaPorBomPara(lista.filter((c) => c.situacao === 'carteira'))
+  const devolvidos = ordenaPorBomPara(lista.filter((c) => c.situacao === 'devolvido'))
+  return { carteira, devolvidos, ...soma(lista),
+    valorCarteira: somaFolhas(carteira), valorDevolvidos: somaFolhas(devolvidos) }
+}
+
+// Os cheques de UM pedido, resumidos para quem procura o pedido: quantas
+// folhas, quanto, e onde estão. Cancelado não conta (foi lançado errado).
+//   → { qtd, valor, porSituacao: [{ situacao, qtd, valor }], folhas }
+const ORDEM_SIT = ['carteira', 'depositado', 'devolvido', 'repassado', 'compensado', 'resgatado']
+export function resumoChequesDoPedido(cheques) {
+  const vivos = (cheques || []).filter((c) => c?.situacao !== 'cancelado')
+  const porSituacao = ORDEM_SIT
+    .map((st) => ({ situacao: st, ...soma(vivos.filter((c) => c.situacao === st)) }))
+    .filter((x) => x.qtd)
+  return { ...soma(vivos), porSituacao, folhas: ordenaPorBomPara(vivos) }
+}
+
+// ============================================================
 // BUSCA
 // ============================================================
 // Termo só com dígitos procura o NÚMERO DO CHEQUE (pedaço exato, sem zeros à

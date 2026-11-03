@@ -183,7 +183,8 @@ const ESPERA = {
   fnDono: ['é só do financeiro'],
   // cheques (C3): carteira com o "2 de 4", terceiro e o que já pode depositar
   chCarteira: ['Cheques', '+ Lançar cheques', 'Em carteira', 'Carteira (2)', 'Depositados (1)', 'Devolvidos (1)',
-    'nº 047470', 'Banese', 'INGRID', '#5458', '⚠ terceiro', 'JOAO TERCEIRO', 'já pode depositar', 'faltam', '1 de 4', 'R$ 734,00'],
+    'nº 047470', 'Banese', 'INGRID', '#5458', '⚠ terceiro', 'JOAO TERCEIRO', 'já pode depositar', 'faltam', '1 de 4', 'R$ 734,00',
+    '🖨 Conferência da gaveta'],
   chDepositados: ['nº 047471', 'Bradesco', 'há 6 dia(s)', 'chq-atencao', 'marque as que compensaram'],
   // alínea 12 na lista e na ficha: não reapresenta
   chDevolvidos: ['nº 047472', 'voltou do banco', '12 · Sem fundos — 2ª apresentação'],
@@ -199,6 +200,12 @@ const ESPERA = {
   chBarraMista: ['2 marcado(s)', 'R$ 734,00', 'Cancelar cheque'],
   chNumBR: ['[1468,367.5,1468.5,true]'],
   chDesigner: ['Esta tela é só do financeiro'],
+  // C5: a gaveta = carteira + devolvidos (o papel voltou); repassada e depositada não entram
+  chGaveta: ['Conferência da gaveta de cheques', 'as duas empresas', 'Em carteira — 2 folha(s) · R$ 734,00',
+    'Devolvidos (a folha voltou para a empresa) — 1 folha(s) · R$ 367,00', '047470', '047473', '047472', 'INGRID · #5458', '☐', 'Conferido por'],
+  chGavetaSac: ['só JC Sacolas', 'As folhas da outra empresa não estão nesta lista'],
+  chLocFechado: ['💳', '3 cheque(s) · R$ 1.101,00', '1 em carteira · 1 depositado · 1 repassado'],
+  chLocAberto: ['nº 047470', 'Banese', 'bom para 25/10/2026', 'Repassado (RESINAS NE)', 'de terceiro'],
   // C4: repasse — por fornecedor, por entrega, com o recibo e o entre empresas
   chRepassados: ['Repassados', 'RESINAS NE', '24/10/2026 · NF 1234 · pago pela JC Plástico', '⇄ entre empresas', '🖨 Recibo',
     'Entre empresas no período', 'Cheques da <b>JC Sacolas</b> pagando conta da <b>JC Plástico</b>', 'nº 047474', 'com RESINAS NE desde 24/10/2026'],
@@ -252,6 +259,8 @@ const PROIBE = {
   chCarregando: ['Nenhum cheque na gaveta'],        // lista que não chegou não é lista vazia
   chDesigner: ['Lançar cheques'],
   chDono: ['Lançar cheques'],
+  chGaveta: ['047471', '047474'],                  // depositado e repassado não estão na gaveta
+  chLocFechado: ['nº 047470'],                     // fechado: só a linha de resumo
   chRepassar: ['TINTAS VELHAS'],                   // fornecedor inativo não aparece no repasse                      // 03/11/2026: dinheiro só do financeiro
   fnDono: ['Resinas', '+ Novo fornecedor'],
   chDevolvidos: ['ª vez'],
