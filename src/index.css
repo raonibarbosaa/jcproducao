@@ -1467,6 +1467,19 @@ tr.sit-producao td { color: var(--text-dim); }
 @media print { .aviso-versao { display: none; } }
 
 /* ---------- CHEQUES (CHEQUES.md, C3) ---------- */
+/* recibo de repasse (impresso; P&B) */
+@media print {
+  .chq-recibo { font-size: 12px; }
+  .chq-recibo-forn { margin: 6px 0 10px; line-height: 1.6; }
+  .chq-recibo-tab { width: 100%; border-collapse: collapse; }
+  .chq-recibo-tab th, .chq-recibo-tab td { border: 1px solid #000; padding: 4px 6px; text-align: left; }
+  .chq-recibo-tab .q { text-align: right; white-space: nowrap; }
+  .chq-recibo-tab tfoot td { font-weight: 800; }
+  .chq-recibo-txt { margin: 14px 0 26px; line-height: 1.6; }
+  .chq-recibo-ass { display: flex; gap: 24px; margin-top: 26px; }
+  .chq-recibo-ass > div { flex: 1; font-size: 11px; }
+  .chq-recibo-ass span { display: block; border-top: 1px solid #000; margin-bottom: 3px; height: 0; }
+}
 .chq-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
   background: var(--surface-2); border: 1px solid var(--ok); color: var(--text); border-radius: 10px;
   padding: 10px 16px; box-shadow: var(--shadow); font-size: 14px; cursor: pointer; max-width: 92vw; }
@@ -1540,6 +1553,21 @@ tr.sit-producao td { color: var(--text-dim); }
 .chq-folha-msg { flex-basis: 100%; color: var(--danger); font-size: 12px; }
 .chq-folha-rep .chq-folha-msg { color: var(--warn); }
 .chq-soma { margin-top: 6px; font-size: 13.5px; }
+.chq-dica-aviso { color: var(--warn); }
+/* aba Repassados: fornecedor → entrega (o recibo) → folhas */
+.chq-entre { border: 1px solid var(--warn); border-radius: 10px; padding: 10px 12px; margin: 4px 0 12px;
+  font-size: 13.5px; line-height: 1.6; }
+.chq-entre > span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); }
+.chq-entre small { display: block; color: var(--text-faint); }
+.chq-forn { margin-bottom: 18px; }
+.chq-forn-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 6px 2px;
+  border-bottom: 2px solid var(--border); margin-bottom: 8px; }
+.chq-forn-head b { font-size: 16px; }
+.chq-forn-head > span { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.chq-rep { margin: 0 0 12px 8px; }
+.chq-rep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+  color: var(--text-dim); margin-bottom: 6px; }
+.chq-rep-head .mini-btn { margin-left: auto; }
 .chq-soma small { color: var(--text-faint); }
 /* tela larga: colunas fixas, para nº / cliente / data / valor alinharem de
    uma folha para a outra; abaixo disso a linha quebra (celular) */

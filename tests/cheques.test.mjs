@@ -9,6 +9,7 @@ import {
   situacaoBate, devolvidoPeloFornecedor, entreEmpresas, totaisCheques, agrupaPorFornecedor,
   diasDepositado, compensacaoAtrasada, podeDepositarHoje, filtraCheques, irmasDoLote,
   nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
+  repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -286,5 +287,46 @@ t('o apelido do cliente entra pela função injetada',
     .map((c) => c.id), ['1'])
 t('o casamento de texto pode ser trocado (no JC é o casaBusca)',
   filtraCheques(busca, { termo: 'qualquer' }, () => true).length, 3)
+
+// ---------- repasses (C4): a unidade do recibo ----------
+const REP = { para: 'repassado', fornecedorId: 'f1', fornecedorNome: 'RESINAS NE', empresaPagadora: 'sacolas',
+  referencia: 'NF 1234', data: '2026-11-03', porUid: 'u' }
+const a1 = aplicaEvento({ ...c1, id: 'r1' }, REP, QUEM).cheque
+const a2 = aplicaEvento({ ...c1, id: 'r2', numero: '000002', valor: 200 }, REP, QUEM).cheque
+// a 3ª foi no mesmo dia, para o mesmo fornecedor, mas paga pela PLÁSTICO: outro recibo
+const a3 = aplicaEvento({ ...c1, id: 'r3', numero: '000003', valor: 100 }, { ...REP, empresaPagadora: 'plastico' }, QUEM).cheque
+// a 1ª voltou do fornecedor e foi repassada de novo, para outro
+const a1volta = aplicaEvento(aplicaEvento(a1, { para: 'devolvido', alinea: '11', data: '2026-11-10', porUid: 'u' }, QUEM).cheque,
+  { ...REP, fornecedorId: 'f2', fornecedorNome: 'TINTAS SE', referencia: '', data: '2026-11-12' }, QUEM).cheque
+const reps = repassesDe([a1volta, a2, a3])
+t('um recibo por fornecedor + dia + referência + empresa pagadora', reps.map((r) => [r.data, r.fornecedorNome, r.empresaPagadora, r.qtd]),
+  [['2026-11-12', 'TINTAS SE', 'sacolas', 1], ['2026-11-03', 'RESINAS NE', 'plastico', 1], ['2026-11-03', 'RESINAS NE', 'sacolas', 2]])
+const recibo = reps.find((r) => r.fornecedorNome === 'RESINAS NE' && r.empresaPagadora === 'sacolas')
+t('o recibo continua com a folha que depois voltou (o papel assinado não muda)', recibo.folhas.map((f) => [f.cheque.numero, f.voltou]),
+  [['000001', true], ['000002', false]])
+t('e soma o que foi entregue', [recibo.valor, recibo.voltaram], [567, 1])
+t('folha recebida pela Sacolas paga pela Plástico é entre empresas',
+  reps.find((r) => r.empresaPagadora === 'plastico').entreEmpresas, 1)
+t('chave ignora caixa e espaço na referência', chaveRepasse({ ...REP, referencia: ' nf  1234 ' }), chaveRepasse(REP))
+
+const porF = repassesPorFornecedor(reps)
+t('por fornecedor: total entregue e o que voltou', porF.map((g) => [g.fornecedorNome, g.qtd, g.valor, g.voltaram, g.valorVoltou]),
+  [['RESINAS NE', 3, 667, 1, 367], ['TINTAS SE', 1, 367, 0, 0]])
+t('com período', repassesPorFornecedor(reps, { de: '2026-11-11' }).map((g) => g.fornecedorNome), ['TINTAS SE'])
+t('entre empresas por direção', resumoEntreEmpresas(reps).map((d) => [d.de, d.para, d.qtd, d.valor]),
+  [['sacolas', 'plastico', 1, 100]])
+t('corte do período', [cortePeriodo('mes', '2026-11-20'), cortePeriodo('90', '2026-11-20'), cortePeriodo('', '2026-11-20')],
+  ['2026-11-01', '2026-08-22', ''])
+
+// cheque antigo da Zeus que já estava com um fornecedor
+const jaRepassado = chequesDoLote({ ...CAB, recebidoEm: '2026-08-10', tardio: true,
+  inicial: { para: 'repassado', fornecedorId: 'f1', fornecedorNome: 'RESINAS NE', empresaPagadora: 'sacolas', data: '2026-08-20' } },
+  [folhas[0]], { loteId: 'L8', ...QUEM }).cheques[0]
+const reap = aplicaEvento(aplicaEvento(a1, { para: 'devolvido', alinea: '11', data: '2026-11-10', porUid: 'u' }, QUEM).cheque,
+  { para: 'depositado', conta: 'bradesco', data: '2026-11-11', porUid: 'u' }, QUEM).cheque
+t('repassadoEm fica mesmo depois de voltar e ser reapresentada (o destino não)', [reap.repassadoEm, reap.destino], ['2026-11-03', null])
+t('e acompanha o ÚLTIMO repasse', a1volta.repassadoEm, '2026-11-12')
+t('o repassado antigo entra pela gaveta e vai ao fornecedor', [jaRepassado.situacao, jaRepassado.destino.fornecedorNome, jaRepassado.historico.length],
+  ['repassado', 'RESINAS NE', 2])
 
 export default resultado('cheques')

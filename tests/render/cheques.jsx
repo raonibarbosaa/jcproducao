@@ -1,5 +1,6 @@
 import { renderToString } from 'react-dom/server'
-import Cheques, { TelaCheques, ModalLancar, ModalEvento, FichaCheque, BarraSelecao, numBR } from '../../src/pages/Cheques.jsx'
+import Cheques, { TelaCheques, ModalLancar, ModalEvento, FichaCheque, BarraSelecao, numBR,
+  ModalReciboPronto, ReciboRepasse, reciboDoRepasse } from '../../src/pages/Cheques.jsx'
 import { chequesDoLote, geraFolhas, aplicaEvento } from '../../src/lib/cheques.js'
 
 const HOJE = '2026-10-26'
@@ -18,9 +19,16 @@ const dep = ev(lote[1], { para: 'depositado', conta: 'bradesco', data: '2026-10-
 const dev = ev(ev(lote[2], { para: 'depositado', conta: 'bradesco', data: '2026-10-21' }),
   { para: 'devolvido', alinea: '12', data: '2026-10-23' })
 const vivos = { pronto: true, erro: '', lista: [lote[0], dep, dev, lote[3]] }
+const FORN = [{ id: 'f1', nome: 'RESINAS NE', documento: '11.222.333/0001-81', ativo: true },
+  { id: 'f2', nome: 'TINTAS VELHAS', ativo: false }]
+// C4: a folha 4 foi para a RESINAS pagando conta da Plástico (entre empresas)
+const REP = { para: 'repassado', fornecedorId: 'f1', fornecedorNome: 'RESINAS NE', empresaPagadora: 'plastico',
+  referencia: 'NF 1234', data: '2026-10-24' }
+const rep4 = ev({ ...lote[3], id: 'c5', numero: '047474' }, REP)   // uma 5ª folha, que já foi
+const repassados = { pronto: true, erro: '', lista: [rep4] }
 const arq = { pronto: false, erro: '', lista: [] }
 const base = { vivos, arquivo: arq, arquivoLigado: false, onArquivo: () => {}, pedidos: [], clientes: [{ razao: 'INGRID MODAS', nome: 'INGRID' }],
-  quem: QUEM, hoje: HOJE, acoes }
+  quem: QUEM, hoje: HOJE, acoes, fornecedores: FORN, repassados, periodoRep: '90', onPeriodoRep: () => {}, onAba: () => {} }
 
 export function roda() {
   const out = {
@@ -37,6 +45,11 @@ export function roda() {
     chFichaDev: renderToString(<FichaCheque cheque={dev} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
       onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
     chBarraMista: renderToString(<BarraSelecao cheques={[lote[0], dep]} onAcao={() => {}} onLimpar={() => {}} />),
+    chRepassados: renderToString(<TelaCheques {...base} abaInicial="repassados" />),
+    chRepassar: renderToString(<ModalEvento para="repassado" cheques={[lote[0]]} hoje={HOJE} fornecedores={FORN}
+      onConfirmar={nada} onFechar={() => {}} />),
+    chReciboPronto: renderToString(<ModalReciboPronto repasse={reciboDoRepasse([lote[3]], REP)} onImprimir={() => {}} onFechar={() => {}} />),
+    chRecibo: renderToString(<ReciboRepasse repasse={reciboDoRepasse([lote[3]], REP)} fornecedores={FORN} clientes={base.clientes} />),
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }

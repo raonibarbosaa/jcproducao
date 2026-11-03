@@ -558,6 +558,10 @@ export function aplicaEvento(c, ev, { agora, hoje } = {}) {
   if (ev.para === 'depositado') patch.contaDeposito = ev.conta
   else if (ev.para !== 'compensado' && ev.para !== 'devolvido') patch.contaDeposito = ''
   if (ev.para === 'repassado') {
+    // a data do ÚLTIMO repasse, que nunca se apaga (o `destino` se apaga quando
+    // a folha volta e é reapresentada). É por ela que a aba Repassados consulta
+    // o servidor — senão o repasse de uma folha que voltou sumiria da lista.
+    patch.repassadoEm = evento.data
     patch.destino = {
       fornecedorId: evento.fornecedorId, fornecedorNome: evento.fornecedorNome,
       empresaPagadora: evento.empresaPagadora, referencia: evento.referencia || '', data: evento.data,
@@ -779,6 +783,98 @@ export const ordenaPorBomPara = (lista) =>
   [...(lista || [])].sort((a, b) =>
     String(a.bomPara || '9999').localeCompare(String(b.bomPara || '9999'))
     || numeroNormal(a.numero).localeCompare(numeroNormal(b.numero), undefined, { numeric: true }))
+
+// ============================================================
+// REPASSES — "para onde os cheques foram" (fase C4)
+// ============================================================
+// Um REPASSE é uma entrega de folhas a um fornecedor: mesmo fornecedor, mesmo
+// dia, mesma referência e mesma empresa pagadora. É a unidade do RECIBO.
+// ⚠️ Sai do HISTÓRICO, não do `destino`: a folha que voltou do fornecedor (e
+// até foi repassada de novo a outro) continua tendo existido naquele recibo —
+// o papel assinado diz que ela foi entregue, e a tela não pode desmenti-lo.
+const idForn = (e) => e?.fornecedorId || `nome:${normalizaTexto(e?.fornecedorNome)}`
+export const chaveRepasse = (e) =>
+  [diaDe(e?.data), idForn(e), normalizaTexto(e?.referencia), e?.empresaPagadora || ''].join('|')
+
+// todos os repasses que aparecem nos históricos destes cheques
+//   → [{ chave, data, fornecedorId, fornecedorNome, referencia, empresaPagadora,
+//        folhas: [{ cheque, evento, voltou, entreEmpresas }], qtd, valor,
+//        voltaram, entreEmpresas }]
+// `voltou` = depois DESTE repasse a folha voltou do fornecedor.
+export function repassesDe(cheques) {
+  const grupos = new Map()
+  for (const c of cheques || []) {
+    const h = historicoDe(c)
+    h.forEach((e, i) => {
+      if (e?.para !== 'repassado') return
+      const ch = chaveRepasse(e)
+      if (!grupos.has(ch)) {
+        grupos.set(ch, { chave: ch, data: diaDe(e.data), fornecedorId: e.fornecedorId || '',
+          fornecedorNome: e.fornecedorNome || '', referencia: e.referencia || '',
+          empresaPagadora: e.empresaPagadora || '', folhas: [] })
+      }
+      const voltou = h.slice(i + 1).some((d) => d?.para === 'devolvido' && d?.de === 'repassado')
+      grupos.get(ch).folhas.push({ cheque: c, evento: e, voltou,
+        entreEmpresas: !!(e.empresaPagadora && c.empresa && e.empresaPagadora !== c.empresa) })
+    })
+  }
+  return [...grupos.values()].map((g) => {
+    const folhas = [...g.folhas].sort((a, b) =>
+      numeroNormal(a.cheque.numero).localeCompare(numeroNormal(b.cheque.numero), undefined, { numeric: true }))
+    return { ...g, folhas, qtd: folhas.length,
+      valor: folhas.reduce((s, f) => s + centavos(f.cheque.valor), 0) / 100,
+      voltaram: folhas.filter((f) => f.voltou).length,
+      entreEmpresas: folhas.filter((f) => f.entreEmpresas).length }
+  }).sort((a, b) => b.data.localeCompare(a.data) || a.fornecedorNome.localeCompare(b.fornecedorNome)
+    || a.empresaPagadora.localeCompare(b.empresaPagadora) || a.referencia.localeCompare(b.referencia))
+}
+
+// os repasses de um período, por FORNECEDOR (o total é o que foi entregue a
+// ele no período, inclusive o que depois voltou — e o que voltou é contado à parte)
+export function repassesPorFornecedor(repasses, { de = '', ate = '' } = {}) {
+  const grupos = new Map()
+  for (const r of repasses || []) {
+    if ((de && r.data < de) || (ate && r.data > ate)) continue
+    const ch = r.fornecedorId || `nome:${normalizaTexto(r.fornecedorNome)}`
+    if (!grupos.has(ch)) grupos.set(ch, { fornecedorId: r.fornecedorId, fornecedorNome: r.fornecedorNome, repasses: [] })
+    grupos.get(ch).repasses.push(r)
+  }
+  return [...grupos.values()].map((g) => {
+    const folhas = g.repasses.flatMap((r) => r.folhas)
+    const volta = folhas.filter((f) => f.voltou)
+    return { ...g, qtd: folhas.length, valor: folhas.reduce((s, f) => s + centavos(f.cheque.valor), 0) / 100,
+      voltaram: volta.length, valorVoltou: volta.reduce((s, f) => s + centavos(f.cheque.valor), 0) / 100 }
+  }).sort((a, b) => b.valor - a.valor || a.fornecedorNome.localeCompare(b.fornecedorNome))
+}
+
+// ENTRE EMPRESAS: cheque recebido por uma empresa pagando conta da outra. É
+// dinheiro de uma empresa quitando dívida da outra (conta corrente entre elas),
+// e a contabilidade precisa do total por DIREÇÃO no mês.
+//   → [{ de, para, qtd, valor, folhas }]
+export function resumoEntreEmpresas(repasses, { de = '', ate = '' } = {}) {
+  const dir = new Map()
+  for (const r of repasses || []) {
+    if ((de && r.data < de) || (ate && r.data > ate)) continue
+    for (const f of r.folhas) {
+      if (!f.entreEmpresas) continue
+      const ch = `${f.cheque.empresa}>${r.empresaPagadora}`
+      if (!dir.has(ch)) dir.set(ch, { de: f.cheque.empresa, para: r.empresaPagadora, folhas: [] })
+      dir.get(ch).folhas.push({ ...f, repasse: r })
+    }
+  }
+  return [...dir.values()].map((d) => ({ ...d, qtd: d.folhas.length,
+    valor: d.folhas.reduce((s, f) => s + centavos(f.cheque.valor), 0) / 100 }))
+}
+
+// o "de" do período em texto ISO, a partir do hoje: 'mes' (dia 1), N dias, ou
+// '' (tudo). É o corte da consulta — repasses só crescem, e assinar todos na
+// abertura pagaria o histórico inteiro (regra 1.3 da skill de desempenho).
+export function cortePeriodo(periodo, hoje) {
+  const dia = diaDe(hoje)
+  if (periodo === 'mes') return `${dia.slice(0, 7)}-01`
+  const n = Number(periodo) || 0
+  return n > 0 ? somaDias(dia, -n) : ''
+}
 
 // ============================================================
 // BUSCA

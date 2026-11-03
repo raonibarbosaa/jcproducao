@@ -1,11 +1,11 @@
-// CHEQUES — origem, situação e destino de cada folha (CHEQUES.md, fase C3).
+// CHEQUES — origem, situação e destino de cada folha (CHEQUES.md, fases C3–C4).
 //
 // A regra mora em `src/lib/cheques.js` (portátil, vai para o TotaliFinance);
-// esta tela só desenha e grava. Quem lança e vê: dono e financeiro.
+// esta tela só desenha e grava. Quem lança e vê: só o financeiro (03/11/2026).
 //
-// O REPASSE a fornecedor é a fase C4 — aqui a ação "Repassar" ainda não
-// aparece, mas cheque já repassado (lançado depois) é lido normalmente.
-import { useMemo, useState } from 'react'
+// C4: REPASSE a fornecedor (com recibo impresso para assinatura), a aba
+// Repassados por fornecedor/entrega e o resumo "entre empresas".
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import SubTabs from '../components/SubTabs.jsx'
@@ -19,15 +19,24 @@ import {
   podeReapresentar, devolucoesDe, ultimaDevolucao, devolvidoPeloFornecedor, irmasDoLote,
   diasParaBomPara, diasDepositado, compensacaoAtrasada, totaisCheques, ordenaPorBomPara,
   filtraCheques, historicoDe, situacaoBate, entreEmpresas, chaveCheque, fmtDoc, ehViva,
+  repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo,
 } from '../lib/cheques.js'
 import {
-  useChequesVivos, useChequesArquivo, gravaLote, novoLoteId, chequesComChaves,
+  useChequesVivos, useChequesArquivo, useChequesRepassados, gravaLote, novoLoteId, chequesComChaves,
   aplicaEmLote, corrigeNoServidor,
 } from '../hooks/useCheques.js'
+import { useFornecedores } from '../hooks/useFornecedores.js'
+import { fornecedoresAtivos, achaFornecedor } from '../lib/fornecedores.js'
 
-// o repasse é a C4: até lá a ação não é oferecida em lugar nenhum
-const ACAO_DESTA_FASE = (para) => para !== 'repassado'
 const LIMITE_LISTA = 60
+const SEM_LISTA = []
+// período da aba Repassados: é o corte da CONSULTA (regra 1.3 — repasses só crescem)
+export const PERIODOS_REPASSE = [
+  { id: 'mes', nm: 'Este mês' },
+  { id: '90', nm: 'Últimos 90 dias' },
+  { id: '365', nm: 'Últimos 12 meses' },
+  { id: '', nm: 'Todos' },
+]
 
 // onde um cheque pode ser DEPOSITADO: só conta de banco. A Cielo é a
 // maquininha e o caixa interno é a gaveta — ninguém deposita cheque neles.
@@ -49,6 +58,11 @@ export default function Cheques({ pedidos }) {
   const vivos = useChequesVivos(ligado)
   const [arquivoLigado, setArquivoLigado] = useState(false)
   const arquivo = useChequesArquivo(ligado && arquivoLigado)
+  // os repassados só são lidos com a aba Repassados aberta, e só do período
+  const [abaRep, setAbaRep] = useState(false)
+  const [periodoRep, setPeriodoRep] = useState('90')
+  const repassados = useChequesRepassados(ligado && abaRep, cortePeriodo(periodoRep, hojeISO()))
+  const forn = useFornecedores(ligado)
   if (!ligado) return <div className="empty">Esta tela é só do financeiro.</div>
   const quem = { por: nome || '', porUid: user?.uid || '' }
   const acoes = {
@@ -61,7 +75,9 @@ export default function Cheques({ pedidos }) {
   return (
     <TelaCheques vivos={vivos} arquivo={arquivo} arquivoLigado={arquivoLigado}
       onArquivo={setArquivoLigado} pedidos={pedidos} clientes={clientes}
-      quem={quem} hoje={hojeISO()} acoes={acoes} />
+      quem={quem} hoje={hojeISO()} acoes={acoes}
+      repassados={repassados} periodoRep={periodoRep} onPeriodoRep={setPeriodoRep}
+      onAba={(id) => setAbaRep(id === 'repassados')} fornecedores={forn.lista} />
   )
 }
 
@@ -69,7 +85,7 @@ export default function Cheques({ pedidos }) {
 // A TELA (sem hook de dados: o teste monta com dados)
 // ============================================================
 export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos, clientes, quem, hoje, acoes,
-  abaInicial = 'carteira' }) {
+  repassados, periodoRep = '90', onPeriodoRep, onAba, fornecedores = SEM_LISTA, abaInicial = 'carteira' }) {
   const [empresa, setEmpresa] = useState('')            // '' = as duas
   const [aba, setAba] = useState(abaInicial)
   const [marcados, setMarcados] = useState([])          // ids
@@ -77,13 +93,15 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
   const [evento, setEvento] = useState(null)            // { para, cheques }
   const [abertoId, setAbertoId] = useState('')
   const [msg, setMsg] = useState('')
+  const [reciboPronto, setReciboPronto] = useState(null)  // repasse recém-registrado
+  const [imprimir, setImprimir] = useState(null)          // repasse no papel agora
   const avisa = (m) => { setMsg(m); setTimeout(() => setMsg((x) => (x === m ? '' : x)), 5000) }
 
   const todos = useMemo(() => {
     const porId = new Map()
-    for (const c of [...(vivos?.lista || []), ...(arquivo?.lista || [])]) porId.set(c.id, c)
+    for (const c of [...(vivos?.lista || []), ...(arquivo?.lista || []), ...(repassados?.lista || [])]) porId.set(c.id, c)
     return [...porId.values()]
-  }, [vivos, arquivo])
+  }, [vivos, arquivo, repassados])
   const daEmpresa = useMemo(
     () => (empresa ? todos.filter((c) => c.empresa === empresa) : todos), [todos, empresa])
 
@@ -101,24 +119,41 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
     { id: 'carteira', label: `Carteira (${carteira.length})`, badge: jaPodem },
     { id: 'depositados', label: `Depositados (${depositados.length})`, badge: atrasados },
     { id: 'devolvidos', label: `Devolvidos (${devolvidos.length})`, badge: devolvidos.length },
+    { id: 'repassados', label: 'Repassados' },
     { id: 'localizar', label: '🔍 Localizar' },
   ]
 
   const porId = useMemo(() => new Map(todos.map((c) => [c.id, c])), [todos])
   const marcadosCheques = marcados.map((id) => porId.get(id)).filter(Boolean)
   const aberto = abertoId ? porId.get(abertoId) : null
-  const trocaAba = (id) => { setAba(id); setMarcados([]) }
+  const trocaAba = (id) => { setAba(id); setMarcados([]); onAba?.(id) }
+  // o recibo vai para o papel DEPOIS de desenhado (print-only), senão a folha sai vazia
+  useEffect(() => {
+    if (!imprimir) return undefined
+    const depois = () => setImprimir(null)
+    window.addEventListener('afterprint', depois)
+    const t = setTimeout(() => window.print(), 50)
+    return () => { clearTimeout(t); window.removeEventListener('afterprint', depois) }
+  }, [imprimir])
   const marca = (id) => setMarcados((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]))
 
   async function confirmarEvento(ev) {
     await acoes.aplicar(evento.cheques.map((c) => c.id), ev)
-    avisa(`${evento.cheques.length} folha(s) → ${nomeSituacao(evento.para)}.`)
+    if (evento.para === 'repassado') {
+      // o recibo nasce das folhas que acabaram de ir — a tela ainda não recebeu a
+      // atualização do servidor, então é montado com o que a pessoa confirmou
+      setReciboPronto(reciboDoRepasse(evento.cheques, ev))
+    } else {
+      avisa(`${evento.cheques.length} folha(s) → ${nomeSituacao(evento.para)}.`)
+    }
     setEvento(null); setMarcados([])
   }
 
   const lista = { carteira, depositados, devolvidos }[aba]
   return (
     <>
+    {/* com um recibo indo para o papel, a tela inteira fica fora da impressão */}
+    <div className={imprimir ? 'screen-only' : ''}>
       <div className="page-title">
         <h2>Cheques</h2>
         <small>origem, situação e destino de cada folha · {empresa ? nomeEmpresa(empresa) : 'as duas empresas'}</small>
@@ -158,7 +193,8 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
 
       <SubTabs abas={abas} ativa={aba} onTrocar={trocaAba} />
 
-      {vivos?.pronto && aba !== 'localizar' && (
+      {/* só as três listas simples; Repassados e Localizar têm bloco próprio */}
+      {vivos?.pronto && lista && (
         <>
           <Explica aba={aba} />
           <BarraSelecao cheques={marcadosCheques} onAcao={(para) => setEvento({ para, cheques: marcadosCheques })}
@@ -169,6 +205,13 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
               devolvidos: 'Nenhum cheque devolvido para resolver.' }[aba]} />
         </>
       )}
+      {aba === 'repassados' && (
+        <AbaRepassados estado={repassados} periodo={periodoRep} onPeriodo={onPeriodoRep} empresa={empresa}
+          fornecedores={fornecedores} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
+          clientes={clientes} hoje={hoje} onRecibo={setImprimir}
+          barra={<BarraSelecao cheques={marcadosCheques} onAcao={(para) => setEvento({ para, cheques: marcadosCheques })}
+            onLimpar={() => setMarcados([])} />} />
+      )}
       {aba === 'localizar' && (
         <AbaLocalizar todos={daEmpresa} arquivoLigado={arquivoLigado} onArquivo={onArquivo}
           arquivoPronto={!!arquivo?.pronto} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
@@ -178,22 +221,28 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
       )}
 
       {lancando && (
-        <ModalLancar pedidos={pedidos} clientes={clientes} existentes={todos} quem={quem} hoje={hoje}
+        <ModalLancar pedidos={pedidos} clientes={clientes} existentes={todos} quem={quem} hoje={hoje} fornecedores={fornecedores}
           empresaInicial={empresa || 'sacolas'} acoes={acoes}
           onFeito={(cs) => {
             setLancando(false)
             // cheque antigo que já entra compensado/resgatado vai para o ARQUIVO,
             // que esta tela não carrega: sem dizer onde está, parece que não gravou
-            const noArquivo = cs.filter((c) => !ehViva(c.situacao)).length
-            avisa(`${cs.length} folha(s) lançada(s).` + (noArquivo
-              ? ` ${noArquivo} já encerrada(s) — está(ão) em 🔍 Localizar, com "incluir os encerrados".` : ''))
+            const rep = cs.filter((c) => c.situacao === 'repassado').length
+            const noArquivo = cs.filter((c) => !ehViva(c.situacao) && c.situacao !== 'repassado').length
+            avisa(`${cs.length} folha(s) lançada(s).`
+              + (rep ? ` ${rep} já com fornecedor — está(ão) na aba Repassados.` : '')
+              + (noArquivo ? ` ${noArquivo} já encerrada(s) — está(ão) em 🔍 Localizar, com "incluir os encerrados".` : ''))
             setAba('carteira')
           }}
           onFechar={() => setLancando(false)} />
       )}
       {evento && (
-        <ModalEvento para={evento.para} cheques={evento.cheques} hoje={hoje}
+        <ModalEvento para={evento.para} cheques={evento.cheques} hoje={hoje} fornecedores={fornecedores}
           onConfirmar={confirmarEvento} onFechar={() => setEvento(null)} />
+      )}
+      {reciboPronto && (
+        <ModalReciboPronto repasse={reciboPronto} onImprimir={() => { setImprimir(reciboPronto); setReciboPronto(null) }}
+          onFechar={() => setReciboPronto(null)} />
       )}
       {aberto && !evento && (
         <FichaCheque cheque={aberto} todos={todos} clientes={clientes} hoje={hoje}
@@ -201,6 +250,8 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
           onCorrigir={async (mud, obs) => { await acoes.corrigir(aberto.id, mud, obs); avisa('Cheque corrigido.') }}
           onFechar={() => setAbertoId('')} />
       )}
+    </div>
+    {imprimir && <ReciboRepasse repasse={imprimir} fornecedores={fornecedores} clientes={clientes} />}
     </>
   )
 }
@@ -232,7 +283,7 @@ export function BarraSelecao({ cheques, onAcao, onLimpar }) {
   if (!cheques.length) {
     return <div className="chq-barra chq-barra-vazia no-print">Marque as folhas para depositar, compensar ou dar outro destino.</div>
   }
-  const acoes = acoesComuns(cheques).filter(ACAO_DESTA_FASE)
+  const acoes = acoesComuns(cheques)
   const de = cheques[0].situacao
   return (
     <div className="chq-barra no-print">
@@ -296,6 +347,8 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje }) {
           <span className={'chip' + (compensacaoAtrasada(c, hoje) ? ' chq-atencao' : '')}>
             {nomeConta(c.contaDeposito) || c.contaDeposito} · há {dep} dia(s)
           </span>)}
+        {c.situacao === 'repassado' && c.destino && (
+          <span className="chip">com {c.destino.fornecedorNome} desde {fmtDia(c.destino.data)}{entreEmpresas(c) ? ' · ⇄' : ''}</span>)}
         {c.situacao === 'devolvido' && ult && (
           <span className="chip chq-atencao">
             {forn ? `voltou de ${forn.fornecedorNome}` : 'voltou do banco'} · {nomeAlinea(ult.alinea)}
@@ -360,7 +413,7 @@ export function AbaLocalizar({ todos, arquivoLigado, onArquivo, arquivoPronto, m
 // ============================================================
 // MUDAR A SITUAÇÃO (uma ou várias folhas)
 // ============================================================
-export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
+export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onConfirmar, onFechar }) {
   const de = cheques[0]?.situacao
   // a data é a de HOJE porque é hoje que a pessoa está registrando; ela troca
   // quando lança o que o extrato mostrou outro dia (mesma regra do Receber)
@@ -370,15 +423,35 @@ export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
   const [conta, setConta] = useState(para === 'depositado' && de === 'devolvido' ? (cheques[0].contaDeposito || '') : '')
   const [alineaId, setAlinea] = useState('')
   const [obs, setObs] = useState('')
+  // repasse: a empresa pagadora VEM a mesma do cheque (o desenho: trocar é a
+  // exceção que marca "entre empresas"); com folhas das duas empresas, a pessoa escolhe
+  const [fornId, setFornId] = useState('')
+  const [referencia, setReferencia] = useState('')
+  const [pagadora, setPagadora] = useState(empresas.length === 1 ? empresas[0] : '')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
+  const ativos = fornecedoresAtivos(fornecedores)
+  const forn = achaFornecedor(fornecedores, fornId)
 
   // ensaio no navegador: os mesmos problemas e avisos que a transação vai achar
-  const ev = { para, data, conta, alinea: alineaId, obs, porUid: 'ensaio' }
+  const rep = para === 'repassado'
+    ? { fornecedorId: fornId, fornecedorNome: forn?.nome || '', empresaPagadora: pagadora, referencia } : {}
+  const ev = { para, data, conta, alinea: alineaId, obs, porUid: 'ensaio', ...rep }
   const ensaio = cheques.map((c) => ({ c, r: aplicaEvento(c, ev, { hoje }) }))
   const problemas = [...new Set(ensaio.flatMap(({ r }) => r.problemas.map((p) => p.msg)))]
-  const avisos = ensaio.flatMap(({ c, r }) => (r.ok ? avisosDoEvento(c, ev, hoje)
-    .map((a) => (cheques.length > 1 ? `nº ${c.numero}: ${a}` : a)) : []))
+  // o mesmo aviso em várias folhas vira UMA linha ("3 folhas: …"): com 10
+  // folhas entre empresas eram 10 avisos idênticos na tela e na confirmação
+  const porAviso = new Map()
+  for (const { c, r } of ensaio) {
+    if (!r.ok) continue
+    for (const a of avisosDoEvento(c, ev, hoje)) {
+      if (!porAviso.has(a)) porAviso.set(a, [])
+      porAviso.get(a).push(c.numero)
+    }
+  }
+  const avisos = [...porAviso].map(([a, nums]) => (cheques.length === 1 ? a
+    : nums.length === cheques.length ? `${nums.length === 1 ? 'nº ' + nums[0] : `as ${nums.length} folhas`}: ${a}`
+      : `nº ${nums.join(', ')}: ${a}`))
 
   async function salvar() {
     if (problemas.length) { setErro(problemas.join(' · ')); return }
@@ -386,7 +459,7 @@ export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
     setSalvando(true); setErro('')
     try {
       await onConfirmar({ para, data, conta: para === 'depositado' ? conta : undefined,
-        alinea: para === 'devolvido' ? alineaId : undefined, obs })
+        alinea: para === 'devolvido' ? alineaId : undefined, obs, ...rep })
     } catch (e) {
       setErro(e?.message || String(e))
     } finally { setSalvando(false) }
@@ -408,7 +481,7 @@ export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
             <div className="field">
               <label>{{ depositado: 'Depositado em', compensado: 'Compensou em (data do extrato)',
                 devolvido: 'Devolvido em', carteira: 'Voltou para a gaveta em', resgatado: 'Resgatado em',
-                cancelado: 'Data' }[para]}</label>
+                repassado: 'Entregue ao fornecedor em', cancelado: 'Data' }[para]}</label>
               <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
             </div>
             {para === 'depositado' && (
@@ -430,6 +503,29 @@ export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
               </div>
             )}
           </div>
+          {para === 'repassado' && (<>
+            <div className="fin-cond">
+              <div className="field">
+                <label>Fornecedor</label>
+                <select value={fornId} onChange={(e) => setFornId(e.target.value)}>
+                  <option value="">escolha…</option>
+                  {ativos.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+                {!ativos.length && <small className="chq-dica chq-dica-aviso">Nenhum fornecedor ativo: cadastre em Cadastros › Fornecedores.</small>}
+              </div>
+              <div className="field">
+                <label>Empresa que está pagando</label>
+                <select value={pagadora} onChange={(e) => setPagadora(e.target.value)}>
+                  <option value="">escolha…</option>
+                  {EMPRESAS.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="field">
+              <label>Para pagar o quê (referência)</label>
+              <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="ex.: NF 1234, resina de outubro" />
+            </div>
+          </>)}
           {para === 'devolvido' && de === 'repassado' && (
             <div className="fin-explica">O fornecedor trouxe a folha de volta: ela entra na fila de devolvidos com o nome dele.</div>
           )}
@@ -459,8 +555,8 @@ export function ModalEvento({ para, cheques, hoje, onConfirmar, onFechar }) {
 export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrigir, onFechar }) {
   const [corrigindo, setCorrigindo] = useState(false)
   const irmas = irmasDoLote(c, todos)
-  const acoes = Object.keys({ depositado: 1, compensado: 1, devolvido: 1, carteira: 1, resgatado: 1, cancelado: 1 })
-    .filter((para) => ACAO_DESTA_FASE(para) && podeIr(c, para).ok)
+  const acoes = ['depositado', 'compensado', 'repassado', 'devolvido', 'carteira', 'resgatado', 'cancelado']
+    .filter((para) => podeIr(c, para).ok)
   const reap = c.situacao === 'devolvido' ? podeReapresentar(c) : null
   const forn = devolvidoPeloFornecedor(c)
   return (
@@ -537,7 +633,7 @@ function EventoHist({ e }) {
       <b>{titulo}</b> <span>· {fmtDia(e.data)}</span>
       {e.conta && <span> · {nomeConta(e.conta) || e.conta}</span>}
       {e.alinea && <span> · {nomeAlinea(e.alinea)}</span>}
-      {e.fornecedorNome && <span> · {e.fornecedorNome}</span>}
+      {e.fornecedorNome && <span> · {e.fornecedorNome}{e.referencia ? ` · ${e.referencia}` : ''}</span>}
       {e.tipo === 'corrigido' && (
         <div className="chq-ev-mud">{Object.keys(e.depois || {}).map((k) => (
           <div key={k}>{k}: {fmtCampo(e.antes?.[k])} → {fmtCampo(e.depois[k])}</div>
@@ -605,9 +701,11 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
 // ============================================================
 // LANÇAR — em lote, como no Cadastro de Cheque da Zeus
 // ============================================================
-export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresaInicial, acoes, onFeito, onFechar }) {
+export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresaInicial, acoes, fornecedores = SEM_LISTA,
+  onFeito, onFechar }) {
   const [cab, setCab] = useState({ empresa: empresaInicial, idVenda: '', cliente: '', recebidoEm: hoje, tardio: false })
-  const [ini, setIni] = useState({ para: 'carteira', conta: '', dataDeposito: '', data: '', alinea: '' })
+  const [ini, setIni] = useState({ para: 'carteira', conta: '', dataDeposito: '', data: '', alinea: '',
+    fornecedorId: '', empresaPagadora: '', referencia: '' })
   const [base, setBase] = useState({ banco: '', bancoOutro: '', agencia: '', conta: '', emitente: '', doc: '', terceiro: false })
   const [rep, setRep] = useState({ quantas: '1', modo: 'folha', valor: '', primeiro: '', intervalo: 'dias', dias: '30', numero: '' })
   const [folhas, setFolhas] = useState([])
@@ -637,7 +735,13 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
 
   // as folhas como vão para o banco (valor digitado em formato brasileiro)
   const prontas = folhas.map((f) => ({ ...f, valor: typeof f.valor === 'number' ? f.valor : numBR(f.valor) }))
-  const cabFinal = { ...cab, cliente: cab.cliente.trim() || pedido?.cliente || '', inicial: cab.tardio ? ini : null }
+  // cheque antigo já repassado: o nome do fornecedor vai junto (é o que fica no cheque)
+  const iniFinal = ini.para === 'repassado'
+    ? { para: 'repassado', data: ini.data, fornecedorId: ini.fornecedorId,
+      fornecedorNome: achaFornecedor(fornecedores, ini.fornecedorId)?.nome || '',
+      empresaPagadora: ini.empresaPagadora || cab.empresa, referencia: ini.referencia }
+    : ini
+  const cabFinal = { ...cab, cliente: cab.cliente.trim() || pedido?.cliente || '', inicial: cab.tardio ? iniFinal : null }
   const previa = folhas.length ? chequesDoLote(cabFinal, prontas, { loteId: 'previa', ...quem, hoje }) : null
   const repetidas = folhas.length ? repetidasNoLote(prontas, existentes) : {}
   const soma = somaFolhas(prontas.filter((f) => Number.isFinite(f.valor)))
@@ -707,9 +811,22 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               <div className="fin-cond">
                 <div className="field"><label>Situação hoje</label>
                   <select value={ini.para} onChange={(e) => setIni({ ...ini, para: e.target.value })}>
-                    {['carteira', 'depositado', 'compensado', 'devolvido'].map((s) => <option key={s} value={s}>{nomeSituacao(s)}</option>)}
+                    {['carteira', 'depositado', 'compensado', 'devolvido', 'repassado'].map((s) => <option key={s} value={s}>{nomeSituacao(s)}</option>)}
                   </select></div>
-                {ini.para !== 'carteira' && (<>
+                {ini.para === 'repassado' && (<>
+                  <div className="field"><label>Fornecedor</label>
+                    <select value={ini.fornecedorId} onChange={(e) => setIni({ ...ini, fornecedorId: e.target.value })}>
+                      <option value="">escolha…</option>
+                      {fornecedoresAtivos(fornecedores).map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select></div>
+                  <div className="field"><label>Entregue em</label>
+                    <input type="date" value={ini.data} onChange={(e) => setIni({ ...ini, data: e.target.value })} /></div>
+                  <div className="field"><label>Pago pela</label>
+                    <select value={ini.empresaPagadora || cab.empresa} onChange={(e) => setIni({ ...ini, empresaPagadora: e.target.value })}>
+                      {EMPRESAS.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
+                    </select></div>
+                </>)}
+                {ini.para !== 'carteira' && ini.para !== 'repassado' && (<>
                   <div className="field"><label>Conta do depósito</label>
                     <select value={ini.conta} onChange={(e) => setIni({ ...ini, conta: e.target.value })}>
                       <option value="">escolha…</option>
@@ -810,5 +927,166 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
         </div>
       </div>
     </div>
+  )
+}
+
+// ============================================================
+// REPASSE — recibo e aba Repassados (C4)
+// ============================================================
+// O repasse recém-confirmado no formato de `repassesDe`, montado com o que a
+// pessoa confirmou (a atualização do servidor ainda não chegou à tela).
+export function reciboDoRepasse(cheques, ev) {
+  const folhas = cheques.map((c) => ({ cheque: c, voltou: false,
+    entreEmpresas: !!(ev.empresaPagadora && c.empresa && ev.empresaPagadora !== c.empresa) }))
+  return {
+    data: ev.data, fornecedorId: ev.fornecedorId || '', fornecedorNome: ev.fornecedorNome || '',
+    referencia: ev.referencia || '', empresaPagadora: ev.empresaPagadora || '', folhas,
+    qtd: folhas.length, valor: somaFolhas(cheques), voltaram: 0,
+    entreEmpresas: folhas.filter((f) => f.entreEmpresas).length,
+  }
+}
+
+export function ModalReciboPronto({ repasse: r, onImprimir, onFechar }) {
+  return (
+    <div className="assist-overlay" onClick={onFechar}>
+      <div className="fin-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="fin-modal-head">
+          <b>Repasse registrado</b>
+          <button className="assist-x" onClick={onFechar}>✕</button>
+        </div>
+        <div className="fin-modal-body">
+          <p><b>{r.qtd} folha(s) · {fmtMoeda(r.valor)}</b> para <b>{r.fornecedorNome}</b> em {fmtDia(r.data)}
+            {r.referencia ? <> · {r.referencia}</> : null}.</p>
+          {r.entreEmpresas > 0 && (
+            <div className="chq-avisos">⇄ {r.entreEmpresas} folha(s) recebida(s) por uma empresa pagando conta da outra — marcado como entre empresas.</div>
+          )}
+          <div className="fin-explica" style={{ marginTop: 12 }}>
+            Imprima o recibo e peça a assinatura de quem recebeu pelo fornecedor. É a prova de para onde
+            estas folhas foram. Dá para reimprimir depois na aba <b>Repassados</b>.
+          </div>
+        </div>
+        <div className="fin-modal-pe">
+          <button className="btn" onClick={onFechar}>Agora não</button>
+          <button className="btn primary" onClick={onImprimir}>🖨 Imprimir recibo</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// a folha para assinar. Impressora P&B: nada de cor carregando informação.
+export function ReciboRepasse({ repasse: r, fornecedores, clientes }) {
+  const f = achaFornecedor(fornecedores, r.fornecedorId)
+  const empresa = nomeEmpresa(r.empresaPagadora) || 'JC'
+  return (
+    <div className="print-only chq-recibo">
+      <div className="pr-head">
+        <h1>{empresa} · Recibo de entrega de cheques</h1>
+        <div className="meta">entregue em {fmtDia(r.data)}<br />{r.qtd} folha(s) · {fmtMoeda(r.valor)}</div>
+      </div>
+      <div className="chq-recibo-forn">
+        <b>Fornecedor:</b> {f?.nome || r.fornecedorNome}
+        {f?.documento && <> · CNPJ/CPF {f.documento}</>}
+        {r.referencia && <><br /><b>Referente a:</b> {r.referencia}</>}
+      </div>
+      <table className="chq-recibo-tab">
+        <thead><tr><th>Nº</th><th>Banco / ag / conta</th><th>Emitente</th><th>Recebido de</th><th>Bom para</th><th className="q">Valor</th></tr></thead>
+        <tbody>
+          {r.folhas.map(({ cheque: c, entreEmpresas: ee }) => (
+            <tr key={c.id || c.numero}>
+              <td>{c.numero}</td>
+              <td>{c.banco?.codigo} {c.banco?.nome || nomeBanco(c.banco?.codigo)} · {c.agencia} · {c.conta}</td>
+              <td>{c.emitente?.nome}</td>
+              <td>{nomeCliente(c.cliente, clientes)}{ee ? ` (${nomeEmpresa(c.empresa)})` : ''}</td>
+              <td>{fmtDia(c.bomPara)}</td>
+              <td className="q">{fmtMoeda(c.valor)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot><tr><td colSpan={5}>Total</td><td className="q">{fmtMoeda(r.valor)}</td></tr></tfoot>
+      </table>
+      <p className="chq-recibo-txt">
+        Recebi de <b>{empresa}</b> os {r.qtd} cheque(s) acima, no valor total de <b>{fmtMoeda(r.valor)}</b>
+        {r.referencia ? <>, referente a {r.referencia}</> : null}.
+      </p>
+      <div className="chq-recibo-ass">
+        <div><span />Recebido por (nome legível)</div>
+        <div><span />Assinatura</div>
+        <div><span />Data</div>
+      </div>
+      <div className="chq-recibo-ass">
+        <div><span />Entregue por ({empresa})</div>
+      </div>
+    </div>
+  )
+}
+
+export function AbaRepassados({ estado, periodo, onPeriodo, empresa, fornecedores, marcados, onMarcar, onAbrir,
+  clientes, hoje, onRecibo, barra }) {
+  const [soEntre, setSoEntre] = useState(false)
+  const de = cortePeriodo(periodo, hoje)
+  const repasses = useMemo(() => {
+    const todos = repassesDe(estado?.lista || []).filter((r) => !de || r.data >= de)
+    // a empresa do topo vale para quem PAGOU e para quem RECEBEU a folha
+    return todos.filter((r) => (!empresa || r.empresaPagadora === empresa
+      || r.folhas.some((f) => f.cheque.empresa === empresa))
+      && (!soEntre || r.entreEmpresas > 0))
+  }, [estado, de, empresa, soEntre])
+  const porForn = useMemo(() => repassesPorFornecedor(repasses), [repasses])
+  const entre = useMemo(() => resumoEntreEmpresas(repasses), [repasses])
+
+  return (
+    <>
+      <div className="chq-explica">Para onde os cheques foram: cada entrega a um fornecedor, com o recibo para
+        reimprimir. Folha que voltou continua no recibo daquele dia — o papel assinado diz que ela foi entregue.</div>
+      <div className="chq-filtros no-print">
+        <select value={periodo} onChange={(e) => onPeriodo?.(e.target.value)}>
+          {PERIODOS_REPASSE.map((p) => <option key={p.id} value={p.id}>{p.nm}</option>)}
+        </select>
+        <label className="chq-check"><input type="checkbox" checked={soEntre}
+          onChange={(e) => setSoEntre(e.target.checked)} /> só entre empresas</label>
+      </div>
+      {estado?.erro && <div className="login-err">Não foi possível ler os repassados ({estado.erro}).</div>}
+      {!estado?.pronto && !estado?.erro && <div className="empty">Carregando repassados…</div>}
+
+      {estado?.pronto && entre.length > 0 && (
+        <div className="chq-entre">
+          <span>⇄ Entre empresas no período</span>
+          {entre.map((d) => (
+            <div key={`${d.de}>${d.para}`}>
+              Cheques da <b>{nomeEmpresa(d.de)}</b> pagando conta da <b>{nomeEmpresa(d.para)}</b>:
+              {' '}{d.qtd} folha(s) · <b>{fmtMoeda(d.valor)}</b>
+            </div>
+          ))}
+          <small>É dinheiro de uma empresa quitando dívida da outra: a contabilidade precisa deste total todo mês.</small>
+        </div>
+      )}
+
+      {estado?.pronto && barra}
+      {estado?.pronto && !porForn.length && (
+        <div className="fin-vazio"><p>Nenhum repasse {soEntre ? 'entre empresas ' : ''}neste período.</p></div>
+      )}
+      {estado?.pronto && porForn.map((g) => (
+        <div key={g.fornecedorId || g.fornecedorNome} className="chq-forn">
+          <div className="chq-forn-head">
+            <b>{achaFornecedor(fornecedores, g.fornecedorId)?.nome || g.fornecedorNome}</b>
+            <span>{g.qtd} folha(s) · {fmtMoeda(g.valor)}</span>
+            {g.voltaram > 0 && <span className="chip chq-atencao">{g.voltaram} voltou(aram) · {fmtMoeda(g.valorVoltou)}</span>}
+          </div>
+          {g.repasses.map((r) => (
+            <div key={r.chave} className="chq-rep">
+              <div className="chq-rep-head">
+                <span>{fmtDia(r.data)}{r.referencia ? ` · ${r.referencia}` : ''} · pago pela {nomeEmpresa(r.empresaPagadora)}</span>
+                <span>{r.qtd} folha(s) · <b>{fmtMoeda(r.valor)}</b></span>
+                {r.entreEmpresas > 0 && <span className="chip">⇄ entre empresas</span>}
+                <button className="mini-btn no-print" onClick={() => onRecibo(r)}>🖨 Recibo</button>
+              </div>
+              <ListaCheques cheques={r.folhas.map((f) => f.cheque)} marcados={marcados} onMarcar={onMarcar}
+                onAbrir={onAbrir} clientes={clientes} hoje={hoje} vazio="" corte={500} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
   )
 }

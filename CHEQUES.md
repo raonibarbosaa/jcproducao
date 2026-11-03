@@ -354,6 +354,33 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
     perfil. O contador fica nas sub-abas.
 - **C4 — Repasse.** Ação de repassar, aba Repassados, recibo impresso, "entre
   empresas" + relatório.
+  ✅ **FEITA (03/11/2026).** Sem rule nova (o repasse é mais um evento no
+  histórico). Ensaiada no navegador: repassar 2 folhas pagando pela outra
+  empresa, recibo impresso, folha que volta do fornecedor, reimpressão,
+  cheque antigo já repassado, celular. O que o código decidiu:
+  - **O recibo é uma ENTREGA:** mesmo fornecedor + dia + referência +
+    empresa pagadora (`chaveRepasse`). Sai do **histórico** (`repassesDe`),
+    não do `destino`: a folha que voltou — ou foi repassada de novo a outro —
+    continua no recibo daquele dia, porque o papel assinado diz que ela foi.
+  - **`repassadoEm`** (data do último repasse, nunca apagada) é gravado no
+    cheque e é por ele que a aba Repassados consulta o servidor (um campo, sem
+    índice composto). O `destino` se apaga quando a folha volta e é
+    reapresentada; consultar por ele faria o repasse sumir da lista.
+  - **A aba só lê com ela aberta, e só o período** escolhido (este mês · 90
+    dias · 12 meses · todos — regra 1.3).
+  - **Empresa pagadora vem a mesma do cheque**; trocar gera o aviso e marca
+    "⇄ entre empresas". Folhas das duas empresas na mesma seleção: a pessoa
+    escolhe. O bloco "Entre empresas no período" soma por DIREÇÃO
+    (`resumoEntreEmpresas`) — é o número que a contabilidade precisa.
+  - **Recibo:** fornecedor + CNPJ do cadastro, referência, folhas (nº, banco/
+    ag/conta, emitente, de quem a empresa recebeu, bom para, valor), total,
+    texto "Recebi de…" e linhas de assinatura. Sai logo depois do repasse
+    ("Repasse registrado → 🖨 Imprimir recibo") e reimprime na aba. Na
+    impressão a tela inteira fica fora (`screen-only`).
+  - Fornecedor **inativo** não aparece na escolha. O mesmo aviso em várias
+    folhas vira uma linha ("as 3 folhas: …").
+  - O teste de tela pegou uma **tela preta** antes de ir ao ar: com a aba
+    Repassados aberta, o bloco das listas simples era desenhado sem lista.
 - **C5 — Fechamento.** Conferência da gaveta impressa; no Localizar (só para
   quem `veFinanceiro`) os cheques daquele pedido.
 

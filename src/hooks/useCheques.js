@@ -101,3 +101,22 @@ export async function corrigeNoServidor(id, mudancas, quem) {
     tx.update(ref, r.patch)
   })
 }
+
+// Os cheques REPASSADOS de um período — aba Repassados (C4). Consulta por
+// `repassadoEm` (data do último repasse, nunca apagada): um campo só, sem
+// índice composto. Vem junto a folha que voltou do fornecedor depois — o recibo
+// daquele dia a incluiu, e a tela precisa mostrá-la.
+// `corte` vazio = todos os repassados que já existiram (o "tudo" da tela).
+export function useChequesRepassados(ligado = false, corte = '') {
+  const [estado, setEstado] = useState(VAZIO)
+  useEffect(() => {
+    if (!ligado) { setEstado(VAZIO); return undefined }
+    return onSnapshot(query(col(), where('repassadoEm', '>=', corte || '0000-00-00')),
+      (snap) => setEstado({ lista: snap.docs.map(doDoc), pronto: !(snap.metadata.fromCache && snap.empty), erro: '' }),
+      (e) => {
+        console.error('cheques repassados:', e)
+        setEstado((s) => ({ ...s, pronto: false, erro: e?.code || e?.message || 'erro' }))
+      })
+  }, [ligado, corte])
+  return estado
+}

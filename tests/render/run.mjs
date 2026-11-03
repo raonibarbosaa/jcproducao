@@ -195,10 +195,18 @@ const ESPERA = {
   chDepositar: ['Depositar · 1 folha(s)', 'Depositado em', 'Conta', 'escolha a conta do depósito', 'Bradesco'],
   chDevolver: ['Devolvido · 1 folha(s)', 'Motivo (alínea)', '11 · Sem fundos — 1ª apresentação', '21 · Sustação'],
   chFichaDev: ['Cheque nº 047472', 'Devolvido', 'Não dá para reapresentar', 'As outras folhas deste parcelamento', 'nº 047470', 'nº 047471',
-    'Histórico', 'Lançado', 'Depositado', 'Bradesco', 'registrado por Anny', 'Voltou para a gaveta', 'Resgatado', '✎ Corrigir dados'],
+    'Histórico', 'Lançado', 'Depositado', 'Bradesco', 'Repassar', 'registrado por Anny', 'Voltou para a gaveta', 'Resgatado', '✎ Corrigir dados'],
   chBarraMista: ['2 marcado(s)', 'R$ 734,00', 'Cancelar cheque'],
   chNumBR: ['[1468,367.5,1468.5,true]'],
   chDesigner: ['Esta tela é só do financeiro'],
+  // C4: repasse — por fornecedor, por entrega, com o recibo e o entre empresas
+  chRepassados: ['Repassados', 'RESINAS NE', '24/10/2026 · NF 1234 · pago pela JC Plástico', '⇄ entre empresas', '🖨 Recibo',
+    'Entre empresas no período', 'Cheques da <b>JC Sacolas</b> pagando conta da <b>JC Plástico</b>', 'nº 047474', 'com RESINAS NE desde 24/10/2026'],
+  chRepassar: ['Repassar · 1 folha(s)', 'Entregue ao fornecedor em', 'Fornecedor', 'RESINAS NE', 'Empresa que está pagando',
+    'Para pagar o quê (referência)', 'escolha o fornecedor'],
+  chReciboPronto: ['Repasse registrado', 'RESINAS NE', 'R$ 367,00', 'entre empresas', '🖨 Imprimir recibo'],
+  chRecibo: ['JC Plástico · Recibo de entrega de cheques', 'RESINAS NE', '11.222.333/0001-81', 'Referente a:', 'NF 1234',
+    '047473', 'JOAO TERCEIRO', 'INGRID (JC Sacolas)', 'Recebido por (nome legível)', 'Assinatura', 'no valor total de <b>R$ 367,00</b>'],
   chDono: ['Esta tela é só do financeiro'],
   chFinanceiro: ['Carregando cheques'],
 }
@@ -238,12 +246,13 @@ const PROIBE = {
   fnLista: ['Excluir', 'Carregando'],             // fornecedor não se apaga; lista pronta não "carrega"
   fnCarregando: ['Nenhum fornecedor cadastrado'], // lista que não chegou NÃO é lista vazia (regra 1.7)
   fnDesigner: ['Resinas', '+ Novo fornecedor'],   // designer não vê o cadastro
-  chCarteira: ['Repassar', 'Carregando cheques'],   // repasse é a C4; lista pronta não "carrega"
-  chFichaDev: ['>Reapresentar<', 'Repassar'],       // alínea 12: sem reapresentar; repasse ainda não
+  chCarteira: ['Carregando cheques'],               // lista pronta não "carrega"
+  chFichaDev: ['>Reapresentar<'],                  // alínea 12: sem reapresentar (repassar pode, com aviso)
   chBarraMista: ['>Depositar<', '>Compensado<'],    // gaveta + depositado: só o que vale para os dois
   chCarregando: ['Nenhum cheque na gaveta'],        // lista que não chegou não é lista vazia
   chDesigner: ['Lançar cheques'],
-  chDono: ['Lançar cheques'],                      // 03/11/2026: dinheiro só do financeiro
+  chDono: ['Lançar cheques'],
+  chRepassar: ['TINTAS VELHAS'],                   // fornecedor inativo não aparece no repasse                      // 03/11/2026: dinheiro só do financeiro
   fnDono: ['Resinas', '+ Novo fornecedor'],
   chDevolvidos: ['ª vez'],
   chDepositar: ['Cielo', 'Caixa interno'],          // cheque não se deposita na maquininha nem na gaveta                         // voltou uma vez só: sem contador
