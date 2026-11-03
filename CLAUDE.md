@@ -89,7 +89,8 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > lote, carteira/depositados/devolvidos/localizar, ficha com histórico,
 > depositar/compensar/devolver/reapresentar/gaveta/resgatar/cancelar/corrigir,
 > tudo por transação; abre com a carteira inteira (decisão do Raoni, custo
-> registrado). ✅ Rules `match /cheques` publicadas em 26/10/2026 (10:19). Próxima =
+> registrado). ✅ Rules `match /cheques` publicadas em 26/10/2026 (10:19); site
+> no ar em 03/11/2026 (`099cef6`). Próxima =
 > C4 (repasse a fornecedor + recibo).
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de

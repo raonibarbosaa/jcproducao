@@ -6,7 +6,7 @@
 > **C1 FEITA em 20/10/2026** (núcleo `src/lib/cheques.js` +
 > `tests/cheques.test.mjs`, 122 asserções). **C2 FEITA** (Fornecedores, no ar em
 > 26/10/2026). **C3 FEITA em 26/10/2026** (aba Cheques; rules publicadas,
-> site a publicar). Próxima: C4 (repasse).
+> site no ar em 03/11/2026, commit `099cef6`). Próxima: C4 (repasse).
 
 ## O que o controle responde
 1. **De onde veio** — qual cliente entregou, em qual pedido, e se o cheque é
