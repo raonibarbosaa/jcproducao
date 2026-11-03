@@ -1630,9 +1630,5 @@ função que devolve MAPA**.
   da previsão continuando dentro de `plano.pedidos`, invisível.
 
 ## Método de trabalho
-**Desempenho e custo:** antes de criar tela, listener, coleção ou migração, seguir a
-skill `.claude/skills/desempenho-react-firebase/` (regras + casos reais deste projeto
-+ fontes do GitHub). A primeira regra é fazer a conta de leituras do Firestore.
-
 Fechar o desenho antes de codar. Implementar **uma feature por vez** e testar/ajustar
 entre uma e outra. Token do GitHub compartilhado na sessão é revogado depois.
