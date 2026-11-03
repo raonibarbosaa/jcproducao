@@ -90,7 +90,7 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > depositar/compensar/devolver/reapresentar/gaveta/resgatar/cancelar/corrigir,
 > tudo por transação; abre com a carteira inteira (decisão do Raoni, custo
 > registrado). ✅ Rules `match /cheques` publicadas em 26/10/2026 (10:19); site
-> no ar em 03/11/2026 (`099cef6`). **C4 FEITA em 03/11/2026** (repasse a
+> no ar em 03/11/2026 (`099cef6`). **C4 FEITA e no ar em 03/11/2026** (`3d1a330`; repasse a
 > fornecedor com recibo impresso, aba Repassados por fornecedor/entrega,
 > resumo entre empresas; `repassadoEm` gravado para a consulta; sem rule nova).
 > Próxima = C5 (conferência da gaveta impressa + cheques do pedido no Localizar).

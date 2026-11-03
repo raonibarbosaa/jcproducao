@@ -354,7 +354,7 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
     perfil. O contador fica nas sub-abas.
 - **C4 — Repasse.** Ação de repassar, aba Repassados, recibo impresso, "entre
   empresas" + relatório.
-  ✅ **FEITA (03/11/2026).** Sem rule nova (o repasse é mais um evento no
+  ✅ **FEITA e no ar (03/11/2026, `3d1a330`).** Sem rule nova (o repasse é mais um evento no
   histórico). Ensaiada no navegador: repassar 2 folhas pagando pela outra
   empresa, recibo impresso, folha que volta do fornecedor, reimpressão,
   cheque antigo já repassado, celular. O que o código decidiu:
