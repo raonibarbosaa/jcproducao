@@ -96,8 +96,8 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > **C5 FEITA e no ar em 03/11/2026** (`1116fcf`): conferência da gaveta impressa (carteira +
 > devolvidos) e cheques do pedido no Localizar (só financeiro). O desenho
 > original (C1–C5) está todo feito. **C6 desenhada em 03/11/2026** (fim do
-> CHEQUES.md): contas do cliente lembradas pelo histórico (C6a — **FEITA em
-> 03/11/2026**: `clienteChave` + `contasDoCliente`, consulta única por cliente) e receber a
+> CHEQUES.md): contas do cliente lembradas pelo histórico (C6a — **FEITA e no ar em
+> 03/11/2026**, `fce871f`: `clienteChave` + `contasDoCliente`, consulta única por cliente) e receber a
 > parcela do Financeiro em cheque — parcela "em cheque" até compensar/repassar,
 > movimento nasce na compensação e é cancelado na devolução (C6b), e achar
 > "o cheque 246 da RUBI" — busca mista número+nome no banco inteiro, com a

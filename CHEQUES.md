@@ -466,7 +466,7 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   banco+agência+conta (a chave sem o número), ignora cancelados, ordena pela
   última vez usada.
 - Conta nova continua sendo digitada — e aparece da próxima vez.
-- ✅ **FEITA (03/11/2026).** Sem rule nova. Ensaiada no navegador com o caso
+- ✅ **FEITA e no ar (03/11/2026, `fce871f`).** Sem rule nova. Ensaiada no navegador com o caso
   da RUBI (folhas 246–249 já compensadas): digitando "rubi semi joias" em
   minúsculas, a conta aparece com "último nº 000249 · próximo 000250", um
   clique preenche tudo e "Gerar folhas" dá 000250–000253. **Uma consulta só**
