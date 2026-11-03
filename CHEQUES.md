@@ -575,7 +575,7 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   o extrato mostra o que de fato entrou. Antes da C6b, só o controle.
 - **No recibo/aba Repassados:** a folha recolhida continua no recibo daquele
   dia (o papel assinado não muda) e aparece como "recolhida em dd/mm".
-- ✅ **FEITA (03/11/2026).** Sem rule nova. Ensaiada no navegador com o fluxo
+- ✅ **FEITA e no ar (03/11/2026, `1c13a6d`).** Sem rule nova. Ensaiada no navegador com o fluxo
   inteiro da RUBI: 246 com a RESINAS → "🔁 Cliente pediu resgate" na ficha →
   aba **🔁 Resgates** (com fornecedor, telefone, contato e "pedido hoje / há N
   dias") → "Recolhido do fornecedor" (PIX, buscado por Juninho; Confirmar

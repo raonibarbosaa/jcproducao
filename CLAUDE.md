@@ -104,7 +104,7 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > resposta "onde está" numa linha (C6c — **FEITA em 03/11/2026**: `numeroChave`,
 > `pedacosDaBusca`, `ondeEstaOCheque`, consultas por número e por cliente; no ar `ca96ac4`), e o resgate de folha que está com o
 > fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
-> só controle) → resgatado pelo cliente (C6d — **FEITA em 03/11/2026**; de
+> só controle) → resgatado pelo cliente (C6d — **FEITA e no ar em 03/11/2026**, `1c13a6d`; de
 > brinde, `mudancasDe`: marcas no histórico não contam mais como mudança de
 > situação — corrigia um bug da C3). Falta a C6b (Financeiro).
 
