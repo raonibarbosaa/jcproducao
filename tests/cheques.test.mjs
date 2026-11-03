@@ -486,4 +486,24 @@ t('parcela 2: repassada já é recebimento, não "em cheque"', [par(2).emCheque.
 t('parcela 3: em cheque (na gaveta); cancelada não conta', par(3).emCheque.map((c) => c.id), ['r3'])
 t('parcela 4: cheque devolvido é problema', par(4).problemas.map((c) => c.numero), ['000253'])
 
+// ── AVULSO × LIGADO A PEDIDO (03/11/2026) ────────────────────────────
+const cabBase = { empresa: 'sacolas', cliente: 'ANA MODAS', recebidoEm: '2026-10-20' }
+const umaFolha = geraFolhas({ quantas: 1, valor: { modo: 'folha', valor: 200 }, primeiroBomPara: '2026-10-25',
+  numeroInicial: '000010', base: { banco: { codigo: '001' }, agencia: '1', conta: '2', emitente: { nome: 'ANA' } } })
+t('ligado a pedido sem número: cobra o pedido',
+  problemasDoCabecalho({ ...cabBase, origem: 'pedido' }, HOJE).map((p) => p.campo), ['idVenda'])
+t('avulso sem dizer a que se refere: cobra a referência',
+  problemasDoCabecalho({ ...cabBase, origem: 'avulso' }, HOJE).map((p) => p.campo), ['referenteA'])
+t('sem origem (chamada antiga): não cobra nenhum dos dois', problemasDoCabecalho(cabBase, HOJE), [])
+const av = chequesDoLote({ ...cabBase, origem: 'avulso', referenteA: 'venda no balcão', idVenda: '5458' }, umaFolha,
+  { loteId: 'L', ...QUEM }).cheques[0]
+t('avulso grava a referência e NÃO o pedido (mesmo que tenha ficado digitado)', [av.referenteA, av.idVenda], ['venda no balcão', ''])
+const lig = chequesDoLote({ ...cabBase, origem: 'pedido', idVenda: '5458', referenteA: 'sobrou' }, umaFolha,
+  { loteId: 'L', ...QUEM }).cheques[0]
+t('ligado a pedido grava o pedido e deixa a referência vazia', [lig.idVenda, lig.referenteA], ['5458', ''])
+t('a busca acha o avulso pela referência', filtraCheques([av, lig], { termo: 'balcao' }).length, 1)
+t('a referência se corrige pela ficha (fica no histórico)',
+  corrigeCheque({ ...av, id: 'a1' }, { referenteA: 'acerto de conta antiga' }, { porUid: 'u', agora: AGORA }).patch.referenteA,
+  'acerto de conta antiga')
+
 export default resultado('cheques')

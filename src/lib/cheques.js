@@ -401,6 +401,16 @@ export function problemasDoCabecalho(cab, hoje) {
   const p = []
   if (!cab?.empresa) p.push({ campo: 'empresa', msg: 'escolha a empresa que recebeu' })
   if (!String(cab?.cliente || '').trim()) p.push({ campo: 'cliente', msg: 'falta o cliente que entregou o cheque' })
+  // DE ONDE VEIO (decisão do Raoni, 03/11/2026): a tela escolhe
+  // "ligado a pedido" ou "avulso"; ligado sem número, ou avulso sem dizer a
+  // que se refere, deixaria uma folha que ninguém sabe explicar depois.
+  // `origem` ausente (chamadas antigas) não cobra nenhum dos dois.
+  if (cab?.origem === 'pedido' && !String(cab?.idVenda || '').trim()) {
+    p.push({ campo: 'idVenda', msg: 'falta o nº do pedido (ou marque Avulso)' })
+  }
+  if (cab?.origem === 'avulso' && !String(cab?.referenteA || '').trim()) {
+    p.push({ campo: 'referenteA', msg: 'diga a que se refere o cheque avulso' })
+  }
   if (!partes(cab?.recebidoEm)) p.push({ campo: 'recebidoEm', msg: 'falta a data do recebimento' })
   else if (hoje && cab.recebidoEm > diaDe(hoje)) {
     p.push({ campo: 'recebidoEm', msg: 'a data do recebimento está no futuro' })
@@ -625,7 +635,7 @@ export function aplicaEvento(c, ev, { agora, hoje } = {}) {
 // dado da folha que se confere quando o cheque volta.
 export const CAMPOS_CORRIGIVEIS = [
   'banco', 'agencia', 'conta', 'numero', 'valor', 'bomPara', 'emitente', 'terceiro',
-  'cliente', 'idVenda', 'recebidoEm', 'obs',
+  'cliente', 'idVenda', 'referenteA', 'recebidoEm', 'obs',
 ]
 export function corrigeCheque(c, mudancas, { por, porUid, agora, obs } = {}) {
   const antes = {}; const depois = {}
@@ -702,7 +712,10 @@ export function chequesDoLote(cab, folhas, { loteId, por, porUid, agora, hoje } 
       cobrancaId: String(f.cobrancaId ?? cab.cobrancaId ?? ''),
       parcelaN: f.parcelaN != null ? Number(f.parcelaN) : null,
       movimentoId: null,
-      idVenda: String(cab.idVenda || '').trim(),
+      // avulso = sem pedido; `referenteA` diz do que é (venda no balcão, acerto
+      // de conta antiga). Com pedido, o pedido já diz, e o campo fica vazio.
+      idVenda: cab.origem === 'avulso' ? '' : String(cab.idVenda || '').trim(),
+      referenteA: cab.origem === 'avulso' ? String(cab.referenteA || '').trim() : '',
       recebidoEm: diaDe(cab.recebidoEm),
       lote: loteId || '',
       loteN: i + 1,
@@ -1153,7 +1166,7 @@ export function filtraCheques(cheques, f = {}, casaTexto = casaTextoSimples) {
     if (!termo) return true
     const nFolha = semZeros(c.numero); const pedido = String(c.idVenda || '')
     if (!numeros.every((n) => (!!n && nFolha.includes(n)) || (!!n && pedido.includes(n)))) return false
-    return !texto || casaTexto(texto, c.cliente, nomeCli(c.cliente), c.emitente?.nome, c.destino?.fornecedorNome)
+    return !texto || casaTexto(texto, c.cliente, nomeCli(c.cliente), c.emitente?.nome, c.destino?.fornecedorNome, c.referenteA)
   })
 }
 

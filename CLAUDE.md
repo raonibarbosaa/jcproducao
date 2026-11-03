@@ -111,7 +111,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > do `ModalLancar` —, chip "em cheque" por parcela, o movimento nasce na
 > compensação/repasse e é cancelado na devolução/recolhimento dentro da
 > transação do cheque — `efeitoNoCaixa`; conta virtual `repasse-cheque`;
-> Receber com forma Cheque leva ao lançamento; sem rule nova).
+> Receber com forma Cheque leva ao lançamento; sem rule nova). **Avulso explícito (03/11/2026):** o lançamento escolhe "Ligado a
+> pedido" × "Avulso (sem pedido)"; o avulso exige `referenteA` ("Referente a")
+> e não liga a parcela nenhuma.
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
 > dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou

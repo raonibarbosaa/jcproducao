@@ -376,6 +376,7 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
       <span className="chq-quem">
         <b>{nomeCliente(c.cliente, clientes)}</b>
         {c.idVenda && <small> · #{c.idVenda}</small>}
+        {!c.idVenda && c.referenteA && <small className="chq-avulso"> · avulso: {c.referenteA}</small>}
         {c.cobrancaId && <small className="chq-parcela" title="paga uma parcela do Financeiro"> · 💳 parcela {c.parcelaN}</small>}
         <small className="chq-emit">
           {c.terceiro && <span className="chip rota-warn">⚠ terceiro</span>} {c.emitente?.nome}
@@ -636,7 +637,8 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
             <div className="fin-explica">{para === 'resgatado'
               ? `O cliente pagou e levou a folha. Registre como e quanto ele pagou (pode ser diferente do cheque, com juros ou desconto).${
                 cheques.some((c) => c.cobrancaId) ? ' A folha paga uma parcela: o que ele pagou entra como recebimento dela no Financeiro (abatimento não entra).' : ''}`
-              : 'A folha volta para a gaveta da empresa. Não é devolução do banco: não tem alínea e não pesa no histórico do emitente. Fica registrado só como controle — não lança no caixa.'}</div>
+              : `A folha volta para a gaveta da empresa. Não é devolução do banco: não tem alínea e não pesa no histórico do emitente. O pagamento ao fornecedor fica só como controle — não é lançado no caixa.${
+                cheques.some((c) => c.cobrancaId) ? ' A parcela que a folha pagava volta a ficar EM ABERTO no Financeiro: o recebimento do repasse é cancelado.' : ''}`}</div>
           </>)}
           {para === 'devolvido' && de === 'repassado' && (
             <div className="fin-explica">O fornecedor trouxe a folha de volta: ela entra na fila de devolvidos com o nome dele.</div>
@@ -697,7 +699,8 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
               {c.emitente?.doc && <small> · {fmtDoc(c.emitente.doc)}</small>}
               {c.terceiro && <small className="chq-terc"> · cheque de terceiro</small>}</div>
             <div><span>Entregue por</span><b>{nomeCliente(c.cliente, clientes)}</b>
-              {c.idVenda && <small> · pedido #{c.idVenda}</small>}</div>
+              {c.idVenda && <small> · pedido #{c.idVenda}</small>}
+              {!c.idVenda && c.referenteA && <small> · avulso: {c.referenteA}</small>}</div>
             <div><span>Recebido em</span><b>{fmtDia(c.recebidoEm)}</b>
               <small> · {nomeEmpresa(c.empresa)}{c.tardio ? ' · lançado depois (Zeus)' : ''}</small></div>
             {c.loteTotal > 1 && <div><span>Parcelamento</span><b>folha {c.loteN} de {c.loteTotal}</b></div>}
@@ -811,7 +814,7 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
     numero: c.numero || '', valor: String(c.valor ?? '').replace('.', ','), bomPara: c.bomPara || '',
     banco: c.banco?.codigo || '', agencia: c.agencia || '', conta: c.conta || '',
     emitente: c.emitente?.nome || '', doc: c.emitente?.doc || '', terceiro: !!c.terceiro,
-    idVenda: c.idVenda || '', obs: '',
+    idVenda: c.idVenda || '', referenteA: c.referenteA || '', obs: '',
   })
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -821,6 +824,7 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
       numero: f.numero.trim(), valor: numBR(f.valor), bomPara: f.bomPara,
       agencia: f.agencia.trim(), conta: f.conta.trim(),
       emitente: { nome: f.emitente.trim(), doc: f.doc.trim() }, terceiro: f.terceiro, idVenda: f.idVenda.trim(),
+      referenteA: f.referenteA.trim(),
     }
     if (f.banco.trim() !== String(c.banco?.codigo || '')) mud.banco = { codigo: f.banco.trim(), nome: nomeBanco(f.banco) }
     if (!f.obs.trim()) { setErro('Diga o que estava errado (fica no histórico).'); return }
@@ -845,6 +849,7 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
         <div className="field"><label>Emitente</label><input value={f.emitente} onChange={muda('emitente')} /></div>
         <div className="field"><label>CPF/CNPJ</label><input value={f.doc} onChange={muda('doc')} /></div>
         <div className="field"><label>Pedido</label><input value={f.idVenda} onChange={muda('idVenda')} /></div>
+        <div className="field"><label>Referente a (avulso)</label><input value={f.referenteA} onChange={muda('referenteA')} /></div>
       </div>
       <label className="chq-check"><input type="checkbox" checked={f.terceiro} onChange={muda('terceiro')} /> cheque de terceiro</label>
       <div className="field"><label>O que estava errado</label><input value={f.obs} onChange={muda('obs')} placeholder="ex.: número digitado trocado" /></div>
@@ -868,7 +873,10 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
 export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresaInicial, acoes, fornecedores = SEM_LISTA,
   preset = null, onFeito, onFechar }) {
   const [cab, setCab] = useState({ empresa: preset?.empresa || empresaInicial, idVenda: String(preset?.idVenda || ''),
-    cliente: preset?.cliente || '', recebidoEm: hoje, tardio: false })
+    cliente: preset?.cliente || '', recebidoEm: hoje, tardio: false,
+    // de onde veio: 'pedido' (com o nº) ou 'avulso' (sem pedido, com o "referente a")
+    // a cobrança lançada à mão (sem pedido) não cobra nem um nem outro: a parcela já diz de onde veio
+    origem: preset ? (preset.idVenda ? 'pedido' : '') : 'pedido', referenteA: '' })
   const [ini, setIni] = useState({ para: 'carteira', conta: '', dataDeposito: '', data: '', alinea: '',
     fornecedorId: '', empresaPagadora: '', referencia: '' })
   const [base, setBase] = useState({ banco: '', bancoOutro: '', agencia: '', conta: '', emitente: '', doc: '', terceiro: false })
@@ -878,8 +886,9 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
   const [salvando, setSalvando] = useState(false)
   const mudaCab = (k, v) => setCab((x) => ({ ...x, [k]: v }))
 
-  const pedido = useMemo(() => (cab.idVenda.trim()
-    ? (pedidos || []).find((p) => String(p.idVenda) === cab.idVenda.trim()) : null), [pedidos, cab.idVenda])
+  const avulso = cab.origem === 'avulso'
+  const pedido = useMemo(() => (!avulso && cab.idVenda.trim()
+    ? (pedidos || []).find((p) => String(p.idVenda) === cab.idVenda.trim()) : null), [pedidos, cab.idVenda, avulso])
   const codBanco = base.banco === 'outro' ? base.bancoOutro.trim() : base.banco
 
   // AS CONTAS QUE O CLIENTE JÁ USOU (C6a). Espera a pessoa parar de digitar
@@ -1012,14 +1021,22 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
             </div>
           )}
           <div className="chq-bloco"><span>De onde veio</span>
+            {!preset && (
+              <div className="modo-btns chq-origem">
+                {[['pedido', 'Ligado a pedido'], ['avulso', 'Avulso (sem pedido)']].map(([id, nm]) => (
+                  <button key={id} type="button" className={'modo-btn' + (cab.origem === id ? ' ativo' : '')}
+                    aria-pressed={cab.origem === id} onClick={() => mudaCab('origem', id)}>{nm}</button>
+                ))}
+              </div>
+            )}
             <div className="fin-cond">
               <div className="field"><label>Empresa que recebeu</label>
                 <select value={cab.empresa} disabled={!!preset} onChange={(e) => mudaCab('empresa', e.target.value)}>
                   {EMPRESAS.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
                 </select></div>
-              <div className="field"><label>Pedido (opcional)</label>
+              {!avulso && <div className="field"><label>Pedido</label>
                 <input value={cab.idVenda} inputMode="numeric" readOnly={!!preset} onChange={(e) => mudaCab('idVenda', e.target.value)} placeholder="5458" />
-                {pedido && <small className="chq-dica">{nomeCliente(pedido.cliente, clientes)}</small>}</div>
+                {pedido && <small className="chq-dica">{nomeCliente(pedido.cliente, clientes)}</small>}</div>}
               <div className="field"><label>Recebido em</label>
                 <input type="date" value={cab.recebidoEm} onChange={(e) => mudaCab('recebidoEm', e.target.value)} /></div>
             </div>
@@ -1029,6 +1046,10 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               <datalist id="chq-clientes">
                 {(clientes || []).slice(0, 2000).map((c) => <option key={c.razao} value={c.razao}>{c.nome}</option>)}
               </datalist></div>
+            {avulso && <div className="field"><label>Referente a</label>
+              <input value={cab.referenteA} onChange={(e) => mudaCab('referenteA', e.target.value)}
+                placeholder="ex.: venda no balcão, acerto de conta antiga, devolução de mercadoria" />
+              <small className="chq-dica">O cheque avulso não fica ligado a pedido nem a parcela do Financeiro: compensar não baixa nenhuma cobrança.</small></div>}
             {!preset && <label className="chq-check"><input type="checkbox" checked={cab.tardio}
               onChange={(e) => mudaCab('tardio', e.target.checked)} /> cheque antigo, que estava na Zeus (já pode estar depositado ou devolvido)</label>}
             {cab.tardio && (
@@ -1351,7 +1372,7 @@ export function ConferenciaGaveta({ cheques, empresa, clientes, hoje }) {
                 <td>{c.numero}</td>
                 <td>{c.banco?.codigo} {c.banco?.nome || nomeBanco(c.banco?.codigo)} · {c.agencia} · {c.conta}</td>
                 <td>{c.emitente?.nome}{c.terceiro ? ' (terceiro)' : ''}</td>
-                <td>{nomeCliente(c.cliente, clientes)}{c.idVenda ? ` · #${c.idVenda}` : ''}</td>
+                <td>{nomeCliente(c.cliente, clientes)}{c.idVenda ? ` · #${c.idVenda}` : c.referenteA ? ` · avulso: ${c.referenteA}` : ''}</td>
                 <td>{fmtDia(c.bomPara)}</td>
                 <td className="q">{fmtMoeda(c.valor)}</td>
               </tr>

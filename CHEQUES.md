@@ -626,6 +626,25 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   numa depositada mudava a data do depósito. Agora as contas usam `mudancasDe`
   (só eventos sem `tipo`). Testes de regressão no fim de `tests/cheques.test.mjs`.
 
+## Cheque AVULSO × ligado a pedido (03/11/2026, pedido do Raoni)
+- O lançamento sempre aceitou cheque sem pedido (o campo era "opcional"), mas
+  nada dizia de onde ele vinha. Agora a janela pergunta: **Ligado a pedido**
+  (o nº passa a ser obrigatório) ou **Avulso (sem pedido)**, que pede
+  **Referente a** (venda no balcão, acerto de conta antiga…). Folha sem
+  pedido e sem referência é folha que ninguém sabe explicar depois.
+- Campo novo `referenteA` no cheque (vazio quando tem pedido; o avulso grava
+  `idVenda: ''` mesmo que algo tenha ficado digitado). Não confundir com
+  `destino.referencia`, que é o "para pagar o quê" do repasse.
+- Aparece na lista ("· avulso: …"), na ficha, na conferência da gaveta e na
+  busca do Localizar; corrige-se pela ficha (fica no histórico).
+- `origem` só existe no cabeçalho da tela; chamada sem ela não cobra nem
+  pedido nem referência (lançamento pela cobrança à mão, testes antigos).
+- ⚠️ O avulso **não** liga a parcela do Financeiro: compensar não baixa
+  nenhuma cobrança (a tela avisa). Ligar depois a uma parcela não existe.
+- Junto: o aviso do "Recolhido do fornecedor" agora diz que a parcela que a
+  folha pagava REABRE no Financeiro, e a marca "pelo cheque" em Recebimentos
+  deixou de ser vermelha (não é erro).
+
 ## Ordem
 1. **C6a** (independente, pequena): contas do cliente no lançamento.
 2. **C6c** (independente): busca "246 rubi" no banco inteiro + "onde está".

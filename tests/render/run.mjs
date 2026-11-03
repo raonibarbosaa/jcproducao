@@ -191,7 +191,7 @@ const ESPERA = {
   chLocalizar: ['Ex.: 246 rubi', 'o número do cheque e o cliente já procuram em tudo', 'incluir os encerrados', 'só de terceiro', 'Todos os bancos'],
   chCarregando: ['Carregando cheques'],
   chNegado: ['Não foi possível ler os cheques', 'As regras do Firestore'],
-  chLancar: ['Lançar cheques', 'Empresa que recebeu', 'Pedido (opcional)', 'Cliente que entregou', 'cheque antigo, que estava na Zeus',
+  chLancar: ['Lançar cheques', 'Empresa que recebeu', 'Ligado a pedido', 'Avulso (sem pedido)', 'Cliente que entregou', 'cheque antigo, que estava na Zeus',
     'A 1ª folha', 'Banese', 'cheque de terceiro', 'Quantas folhas', 'Nº da 1ª folha', 'o total (dividir)', 'todo mês no mesmo dia', 'Gerar folhas'],
   chDepositar: ['Depositar · 1 folha(s)', 'Depositado em', 'Conta', 'escolha a conta do depósito', 'Bradesco'],
   chDevolver: ['Devolvido · 1 folha(s)', 'Motivo (alínea)', '11 · Sem fundos — 1ª apresentação', '21 · Sustação'],
@@ -209,7 +209,12 @@ const ESPERA = {
   chResgatarParcela: ['A folha paga uma parcela', 'abatimento não entra'],
   abertoChq: ['💳 em cheque nº 000247', 'na gaveta', '⚠ cheque nº 000248 devolvido', '💰 Receber', '💳 Lançar cheque'],
   abertoSemChq: ['💳 Lançar os cheques das 2 parcelas', '💳 Lançar cheque'],
-  caixaChq: ['pelo cheque — desfaz na aba Cheques'],
+  caixaChq: ['pelo cheque — desfaz na aba Cheques', 'fin-pelo-cheque'],
+  // avulso (sem pedido): a referência aparece na lista e na ficha
+  chLinhaAvulso: ['avulso: venda no balcão'],
+  chFichaAvulso: ['avulso: venda no balcão'],
+  // recolher folha que pagava parcela: a tela diz que a parcela reabre
+  chRecolherParcela: ['volta a ficar EM ABERTO no Financeiro', 'não é lançado no caixa'],
   mReceberChq: ['Cheque não se recebe aqui', 'Lançar o cheque desta parcela', 'disabled'],
   // C6a: as contas que o cliente já usou, com o próximo número
   chContas: ['Contas que INGRID já usou', 'JOAO TERCEIRO', 'Banese · ag 0036 · cc 03/100.483-1 · de terceiro',
@@ -295,12 +300,13 @@ const PROIBE = {
   chDepositar: ['Cielo', 'Caixa interno'],
   chDepositarMisto: ['Cielo', 'Caixa interno', 'Repasse de cheque'],   // a conta virtual nunca é escolhida à mão
   // C6b: cheque e Financeiro
-  chLancarPreset: ['Quantas folhas', 'O valor é', 'cheque antigo, que estava na Zeus'],   // a cobrança já diz quantas e quanto
+  chLancarPreset: ['Quantas folhas', 'O valor é', 'cheque antigo, que estava na Zeus', 'Avulso (sem pedido)'],   // a cobrança já diz quantas, quanto e de onde
   chLinhaParcela: ['undefined'],
   abertoChq: ['999999', 'Lançar os cheques das'],   // cheque de outra cobrança não aparece; só 1 parcela sem folha
   abertoSemChq: ['em cheque nº'],
-  caixaChq: ['✕ cancelar'],                          // recebimento de cheque se desfaz pelo cheque
-  mReceberChq: ['Recebimento parcial'],          // cheque não se deposita na maquininha nem na gaveta                         // voltou uma vez só: sem contador
+  caixaChq: ['✕ cancelar', 'fin-cancelado'],        // recebimento de cheque se desfaz pelo cheque; e não é erro
+  chLinhaAvulso: ['#5458'],                         // avulso não mostra pedido
+  mReceberChq: ['Recebimento parcial'],
 }
 
 let mal = 0

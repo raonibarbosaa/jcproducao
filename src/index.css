@@ -1611,3 +1611,10 @@ tr.sit-producao td { color: var(--text-dim); }
   padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; }
 .chq-preset small { display: block; color: var(--text-dim); margin-top: 4px; }
 .chq-parcela { color: var(--accent); }
+
+/* Recebimento que veio de cheque: só informa (não é erro nem cancelamento) */
+.fin-pelo-cheque { color: var(--text-faint); font-size: 11px; }
+/* Lançar cheques: ligado a pedido × avulso */
+.chq-origem { margin: 4px 0 10px; }
+.chq-origem .modo-btn.ativo { background: var(--accent); color: #1a1205; border-color: var(--accent); }
+.chq-avulso { color: var(--text-dim); }

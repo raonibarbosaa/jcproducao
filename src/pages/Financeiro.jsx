@@ -525,7 +525,7 @@ export function AbaCaixa({ movimentos, empresa, clientes, nome }) {
                 // recolhido): cancelado aqui, a folha continuaria "compensada" e a
                 // parcela reabriria com o dinheiro no banco
                 : m.chequeId
-                  ? <small className="fin-cancelado" title={m.obs || ''}>💳 pelo cheque — desfaz na aba Cheques</small>
+                  ? <small className="fin-pelo-cheque" title={m.obs || ''}>💳 pelo cheque — desfaz na aba Cheques</small>
                   : <button className="mini-btn" onClick={() => cancelar(m)}>✕ cancelar</button>}
             </div>
           ))}

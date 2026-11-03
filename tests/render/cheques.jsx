@@ -87,6 +87,12 @@ export function roda() {
     chFichaParcela: renderToString(<FichaCheque cheque={daParcela} todos={[daParcela]} clientes={base.clientes} hoje={HOJE}
       onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
     chResgatarParcela: renderToString(<ModalEvento para="resgatado" cheques={[daParcela]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
+    chLinhaAvulso: renderToString(<ListaCheques cheques={[{ ...lote[0], id: 'av', idVenda: '', referenteA: 'venda no balcão' }]}
+      marcados={[]} onMarcar={() => {}} onAbrir={() => {}} clientes={base.clientes} hoje={HOJE} vazio="" />),
+    chFichaAvulso: renderToString(<FichaCheque cheque={{ ...lote[0], id: 'av', idVenda: '', referenteA: 'venda no balcão' }}
+      todos={[]} clientes={base.clientes} hoje={HOJE} onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
+    chRecolherParcela: renderToString(<ModalEvento para="carteira" cheques={[{ ...comResgate, cobrancaId: 'cobR', parcelaN: 2 }]}
+      hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }
