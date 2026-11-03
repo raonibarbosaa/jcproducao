@@ -2,7 +2,7 @@ import { renderToString } from 'react-dom/server'
 import Cheques, { TelaCheques, ModalLancar, ModalEvento, FichaCheque, BarraSelecao, numBR,
   ModalReciboPronto, ReciboRepasse, reciboDoRepasse, ConferenciaGaveta, ContasDoCliente, ListaCheques } from '../../src/pages/Cheques.jsx'
 import { ChequesDoPedido } from '../../src/pages/Localizar.jsx'
-import { chequesDoLote, geraFolhas, aplicaEvento, contasDoCliente, ondeEstaOCheque } from '../../src/lib/cheques.js'
+import { chequesDoLote, geraFolhas, aplicaEvento, contasDoCliente, ondeEstaOCheque, marcaResgate } from '../../src/lib/cheques.js'
 
 const HOJE = '2026-10-26'
 const QUEM = { por: 'Anny', porUid: 'u1', agora: '2026-10-20T10:00:00Z', hoje: HOJE }
@@ -27,6 +27,8 @@ const REP = { para: 'repassado', fornecedorId: 'f1', fornecedorNome: 'RESINAS NE
   referencia: 'NF 1234', data: '2026-10-24' }
 const rep4 = ev({ ...lote[3], id: 'c5', numero: '047474' }, REP)   // uma 5ª folha, que já foi
 const repassados = { pronto: true, erro: '', lista: [rep4] }
+// C6d: a RUBI pediu o resgate do 047474, que está com a RESINAS
+const comResgate = marcaResgate(rep4, { porUid: 'u1', por: 'Anny', data: '2026-10-23' }).cheque
 const arq = { pronto: false, erro: '', lista: [] }
 const base = { vivos, arquivo: arq, arquivoLigado: false, onArquivo: () => {}, pedidos: [], clientes: [{ razao: 'INGRID MODAS', nome: 'INGRID' }],
   quem: QUEM, hoje: HOJE, acoes, fornecedores: FORN, repassados, periodoRep: '90', onPeriodoRep: () => {}, onAba: () => {} }
@@ -62,6 +64,14 @@ export function roda() {
         nomeConta: (id) => id, contatoFornecedor: () => ({ telefone: '(79) 3431-0000', contato: 'Marcos' }) })} />),
     chFichaOnde: renderToString(<FichaCheque cheque={rep4} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
       ondeDe={(c) => ondeEstaOCheque(c, {})} onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
+    chResgates: renderToString(<TelaCheques {...base} abaInicial="resgates"
+      resgates={{ pronto: true, erro: '', lista: [comResgate] }} />),
+    chRecolher: renderToString(<ModalEvento para="carteira" cheques={[comResgate]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
+    chResgatar: renderToString(<ModalEvento para="resgatado" cheques={[lote[0]]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
+    chFichaRep: renderToString(<FichaCheque cheque={rep4} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
+      onAcao={() => {}} onCorrigir={nada} onResgate={nada} onFechar={() => {}} />),
+    chFichaResg: renderToString(<FichaCheque cheque={comResgate} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
+      onAcao={() => {}} onCorrigir={nada} onResgate={nada} onFechar={() => {}} />),
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }

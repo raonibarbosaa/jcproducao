@@ -11,6 +11,7 @@ import {
   nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
   gaveta, resumoChequesDoPedido, contasDoCliente, clienteChave, pedacosDaBusca, ondeEstaOCheque,
+  marcaResgate, desisteResgate, resgatesPendentes, FORMAS_ACERTO, devolucoesDe,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -388,5 +389,51 @@ t('voltou do banco, com a alínea', onde(dev1), '↩ Voltou do banco em 21/11/20
 t('com o fornecedor, com telefone e contato', onde(rp.cheque), '🤝 Com RESINAS NE desde 20/10/2026 — NF 1234 · 📞 (79) 3431-0000 · falar com Marcos')
 t('voltou do fornecedor', onde(volta), '↩ Voltou de RESINAS NE em 25/11/2026 — está com a empresa')
 t('cancelado diz o porquê', onde(cancelado), '✖ Cancelado em 20/10/2026 — lançado em dobro')
+
+// ---------- resgate de folha que está com o fornecedor (C6d) ----------
+// o caso da RUBI: o 246 foi repassado à RESINAS; a RUBI quer pagar e pegar de volta
+const naResinas = rp.cheque
+ok('só se pede resgate de folha repassada', !marcaResgate(c1, { porUid: 'u' }).ok)
+const pedido = marcaResgate(naResinas, { porUid: 'u', por: 'Jéssica', data: '2026-11-01', obs: 'Rubi liga pedindo', agora: AGORA })
+ok('marca o pedido', pedido.ok)
+t('só MARCA: a situação não muda', [pedido.cheque.situacao, pedido.cheque.resgatePedidoEm], ['repassado', '2026-11-01'])
+t('e fica no histórico', [pedido.cheque.historico.at(-1).tipo, nomeEvento(pedido.cheque.historico.at(-1))], ['resgatePedido', 'Resgate pedido pelo cliente'])
+ok('não pede duas vezes', !marcaResgate(pedido.cheque, { porUid: 'u' }).ok)
+t('entra na lista de quem vai buscar, com os dias', resgatesPendentes([pedido.cheque, c1], '2026-11-04').map((r) => [r.cheque.numero, r.dias]),
+  [['000001', 3]])
+t('o "onde está" avisa', ondeEstaOCheque(pedido.cheque, { hoje: '2026-11-04' }).detalhe, 'NF 1234 · 🔁 resgate pedido há 3 dias')
+t('pedido hoje / ontem', [ondeEstaOCheque(pedido.cheque, { hoje: '2026-11-01' }).detalhe, ondeEstaOCheque(pedido.cheque, { hoje: '2026-11-02' }).detalhe],
+  ['NF 1234 · 🔁 resgate pedido hoje', 'NF 1234 · 🔁 resgate pedido ontem'])
+// ⚠️ marcas no histórico (tipo) não são mudança de situação — o bug do ensaio
+t('o resgate pedido NÃO vira um repasse novo no recibo', repassesDe([pedido.cheque]).map((r) => [r.data, r.qtd]), [['2026-10-20', 1]])
+const devCorrigido = corrigeCheque(dev1, { numero: '000099' }, { porUid: 'u', agora: AGORA }).cheque
+t('corrigir uma folha devolvida não a conta como devolvida de novo', devolucoesDe(devCorrigido).length, 1)
+const depCorrigido = corrigeCheque(dep.cheque, { numero: '000098' }, { porUid: 'u', agora: '2026-11-30T10:00:00Z' }).cheque
+t('corrigir uma folha depositada não muda a data do depósito', diasDepositado(depCorrigido, '2026-11-23'), 4)
+const desistiu = desisteResgate(pedido.cheque, { porUid: 'u', agora: AGORA })
+t('desistir limpa e registra', [desistiu.cheque.resgatePedidoEm, nomeEvento(desistiu.cheque.historico.at(-1))], [null, 'Resgate desistido'])
+
+t('repassado pode ser RECOLHIDO (vai para a gaveta)', acoesComuns([naResinas]), ['carteira', 'devolvido', 'cancelado'])
+t('a ação e o evento se chamam "Recolhido do fornecedor"', nomeAcao('repassado', 'carteira'), 'Recolhido do fornecedor')
+const semForma = aplicaEvento(pedido.cheque, { para: 'carteira', data: '2026-11-05', porUid: 'u' }, QUEM)
+t('recolher exige dizer como a empresa pagou o fornecedor', semForma.problemas.map((p) => p.campo), ['formaPgto'])
+const recolhido = aplicaEvento(pedido.cheque, { para: 'carteira', data: '2026-11-05', formaPgto: 'pix', buscadoPor: 'Juninho', porUid: 'u' }, QUEM)
+ok('recolhe', recolhido.ok)
+t('sem alínea, com o acerto: forma, valor da folha e quem buscou',
+  [recolhido.cheque.historico.at(-1).alinea, recolhido.cheque.historico.at(-1).formaPgto, recolhido.cheque.historico.at(-1).valorPago, recolhido.cheque.historico.at(-1).buscadoPor],
+  [undefined, 'pix', 367, 'Juninho'])
+t('volta para a gaveta, sai da lista de resgates e solta o fornecedor',
+  [recolhido.cheque.situacao, recolhido.cheque.resgatePedidoEm, recolhido.cheque.destino], ['carteira', null, null])
+ok('recolher NÃO é devolução: o reapresentar continua livre', podeReapresentar(recolhido.cheque).ok && devolucoesDe(recolhido.cheque).length === 0)
+t('nomeEvento do recolhimento', nomeEvento(recolhido.cheque.historico.at(-1)), 'Recolhido do fornecedor')
+const resgSemForma = aplicaEvento(recolhido.cheque, { para: 'resgatado', data: '2026-11-06', porUid: 'u' }, QUEM)
+t('o resgate do cliente exige a forma', resgSemForma.problemas.map((p) => p.campo), ['formaPgto'])
+const resgatado = aplicaEvento(recolhido.cheque, { para: 'resgatado', data: '2026-11-06', formaPgto: 'dinheiro', valorPago: 380, porUid: 'u' }, QUEM).cheque
+t('o cliente pagou: forma e valor (pode ser diferente da folha, ex. com juros)',
+  [resgatado.situacao, resgatado.historico.at(-1).formaPgto, resgatado.historico.at(-1).valorPago], ['resgatado', 'dinheiro', 380])
+ok('valor zero é recusado', !aplicaEvento(recolhido.cheque, { para: 'resgatado', data: '2026-11-06', formaPgto: 'pix', valorPago: 0, porUid: 'u' }, QUEM).ok)
+const rec = repassesDe([recolhido.cheque])[0]
+t('no recibo daquele dia a folha continua, marcada como recolhida (não "voltou")', [rec.qtd, rec.recolhidas, rec.voltaram], [1, 1, 0])
+t('formas de acerto', FORMAS_ACERTO.map((f) => f.id), ['dinheiro', 'pix', 'transferencia', 'cheque', 'abatimento'])
 
 export default resultado('cheques')

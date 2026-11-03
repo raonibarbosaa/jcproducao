@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, query, where, runTransaction, writeBatch, getDocs } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { doDoc } from '../utils.js'
-import { SITUACOES_VIVAS, SITUACOES_CHEQUE, aplicaEvento, corrigeCheque } from '../lib/cheques.js'
+import { SITUACOES_VIVAS, SITUACOES_CHEQUE, aplicaEvento, corrigeCheque, marcaResgate, desisteResgate } from '../lib/cheques.js'
 
 const col = () => collection(db, 'cheques')
 export const SITUACOES_ARQUIVO = Object.keys(SITUACOES_CHEQUE).filter((s) => !SITUACOES_VIVAS.includes(s))
@@ -189,4 +189,33 @@ export function useChequesDaBusca(busca, ligado = true) {
     return assinaUma('clienteChave', clis.split('|'), setPorCli)
   }, [clis, ligado])
   return useMemo(() => ({ lista: [...porNum, ...porCli], pronto: true, erro }), [porNum, porCli, erro])
+}
+
+// Os RESGATES A BUSCAR (C6d): folhas com o fornecedor que o cliente quer de
+// volta. `resgatePedidoEm > ''` — um campo; folha sem o campo (ou null) fica de
+// fora. É pouca coisa e precisa estar sempre à vista: lida na abertura da aba.
+export function useResgatesPendentes(ligado = true) {
+  const [estado, setEstado] = useState(VAZIO)
+  useEffect(() => {
+    if (!ligado) { setEstado(VAZIO); return undefined }
+    return onSnapshot(query(col(), where('resgatePedidoEm', '>', '')),
+      (snap) => setEstado({ lista: snap.docs.map(doDoc), pronto: true, erro: '' }),
+      (e) => {
+        console.error('resgates pendentes:', e)
+        setEstado((s) => ({ ...s, erro: e?.code || e?.message || 'erro' }))
+      })
+  }, [ligado])
+  return estado
+}
+
+// marcar / desistir do resgate, por transação sobre a versão do servidor
+export async function resgateNoServidor(id, desistir, ev) {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'cheques', id)
+    const s = await tx.get(ref)
+    if (!s.exists()) throw new Error('cheque não existe mais')
+    const r = (desistir ? desisteResgate : marcaResgate)({ ...s.data(), id: s.id }, ev)
+    if (!r.ok) throw new Error(r.problemas.map((p) => p.msg).join('; '))
+    tx.update(ref, r.patch)
+  })
 }

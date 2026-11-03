@@ -21,9 +21,10 @@ import {
   filtraCheques, historicoDe, situacaoBate, entreEmpresas, chaveCheque, fmtDoc, ehViva,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, gaveta,
   contasDoCliente, clienteChave, ondeEstaOCheque, pedacosDaBusca,
+  resgatesPendentes, FORMAS_ACERTO, nomeFormaAcerto,
 } from '../lib/cheques.js'
 import {
-  useChequesVivos, useChequesArquivo, useChequesRepassados, useChequesDaBusca, gravaLote, novoLoteId, chequesComChaves, chequesDoCliente,
+  useChequesVivos, useChequesArquivo, useChequesRepassados, useChequesDaBusca, useResgatesPendentes, resgateNoServidor, gravaLote, novoLoteId, chequesComChaves, chequesDoCliente,
   aplicaEmLote, corrigeNoServidor,
 } from '../hooks/useCheques.js'
 import { useFornecedores } from '../hooks/useFornecedores.js'
@@ -68,6 +69,7 @@ export default function Cheques({ pedidos }) {
   // folha e os clientes que o texto achou no cadastro
   const [buscaServidor, setBuscaServidor] = useState(null)
   const porNumero = useChequesDaBusca(buscaServidor, ligado)
+  const resgates = useResgatesPendentes(ligado)
   if (!ligado) return <div className="empty">Esta tela é só do financeiro.</div>
   const quem = { por: nome || '', porUid: user?.uid || '' }
   const acoes = {
@@ -77,6 +79,7 @@ export default function Cheques({ pedidos }) {
     chequesDoCliente,
     aplicar: (ids, ev) => aplicaEmLote(ids, { ...ev, ...quem }, { hoje: hojeISO() }),
     corrigir: (id, mudancas, obs) => corrigeNoServidor(id, mudancas, { ...quem, obs }),
+    resgate: (id, desistir, ev) => resgateNoServidor(id, desistir, { ...ev, ...quem }),
   }
   return (
     <TelaCheques vivos={vivos} arquivo={arquivo} arquivoLigado={arquivoLigado}
@@ -84,7 +87,7 @@ export default function Cheques({ pedidos }) {
       quem={quem} hoje={hojeISO()} acoes={acoes}
       repassados={repassados} periodoRep={periodoRep} onPeriodoRep={setPeriodoRep}
       onAba={(id) => setAbaRep(id === 'repassados')} fornecedores={forn.lista}
-      porNumero={porNumero} onBuscaServidor={setBuscaServidor} />
+      porNumero={porNumero} onBuscaServidor={setBuscaServidor} resgates={resgates} />
   )
 }
 
@@ -93,7 +96,7 @@ export default function Cheques({ pedidos }) {
 // ============================================================
 export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos, clientes, quem, hoje, acoes,
   repassados, periodoRep = '90', onPeriodoRep, onAba, fornecedores = SEM_LISTA, abaInicial = 'carteira',
-  porNumero, onBuscaServidor }) {
+  porNumero, onBuscaServidor, resgates }) {
   const [empresa, setEmpresa] = useState('')            // '' = as duas
   const [aba, setAba] = useState(abaInicial)
   const [marcados, setMarcados] = useState([])          // ids
@@ -108,12 +111,15 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
   const todos = useMemo(() => {
     const porId = new Map()
     for (const c of [...(vivos?.lista || []), ...(arquivo?.lista || []), ...(repassados?.lista || []),
-      ...(porNumero?.lista || [])]) porId.set(c.id, c)
+      ...(porNumero?.lista || []), ...(resgates?.lista || [])]) porId.set(c.id, c)
     return [...porId.values()]
-  }, [vivos, arquivo, repassados, porNumero])
+  }, [vivos, arquivo, repassados, porNumero, resgates])
   // "onde está" com os nomes que só a tela conhece: a conta e o telefone do fornecedor
   const ondeDe = useMemo(() => (c) => ondeEstaOCheque(c, {
-    nomeConta, contatoFornecedor: (id) => achaFornecedor(fornecedores, id) }), [fornecedores])
+    nomeConta, contatoFornecedor: (id) => achaFornecedor(fornecedores, id), hoje }), [fornecedores, hoje])
+  // C6d: a lista de quem precisa ir buscar a folha com o fornecedor
+  const aBuscar = useMemo(() => resgatesPendentes(
+    empresa ? todos.filter((c) => c.empresa === empresa) : todos, hoje), [todos, empresa, hoje])
   const daEmpresa = useMemo(
     () => (empresa ? todos.filter((c) => c.empresa === empresa) : todos), [todos, empresa])
 
@@ -132,6 +138,7 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
     { id: 'depositados', label: `Depositados (${depositados.length})`, badge: atrasados },
     { id: 'devolvidos', label: `Devolvidos (${devolvidos.length})`, badge: devolvidos.length },
     { id: 'repassados', label: 'Repassados' },
+    { id: 'resgates', label: `🔁 Resgates (${aBuscar.length})`, badge: aBuscar.length },
     { id: 'localizar', label: '🔍 Localizar' },
   ]
 
@@ -222,6 +229,19 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
               devolvidos: 'Nenhum cheque devolvido para resolver.' }[aba]} />
         </>
       )}
+      {aba === 'resgates' && (
+        <>
+          <div className="chq-explica">O cliente quer a folha de volta e ela está com um fornecedor: alguém precisa
+            ir buscar. Marque a folha e use <b>Recolhido do fornecedor</b> quando ela voltar (diga como a empresa pagou
+            o fornecedor); depois, na carteira, <b>Resgatado</b> quando o cliente pagar e levar.
+            O pedido de resgate se faz na ficha da folha repassada.</div>
+          <BarraSelecao cheques={marcadosCheques} onAcao={(para) => setEvento({ para, cheques: marcadosCheques })}
+            onLimpar={() => setMarcados([])} />
+          <ListaCheques cheques={aBuscar.map((r) => r.cheque)} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
+            clientes={clientes} hoje={hoje} todos={todos} ondeDe={ondeDe} corte={500}
+            vazio="Nenhum resgate a buscar." />
+        </>
+      )}
       {aba === 'repassados' && (
         <AbaRepassados estado={repassados} periodo={periodoRep} onPeriodo={onPeriodoRep} empresa={empresa}
           fornecedores={fornecedores} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
@@ -263,6 +283,10 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
       )}
       {aberto && !evento && (
         <FichaCheque cheque={aberto} todos={todos} clientes={clientes} hoje={hoje} ondeDe={ondeDe}
+          onResgate={async (desistir, ev) => {
+            await acoes.resgate(aberto.id, desistir, ev)
+            avisa(desistir ? 'Resgate desistido.' : 'Resgate pedido — a folha está em 🔁 Resgates.')
+          }}
           onAcao={(para) => setEvento({ para, cheques: [aberto] })}
           onCorrigir={async (mud, obs) => { await acoes.corrigir(aberto.id, mud, obs); avisa('Cheque corrigido.') }}
           onFechar={() => setAbertoId('')} />
@@ -368,6 +392,7 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
           </span>)}
         {c.situacao === 'repassado' && c.destino && (
           <span className="chip">com {c.destino.fornecedorNome} desde {fmtDia(c.destino.data)}{entreEmpresas(c) ? ' · ⇄' : ''}</span>)}
+        {c.situacao === 'repassado' && c.resgatePedidoEm && <span className="chip chq-atencao">🔁 resgate pedido</span>}
         {c.situacao === 'devolvido' && ult && (
           <span className="chip chq-atencao">
             {forn ? `voltou de ${forn.fornecedorNome}` : 'voltou do banco'} · {nomeAlinea(ult.alinea)}
@@ -468,11 +493,20 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
   const [erro, setErro] = useState('')
   const ativos = fornecedoresAtivos(fornecedores)
   const forn = achaFornecedor(fornecedores, fornId)
+  // o ACERTO (C6d): recolher do fornecedor = como a empresa pagou o fornecedor;
+  // resgatado = como o cliente pagou. O valor só se digita com UMA folha — com
+  // várias, vale o de cada uma (digitar um total para várias seria adivinhar a divisão).
+  const acerto = (para === 'carteira' && de === 'repassado') || para === 'resgatado'
+  const [formaPgto, setFormaPgto] = useState('')
+  const [valorPago, setValorPago] = useState(cheques.length === 1 ? String(cheques[0].valor ?? '').replace('.', ',') : '')
+  const [buscadoPor, setBuscadoPor] = useState('')
 
   // ensaio no navegador: os mesmos problemas e avisos que a transação vai achar
   const rep = para === 'repassado'
     ? { fornecedorId: fornId, fornecedorNome: forn?.nome || '', empresaPagadora: pagadora, referencia } : {}
-  const ev = { para, data, conta, alinea: alineaId, obs, porUid: 'ensaio', ...rep }
+  const acertoEv = acerto ? { formaPgto, valorPago: cheques.length === 1 ? numBR(valorPago) : undefined,
+    buscadoPor: para === 'carteira' ? buscadoPor : undefined } : {}
+  const ev = { para, data, conta, alinea: alineaId, obs, porUid: 'ensaio', ...rep, ...acertoEv }
   const ensaio = cheques.map((c) => ({ c, r: aplicaEvento(c, ev, { hoje }) }))
   const problemas = [...new Set(ensaio.flatMap(({ r }) => r.problemas.map((p) => p.msg)))]
   // o mesmo aviso em várias folhas vira UMA linha ("3 folhas: …"): com 10
@@ -495,7 +529,7 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
     setSalvando(true); setErro('')
     try {
       await onConfirmar({ para, data, conta: para === 'depositado' ? conta : undefined,
-        alinea: para === 'devolvido' ? alineaId : undefined, obs, ...rep })
+        alinea: para === 'devolvido' ? alineaId : undefined, obs, ...rep, ...acertoEv })
     } catch (e) {
       setErro(e?.message || String(e))
     } finally { setSalvando(false) }
@@ -516,7 +550,7 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
           <div className="fin-cond">
             <div className="field">
               <label>{{ depositado: 'Depositado em', compensado: 'Compensou em (data do extrato)',
-                devolvido: 'Devolvido em', carteira: 'Voltou para a gaveta em', resgatado: 'Resgatado em',
+                devolvido: 'Devolvido em', carteira: de === 'repassado' ? 'Recolhido em' : 'Voltou para a gaveta em', resgatado: 'Resgatado em',
                 repassado: 'Entregue ao fornecedor em', cancelado: 'Data' }[para]}</label>
               <input type="date" value={data} onChange={(e) => setData(e.target.value)} />
             </div>
@@ -562,6 +596,32 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
               <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="ex.: NF 1234, resina de outubro" />
             </div>
           </>)}
+          {acerto && (<>
+            <div className="fin-cond">
+              <div className="field">
+                <label>{para === 'resgatado' ? 'Como o cliente pagou' : 'Como a empresa pagou o fornecedor'}</label>
+                <select value={formaPgto} onChange={(e) => setFormaPgto(e.target.value)}>
+                  <option value="">escolha…</option>
+                  {FORMAS_ACERTO.map((f) => <option key={f.id} value={f.id}>{f.nm}</option>)}
+                </select>
+              </div>
+              {cheques.length === 1 && (
+                <div className="field">
+                  <label>Valor pago</label>
+                  <input value={valorPago} inputMode="decimal" onChange={(e) => setValorPago(e.target.value)} />
+                </div>
+              )}
+              {para === 'carteira' && (
+                <div className="field">
+                  <label>Quem buscou</label>
+                  <input value={buscadoPor} onChange={(e) => setBuscadoPor(e.target.value)} placeholder="opcional" />
+                </div>
+              )}
+            </div>
+            <div className="fin-explica">{para === 'resgatado'
+              ? 'O cliente pagou e levou a folha. Registre como e quanto ele pagou (pode ser diferente do cheque, com juros ou desconto).'
+              : 'A folha volta para a gaveta da empresa. Não é devolução do banco: não tem alínea e não pesa no histórico do emitente. Fica registrado só como controle — não lança no caixa.'}</div>
+          </>)}
           {para === 'devolvido' && de === 'repassado' && (
             <div className="fin-explica">O fornecedor trouxe a folha de volta: ela entra na fila de devolvidos com o nome dele.</div>
           )}
@@ -588,8 +648,9 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
 // ============================================================
 // A FICHA DA FOLHA
 // ============================================================
-export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrigir, onFechar, ondeDe }) {
+export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrigir, onFechar, ondeDe, onResgate }) {
   const onde = ondeDe ? ondeDe(c) : null
+  const [marcandoResgate, setMarcandoResgate] = useState(false)
   const [corrigindo, setCorrigindo] = useState(false)
   const irmas = irmasDoLote(c, todos)
   const acoes = ['depositado', 'compensado', 'repassado', 'devolvido', 'carteira', 'resgatado', 'cancelado']
@@ -646,6 +707,11 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
             {historicoDe(c).map((e) => <EventoHist key={e.n} e={e} />)}
           </div>
 
+          {marcandoResgate && onResgate && (
+            <FormResgate jaPedido={!!c.resgatePedidoEm} hoje={hoje}
+              onSalvar={async (ev) => { await onResgate(!!c.resgatePedidoEm, ev); setMarcandoResgate(false) }}
+              onCancelar={() => setMarcandoResgate(false)} />
+          )}
           {corrigindo && <FormCorrigir c={c} onSalvar={async (m, o) => { await onCorrigir(m, o); setCorrigindo(false) }}
             onCancelar={() => setCorrigindo(false)} />}
         </div>
@@ -655,6 +721,11 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
               {nomeAcao(c.situacao, para)}
             </button>
           ))}
+          {c.situacao === 'repassado' && onResgate && !marcandoResgate && (
+            <button className="btn" onClick={() => setMarcandoResgate(true)}>
+              {c.resgatePedidoEm ? 'Cliente desistiu do resgate' : '🔁 Cliente pediu resgate'}
+            </button>
+          )}
           {!corrigindo && c.situacao !== 'cancelado' && (
             <button className="btn" onClick={() => setCorrigindo(true)}>✎ Corrigir dados</button>
           )}
@@ -671,6 +742,8 @@ function EventoHist({ e }) {
       <b>{titulo}</b> <span>· {fmtDia(e.data)}</span>
       {e.conta && <span> · {nomeConta(e.conta) || e.conta}</span>}
       {e.alinea && <span> · {nomeAlinea(e.alinea)}</span>}
+      {e.formaPgto && <span> · {nomeFormaAcerto(e.formaPgto)}{e.valorPago != null ? ` ${fmtMoeda(e.valorPago)}` : ''}</span>}
+      {e.buscadoPor && <span> · buscado por {e.buscadoPor}</span>}
       {e.fornecedorNome && <span> · {e.fornecedorNome}{e.referencia ? ` · ${e.referencia}` : ''}</span>}
       {e.tipo === 'corrigido' && (
         <div className="chq-ev-mud">{Object.keys(e.depois || {}).map((k) => (
@@ -684,6 +757,36 @@ function EventoHist({ e }) {
 }
 const fmtCampo = (v) => (v == null || v === '' ? '—'
   : typeof v === 'object' ? (v.nome || v.codigo || JSON.stringify(v)) : String(v))
+
+// pedir (ou desistir de) um resgate: data + observação. Só marca a folha.
+function FormResgate({ jaPedido, hoje, onSalvar, onCancelar }) {
+  const [data, setData] = useState(hoje)
+  const [obs, setObs] = useState('')
+  const [erro, setErro] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  async function salvar() {
+    setSalvando(true); setErro('')
+    try { await onSalvar({ data, obs }) } catch (e) { setErro(e?.message || String(e)) } finally { setSalvando(false) }
+  }
+  return (
+    <div className="chq-corrige">
+      <b>{jaPedido ? 'O cliente desistiu do resgate' : 'O cliente pediu o resgate desta folha'}</b>
+      <small>{jaPedido ? 'A folha sai da lista de resgates a buscar e continua com o fornecedor.'
+        : 'A folha entra em 🔁 Resgates para alguém ir buscar com o fornecedor. Nada muda na situação dela.'}</small>
+      <div className="fin-cond">
+        <div className="field"><label>{jaPedido ? 'Desistiu em' : 'Pedido em'}</label>
+          <input type="date" value={data} onChange={(e) => setData(e.target.value)} /></div>
+        <div className="field"><label>Observação</label>
+          <input value={obs} onChange={(e) => setObs(e.target.value)} placeholder={jaPedido ? 'opcional' : 'ex.: Rubi ligou, vai pagar em dinheiro'} /></div>
+      </div>
+      {erro && <div className="login-err">{erro}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="btn primary" onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : (jaPedido ? 'Confirmar desistência' : 'Marcar resgate pedido')}</button>
+        <button className="btn" onClick={onCancelar} disabled={salvando}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
 
 function FormCorrigir({ c, onSalvar, onCancelar }) {
   const [f, setF] = useState({
@@ -1161,6 +1264,7 @@ export function AbaRepassados({ estado, periodo, onPeriodo, empresa, fornecedore
                 <span>{fmtDia(r.data)}{r.referencia ? ` · ${r.referencia}` : ''} · pago pela {nomeEmpresa(r.empresaPagadora)}</span>
                 <span>{r.qtd} folha(s) · <b>{fmtMoeda(r.valor)}</b></span>
                 {r.entreEmpresas > 0 && <span className="chip">⇄ entre empresas</span>}
+                {r.recolhidas > 0 && <span className="chip">{r.recolhidas} recolhida(s)</span>}
                 <button className="mini-btn no-print" onClick={() => onRecibo(r)}>🖨 Recibo</button>
               </div>
               <ListaCheques cheques={r.folhas.map((f) => f.cheque)} marcados={marcados} onMarcar={onMarcar}

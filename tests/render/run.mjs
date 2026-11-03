@@ -208,6 +208,13 @@ const ESPERA = {
   chOnde: ['🤝 Com RESINAS NE desde 24/10/2026', 'NF 1234 · 📞 (79) 3431-0000 · falar com Marcos',
     '↩ Voltou do banco em 23/10/2026', '12 · Sem fundos — 2ª apresentação · está com a empresa'],
   chFichaOnde: ['chq-onde-ficha', '🤝 Com RESINAS NE desde 24/10/2026'],
+  // C6d: resgate de folha que está com o fornecedor
+  chResgates: ['🔁 Resgates (1)', 'alguém precisa', 'ir buscar', 'nº 047474', '🔁 resgate pedido', 'resgate pedido há 3 dias', 'Com RESINAS NE'],
+  chRecolher: ['Recolhido do fornecedor · 1 folha(s)', 'Recolhido em', 'Como a empresa pagou o fornecedor', 'Outro cheque', 'Abatido em conta',
+    'Valor pago', 'Quem buscou', 'não tem alínea', 'diga como a empresa pagou o fornecedor'],
+  chResgatar: ['Resgatado · 1 folha(s)', 'Como o cliente pagou', 'Valor pago', 'pode ser diferente do cheque'],
+  chFichaRep: ['🔁 Cliente pediu resgate', 'Recolhido do fornecedor', 'Voltou do fornecedor'],
+  chFichaResg: ['Cliente desistiu do resgate', 'Resgate pedido pelo cliente'],
   // C5: a gaveta = carteira + devolvidos (o papel voltou); repassada e depositada não entram
   chGaveta: ['Conferência da gaveta de cheques', 'as duas empresas', 'Em carteira — 2 folha(s) · R$ 734,00',
     'Devolvidos (a folha voltou para a empresa) — 1 folha(s) · R$ 367,00', '047470', '047473', '047472', 'INGRID · #5458', '☐', 'Conferido por'],
@@ -267,6 +274,8 @@ const PROIBE = {
   chCarregando: ['Nenhum cheque na gaveta'],        // lista que não chegou não é lista vazia
   chDesigner: ['Lançar cheques'],
   chDono: ['Lançar cheques'],
+  chResgatar: ['Quem buscou', 'não tem alínea'],    // o resgate do cliente não tem "quem buscou"
+  chFichaResg: ['🔁 Cliente pediu resgate'],        // já pedido: o botão vira "desistiu"
   chGaveta: ['047471', '047474'],                  // depositado e repassado não estão na gaveta
   chLocFechado: ['nº 047470'],                     // fechado: só a linha de resumo
   chRepassar: ['TINTAS VELHAS'],                   // fornecedor inativo não aparece no repasse                      // 03/11/2026: dinheiro só do financeiro

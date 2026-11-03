@@ -102,9 +102,11 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > movimento nasce na compensação e é cancelado na devolução (C6b), e achar
 > "o cheque 246 da RUBI" — busca mista número+nome no banco inteiro, com a
 > resposta "onde está" numa linha (C6c — **FEITA em 03/11/2026**: `numeroChave`,
-> `pedacosDaBusca`, `ondeEstaOCheque`, consultas por número e por cliente), e o resgate de folha que está com o
+> `pedacosDaBusca`, `ondeEstaOCheque`, consultas por número e por cliente; no ar `ca96ac4`), e o resgate de folha que está com o
 > fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
-> só controle) → resgatado pelo cliente (C6d). Nada codado.
+> só controle) → resgatado pelo cliente (C6d — **FEITA em 03/11/2026**; de
+> brinde, `mudancasDe`: marcas no histórico não contam mais como mudança de
+> situação — corrigia um bug da C3). Falta a C6b (Financeiro).
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
 > dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou

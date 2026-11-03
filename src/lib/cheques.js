@@ -48,7 +48,10 @@ export const TRANSICOES_CHEQUE = {
   depositado: ['compensado', 'devolvido'],
   compensado: ['devolvido'],
   devolvido: ['depositado', 'carteira', 'repassado', 'resgatado'],
-  repassado: ['devolvido'],
+  // repassado → carteira é o RECOLHIMENTO (C6d): a JC buscou a folha com o
+  // fornecedor, pagando-o, porque o cliente quer resgatá-la. Não é devolução
+  // bancária — não tem alínea e não conta para o "reapresentar".
+  repassado: ['devolvido', 'carteira'],
   resgatado: [],
   cancelado: [],
 }
@@ -57,7 +60,7 @@ export const TRANSICOES_CHEQUE = {
 // devolvido → depositado é "reapresentar", não "depositar"
 export function nomeAcao(de, para) {
   if (para === 'depositado') return de === 'devolvido' ? 'Reapresentar' : 'Depositar'
-  if (para === 'carteira') return 'Voltou para a gaveta'
+  if (para === 'carteira') return de === 'repassado' ? 'Recolhido do fornecedor' : 'Voltou para a gaveta'
   return {
     compensado: 'Compensado', devolvido: de === 'repassado' ? 'Voltou do fornecedor' : 'Devolvido',
     repassado: 'Repassar', resgatado: 'Resgatado',
@@ -69,12 +72,26 @@ export function nomeAcao(de, para) {
 // o nome do EVENTO no histórico, no passado: o que aconteceu, não o botão
 export function nomeEvento(e) {
   if (e?.tipo === 'corrigido') return 'Dados corrigidos'
+  if (e?.tipo === 'resgatePedido') return 'Resgate pedido pelo cliente'
+  if (e?.tipo === 'resgateDesistido') return 'Resgate desistido'
   if (!e?.de) return 'Lançado'
   if (e.para === 'depositado') return e.de === 'devolvido' ? 'Reapresentado' : 'Depositado'
   if (e.para === 'devolvido') return e.de === 'repassado' ? 'Voltou do fornecedor' : 'Devolvido'
-  if (e.para === 'carteira') return 'Voltou para a gaveta'
+  if (e.para === 'carteira') return e.de === 'repassado' ? 'Recolhido do fornecedor' : 'Voltou para a gaveta'
   return nomeSituacao(e.para)
 }
+
+// como um ACERTO em dinheiro foi feito (C6d): a JC pagando o fornecedor para
+// recolher a folha, ou o cliente pagando a JC para resgatá-la
+export const FORMAS_ACERTO = [
+  { id: 'dinheiro', nm: 'Dinheiro' },
+  { id: 'pix', nm: 'PIX' },
+  { id: 'transferencia', nm: 'Transferência' },
+  { id: 'cheque', nm: 'Outro cheque' },
+  { id: 'abatimento', nm: 'Abatido em conta' },
+]
+export const nomeFormaAcerto = (id) => FORMAS_ACERTO.find((f) => f.id === id)?.nm || id || ''
+const pedeAcerto = (de, para) => (para === 'carteira' && de === 'repassado') || para === 'resgatado'
 
 // ============================================================
 // ALÍNEAS — o motivo oficial da devolução (regras da compensação do BACEN)
@@ -411,9 +428,16 @@ export function situacaoPeloHistorico(c) {
   for (let i = h.length - 1; i >= 0; i--) if (h[i]?.para) return h[i].para
   return ''
 }
+// Só os eventos que MUDARAM a situação. O histórico também guarda marcas que
+// repetem a situação atual — "Dados corrigidos", "Resgate pedido", "Resgate
+// desistido" (têm `tipo`) — e contá-las como mudança inventa fatos: um resgate
+// pedido virava um REPASSE novo no recibo, e corrigir o número de uma folha
+// devolvida a contava como devolvida DE NOVO (achado no ensaio de 03/11/2026).
+export const mudancasDe = (c) => historicoDe(c).filter((e) => !e?.tipo)
+
 export const situacaoBate = (c) => !historicoDe(c).length || situacaoPeloHistorico(c) === c?.situacao
 
-export const devolucoesDe = (c) => historicoDe(c).filter((e) => e?.para === 'devolvido')
+export const devolucoesDe = (c) => mudancasDe(c).filter((e) => e?.para === 'devolvido')
 export const ultimaDevolucao = (c) => devolucoesDe(c).slice(-1)[0] || null
 
 // Pode a MESMA folha voltar ao banco? Olha TODAS as devoluções, inclusive as que
@@ -441,7 +465,7 @@ export function devolvidoPeloFornecedor(c) {
   if (c?.situacao !== 'devolvido') return null
   const ult = ultimaDevolucao(c)
   if (!ult || ult.de !== 'repassado') return null
-  const rep = historicoDe(c).filter((e) => e?.para === 'repassado').slice(-1)[0]
+  const rep = mudancasDe(c).filter((e) => e?.para === 'repassado').slice(-1)[0]
   return rep ? { fornecedorId: rep.fornecedorId || '', fornecedorNome: rep.fornecedorNome || '', data: rep.data || '' } : null
 }
 
@@ -486,6 +510,16 @@ export function problemasDoEvento(c, ev) {
       p.push({ campo: 'fornecedor', msg: 'escolha o fornecedor' })
     }
     if (!ev?.empresaPagadora) p.push({ campo: 'empresaPagadora', msg: 'diga qual empresa está pagando' })
+  }
+  // recolher do fornecedor / resgate do cliente: COMO o dinheiro foi acertado
+  // é o que se precisa saber depois ("pagamos a RESINAS em PIX")
+  if (pedeAcerto(c?.situacao, para)) {
+    if (!FORMAS_ACERTO.some((f) => f.id === ev?.formaPgto)) {
+      p.push({ campo: 'formaPgto', msg: para === 'resgatado' ? 'diga como o cliente pagou' : 'diga como a empresa pagou o fornecedor' })
+    }
+    if (ev?.valorPago != null && ev.valorPago !== '' && !(centavos(ev.valorPago) > 0)) {
+      p.push({ campo: 'valorPago', msg: 'o valor pago tem que ser maior que zero' })
+    }
   }
   // cancelar apaga o cheque de todas as listas: sem o porquê, ninguém entende
   // depois por que ele sumiu
@@ -545,6 +579,11 @@ export function aplicaEvento(c, ev, { agora, hoje } = {}) {
     fornecedorNome: ev.para === 'repassado' ? String(ev.fornecedorNome || '').trim() : undefined,
     empresaPagadora: ev.para === 'repassado' ? ev.empresaPagadora : undefined,
     referencia: ev.para === 'repassado' ? String(ev.referencia || '').trim() : undefined,
+    // o acerto do recolhimento / do resgate — sem valor digitado, vale o da folha
+    formaPgto: pedeAcerto(c.situacao, ev.para) ? ev.formaPgto : undefined,
+    valorPago: pedeAcerto(c.situacao, ev.para)
+      ? arredondaReais(ev.valorPago != null && ev.valorPago !== '' ? ev.valorPago : c.valor) : undefined,
+    buscadoPor: ev.para === 'carteira' && c.situacao === 'repassado' ? (String(ev.buscadoPor || '').trim() || undefined) : undefined,
     obs: String(ev.obs || '').trim() || undefined,
   })
   const patch = {
@@ -555,6 +594,8 @@ export function aplicaEvento(c, ev, { agora, hoje } = {}) {
   // a conta do depósito acompanha o cheque enquanto ele está no banco; o
   // destino, enquanto está com o fornecedor. Fora disso ficam vazios, mas o
   // HISTÓRICO guarda todos os depósitos e repasses que já houve.
+  // saiu da mão do fornecedor (recolhida ou devolvida): não há mais o que buscar
+  if (c.resgatePedidoEm && ev.para !== c.situacao) patch.resgatePedidoEm = null
   if (ev.para === 'depositado') patch.contaDeposito = ev.conta
   else if (ev.para !== 'compensado' && ev.para !== 'devolvido') patch.contaDeposito = ''
   if (ev.para === 'repassado') {
@@ -710,6 +751,41 @@ export function passosAte(ini) {
 }
 
 // ============================================================
+// RESGATE PEDIDO (C6d) — o cliente quer a folha de volta e ela está com o fornecedor
+// ============================================================
+// Só MARCA (evento sem mudar a situação), e grava `resgatePedidoEm` — é por ele
+// que a lista "Resgates a buscar" consulta o servidor (um campo; a folha sem o
+// campo, ou com null, não aparece). Recolher, devolver ou desistir limpa.
+function eventoDeMarca(c, tipo, { data, por, porUid, obs, agora } = {}) {
+  const h = historicoDe(c)
+  const em = agora || new Date().toISOString()
+  return limpa({ n: h.length + 1, em, data: diaDe(data || em), por: por || '', porUid,
+    de: c.situacao || '', para: c.situacao || '', tipo, obs: String(obs || '').trim() || undefined })
+}
+export function marcaResgate(c, ev = {}) {
+  if (c?.situacao !== 'repassado') return { ok: false, problemas: [{ campo: 'situacao', msg: 'só se pede resgate de folha que está com um fornecedor' }] }
+  if (c.resgatePedidoEm) return { ok: false, problemas: [{ campo: 'situacao', msg: 'o resgate desta folha já foi pedido' }] }
+  if (!ev.porUid) return { ok: false, problemas: [{ campo: 'porUid', msg: 'falta quem registrou' }] }
+  const e = eventoDeMarca(c, 'resgatePedido', ev)
+  const patch = { resgatePedidoEm: e.data, historico: [...historicoDe(c), e] }
+  return { ok: true, problemas: [], patch, cheque: { ...c, ...patch } }
+}
+export function desisteResgate(c, ev = {}) {
+  if (!c?.resgatePedidoEm) return { ok: false, problemas: [{ campo: 'situacao', msg: 'não há resgate pedido nesta folha' }] }
+  if (!ev.porUid) return { ok: false, problemas: [{ campo: 'porUid', msg: 'falta quem registrou' }] }
+  const e = eventoDeMarca(c, 'resgateDesistido', ev)
+  const patch = { resgatePedidoEm: null, historico: [...historicoDe(c), e] }
+  return { ok: true, problemas: [], patch, cheque: { ...c, ...patch } }
+}
+// a lista de quem precisa ir buscar: a mais antiga primeiro (é a que está esperando há mais tempo)
+export function resgatesPendentes(cheques, hoje) {
+  return (cheques || [])
+    .filter((c) => c?.resgatePedidoEm && c.situacao === 'repassado')
+    .map((c) => ({ cheque: c, dias: diasEntre(c.resgatePedidoEm, diaDe(hoje)) }))
+    .sort((a, b) => b.dias - a.dias)
+}
+
+// ============================================================
 // SELEÇÃO EM LOTE — o que vale para TODAS as marcadas
 // ============================================================
 // Marcar uma em carteira e uma compensada não oferece "depositar". O
@@ -733,7 +809,7 @@ export const podeDepositarHoje = (c, hoje) => c?.situacao === 'carteira' && (dia
 // depósito" é o do ÚLTIMO depósito — reapresentado conta de novo.
 export function diasDepositado(c, hoje) {
   if (c?.situacao !== 'depositado') return null
-  const dep = historicoDe(c).filter((e) => e?.para === 'depositado').slice(-1)[0]
+  const dep = mudancasDe(c).filter((e) => e?.para === 'depositado').slice(-1)[0]
   return dep?.data ? diasEntre(dep.data, diaDe(hoje)) : null
 }
 // Passou do prazo normal e ninguém marcou: não é para presumir compensado
@@ -812,7 +888,7 @@ export const chaveRepasse = (e) =>
 export function repassesDe(cheques) {
   const grupos = new Map()
   for (const c of cheques || []) {
-    const h = historicoDe(c)
+    const h = mudancasDe(c)
     h.forEach((e, i) => {
       if (e?.para !== 'repassado') return
       const ch = chaveRepasse(e)
@@ -821,8 +897,11 @@ export function repassesDe(cheques) {
           fornecedorNome: e.fornecedorNome || '', referencia: e.referencia || '',
           empresaPagadora: e.empresaPagadora || '', folhas: [] })
       }
-      const voltou = h.slice(i + 1).some((d) => d?.para === 'devolvido' && d?.de === 'repassado')
-      grupos.get(ch).folhas.push({ cheque: c, evento: e, voltou,
+      const depois = h.slice(i + 1)
+      const voltou = depois.some((d) => d?.para === 'devolvido' && d?.de === 'repassado')
+      // recolhida (C6d): a JC buscou de volta para o cliente resgatar — não é cheque que voltou
+      const recolhida = depois.some((d) => d?.para === 'carteira' && d?.de === 'repassado')
+      grupos.get(ch).folhas.push({ cheque: c, evento: e, voltou, recolhida,
         entreEmpresas: !!(e.empresaPagadora && c.empresa && e.empresaPagadora !== c.empresa) })
     })
   }
@@ -832,6 +911,7 @@ export function repassesDe(cheques) {
     return { ...g, folhas, qtd: folhas.length,
       valor: folhas.reduce((s, f) => s + centavos(f.cheque.valor), 0) / 100,
       voltaram: folhas.filter((f) => f.voltou).length,
+      recolhidas: folhas.filter((f) => f.recolhida).length,
       entreEmpresas: folhas.filter((f) => f.entreEmpresas).length }
   }).sort((a, b) => b.data.localeCompare(a.data) || a.fornecedorNome.localeCompare(b.fornecedorNome)
     || a.empresaPagadora.localeCompare(b.empresaPagadora) || a.referencia.localeCompare(b.referencia))
@@ -1015,8 +1095,8 @@ export function filtraCheques(cheques, f = {}, casaTexto = casaTextoSimples) {
 // qual fornecedor (e como falar com ele). Os nomes que o núcleo não conhece
 // entram por função: `nomeConta(id)` e `contatoFornecedor(id)` → { telefone, contato }.
 //   → { icone, texto, detalhe }
-export function ondeEstaOCheque(c, { nomeConta = (id) => id || '', contatoFornecedor = () => null } = {}) {
-  const ult = historicoDe(c).filter((e) => e?.para === c?.situacao && e?.tipo !== 'corrigido').slice(-1)[0]
+export function ondeEstaOCheque(c, { nomeConta = (id) => id || '', contatoFornecedor = () => null, hoje } = {}) {
+  const ult = mudancasDe(c).filter((e) => e?.para === c?.situacao).slice(-1)[0]
   const quando = ult?.data ? fmtDiaCurto(ult.data) : ''
   switch (c?.situacao) {
     case 'carteira':
@@ -1039,8 +1119,11 @@ export function ondeEstaOCheque(c, { nomeConta = (id) => id || '', contatoFornec
     case 'repassado': {
       const d = c.destino || {}
       const ct = contatoFornecedor(d.fornecedorId) || {}
+      const dPed = hoje && c.resgatePedidoEm ? diasEntre(c.resgatePedidoEm, diaDe(hoje)) : null
+      const pedido = c.resgatePedidoEm
+        ? `🔁 resgate pedido ${dPed == null ? `em ${fmtDiaCurto(c.resgatePedidoEm)}` : dPed <= 0 ? 'hoje' : dPed === 1 ? 'ontem' : `há ${dPed} dias`}` : ''
       return { icone: '🤝', texto: `Com ${d.fornecedorNome || 'o fornecedor'}${d.data ? ` desde ${fmtDiaCurto(d.data)}` : ''}`,
-        detalhe: [d.referencia, ct.telefone ? `📞 ${ct.telefone}` : '', ct.contato ? `falar com ${ct.contato}` : '']
+        detalhe: [d.referencia, ct.telefone ? `📞 ${ct.telefone}` : '', ct.contato ? `falar com ${ct.contato}` : '', pedido]
           .filter(Boolean).join(' · ') }
     }
     case 'resgatado':

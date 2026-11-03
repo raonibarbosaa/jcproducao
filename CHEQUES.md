@@ -526,7 +526,7 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   "repassado a RESINAS em 20/11 · NF 1234" · "voltou do banco em 15/11 · sem
   fundos (11)" · "voltou de RESINAS em 25/11" · "resgatado pelo cliente" ·
   "cancelado". Um clique abre a ficha com o histórico.
-- ✅ **FEITA (03/11/2026).** Sem rule nova. Conferido antes: a produção tinha
+- ✅ **FEITA e no ar (03/11/2026, `ca96ac4`).** Sem rule nova. Conferido antes: a produção tinha
   **0 cheques** (consulta só de leitura na API), então `numeroChave` entra sem
   migração. Ensaiada no navegador: "246 rubi" → só o 246 da RUBI, "🤝 Com
   RESINAS DO NORDESTE desde 28/10 · NF 1234 · 📞 … · falar com Marcos";
@@ -575,6 +575,18 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   o extrato mostra o que de fato entrou. Antes da C6b, só o controle.
 - **No recibo/aba Repassados:** a folha recolhida continua no recibo daquele
   dia (o papel assinado não muda) e aparece como "recolhida em dd/mm".
+- ✅ **FEITA (03/11/2026).** Sem rule nova. Ensaiada no navegador com o fluxo
+  inteiro da RUBI: 246 com a RESINAS → "🔁 Cliente pediu resgate" na ficha →
+  aba **🔁 Resgates** (com fornecedor, telefone, contato e "pedido hoje / há N
+  dias") → "Recolhido do fornecedor" (PIX, buscado por Juninho; Confirmar
+  travado até dizer a forma) → "Resgatado" (dinheiro, R$ 380). A ficha conta a
+  história inteira. A lista consulta `resgatePedidoEm > ''` (um campo).
+  ⚠️ **O ensaio pegou um erro de verdade:** eventos que só MARCAM (com `tipo`)
+  repetem a situação, e as contas derivadas os liam como mudança — o resgate
+  pedido virava um REPASSE fantasma no recibo, e (bug que já estava no ar desde
+  a C3) corrigir um dado de folha devolvida a contava como devolvida de novo e
+  numa depositada mudava a data do depósito. Agora as contas usam `mudancasDe`
+  (só eventos sem `tipo`). Testes de regressão no fim de `tests/cheques.test.mjs`.
 
 ## Ordem
 1. **C6a** (independente, pequena): contas do cliente no lançamento.
