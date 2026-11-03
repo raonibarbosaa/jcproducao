@@ -1,8 +1,8 @@
 import { renderToString } from 'react-dom/server'
 import Cheques, { TelaCheques, ModalLancar, ModalEvento, FichaCheque, BarraSelecao, numBR,
-  ModalReciboPronto, ReciboRepasse, reciboDoRepasse, ConferenciaGaveta } from '../../src/pages/Cheques.jsx'
+  ModalReciboPronto, ReciboRepasse, reciboDoRepasse, ConferenciaGaveta, ContasDoCliente } from '../../src/pages/Cheques.jsx'
 import { ChequesDoPedido } from '../../src/pages/Localizar.jsx'
-import { chequesDoLote, geraFolhas, aplicaEvento } from '../../src/lib/cheques.js'
+import { chequesDoLote, geraFolhas, aplicaEvento, contasDoCliente } from '../../src/lib/cheques.js'
 
 const HOJE = '2026-10-26'
 const QUEM = { por: 'Anny', porUid: 'u1', agora: '2026-10-20T10:00:00Z', hoje: HOJE }
@@ -55,6 +55,8 @@ export function roda() {
     chGavetaSac: renderToString(<ConferenciaGaveta cheques={vivos.lista} empresa="sacolas" clientes={base.clientes} hoje={HOJE} />),
     chLocFechado: renderToString(<ChequesDoPedido cheques={[lote[0], dep, rep4]} aberto={false} />),
     chLocAberto: renderToString(<ChequesDoPedido cheques={[lote[0], dep, rep4]} aberto />),
+    chContas: renderToString(<ContasDoCliente contas={contasDoCliente(lote)} usada="" onUsar={() => {}} cliente="INGRID" />),
+    chContasVazio: renderToString(<ContasDoCliente contas={[]} usada="" onUsar={() => {}} cliente="INGRID" />) || '<vazio>',
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }

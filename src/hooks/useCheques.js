@@ -153,3 +153,12 @@ export function useChequesDosPedidos(ids, ligado = false) {
   }, [chave, ligado])
   return estado
 }
+
+// Os cheques que UM cliente já passou — para o lançamento oferecer as contas
+// dele (C6a). Leitura única (não fica escutando): `clienteChave` é um campo
+// só, sem índice composto, e lê só as folhas daquele cliente.
+export async function chequesDoCliente(chave) {
+  if (!chave) return []
+  const snap = await getDocs(query(col(), where('clienteChave', '==', chave)))
+  return snap.docs.map(doDoc)
+}

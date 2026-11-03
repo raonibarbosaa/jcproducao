@@ -200,6 +200,10 @@ const ESPERA = {
   chBarraMista: ['2 marcado(s)', 'R$ 734,00', 'Cancelar cheque'],
   chNumBR: ['[1468,367.5,1468.5,true]'],
   chDesigner: ['Esta tela é só do financeiro'],
+  // C6a: as contas que o cliente já usou, com o próximo número
+  chContas: ['Contas que INGRID já usou', 'JOAO TERCEIRO', 'Banese · ag 0036 · cc 03/100.483-1 · de terceiro',
+    'último nº 047473', '4 folha(s)', 'próximo 047474'],
+  chContasVazio: ['<vazio>'],
   // C5: a gaveta = carteira + devolvidos (o papel voltou); repassada e depositada não entram
   chGaveta: ['Conferência da gaveta de cheques', 'as duas empresas', 'Em carteira — 2 folha(s) · R$ 734,00',
     'Devolvidos (a folha voltou para a empresa) — 1 folha(s) · R$ 367,00', '047470', '047473', '047472', 'INGRID · #5458', '☐', 'Conferido por'],

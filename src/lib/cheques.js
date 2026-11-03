@@ -606,6 +606,7 @@ export function corrigeCheque(c, mudancas, { por, porUid, agora, obs } = {}) {
     obs: String(obs || '').trim() || undefined,
   })
   const patch = { ...depois, chave: chaveCheque(novo), historico: [...h, evento] }
+  if ('cliente' in depois) patch.clienteChave = clienteChave(depois.cliente)
   return { ok: true, problemas: [], patch, cheque: { ...c, ...patch } }
 }
 
@@ -644,6 +645,9 @@ export function chequesDoLote(cab, folhas, { loteId, por, porUid, agora, hoje } 
       bomPara: diaDe(f.bomPara),
       chave: '',
       cliente: String(cab.cliente).trim(),
+      // o cliente na forma de COMPARAR — é por ela que se acham as contas que
+      // ele já usou (C6a): "Rubi Semi Joias" e "RUBI SEMI JOIAS" são o mesmo
+      clienteChave: clienteChave(cab.cliente),
       idVenda: String(cab.idVenda || '').trim(),
       recebidoEm: diaDe(cab.recebidoEm),
       lote: loteId || '',
@@ -874,6 +878,53 @@ export function cortePeriodo(periodo, hoje) {
   if (periodo === 'mes') return `${dia.slice(0, 7)}-01`
   const n = Number(periodo) || 0
   return n > 0 ? somaDias(dia, -n) : ''
+}
+
+// ============================================================
+// AS CONTAS DO CLIENTE (fase C6a)
+// ============================================================
+// Quem passa cheque costuma passar do MESMO talão: o lançamento oferece as
+// contas que aquele cliente já usou, e um clique preenche a 1ª folha. A fonte
+// é o histórico de cheques — sem cadastro paralelo para manter (decisão do
+// Raoni em 03/11/2026), então nunca fica desatualizado.
+export const clienteChave = (cliente) => normalizaTexto(cliente)
+
+// A conta é banco + agência + conta (a chave da folha SEM o número).
+//   → [{ chave, banco, agencia, conta, emitente, terceiro, vezes, ultimaData,
+//        ultimoNumero, proximoNumero }] — a usada mais recentemente primeiro.
+// Os dados (como o emitente foi escrito, a conta com pontuação) vêm da folha
+// mais RECENTE: se alguém corrigiu, a correção é o que vale daqui para frente.
+// O "próximo número" sai do MAIOR número já lançado naquela conta, não do
+// último lançado: folha antiga lançada depois não pode puxar a sequência para trás.
+export function contasDoCliente(cheques) {
+  const grupos = new Map()
+  for (const c of cheques || []) {
+    if (!c || c.situacao === 'cancelado') continue
+    const banco = semZeros(c.banco?.codigo ?? c.banco)
+    const ag = semZeros(c.agencia)
+    const conta = semZeros(c.conta)
+    if (!banco || !ag || !conta) continue
+    const ch = `${banco}|${ag}|${conta}`
+    if (!grupos.has(ch)) grupos.set(ch, [])
+    grupos.get(ch).push(c)
+  }
+  const recencia = (c) => `${c.recebidoEm || ''}|${c.criadoEm || ''}`
+  return [...grupos].map(([ch, lista]) => {
+    const recente = [...lista].sort((a, b) => recencia(b).localeCompare(recencia(a)))[0]
+    const maior = [...lista].sort((a, b) =>
+      numeroNormal(b.numero).localeCompare(numeroNormal(a.numero), undefined, { numeric: true }))[0]
+    return {
+      chave: ch,
+      banco: { codigo: String(recente.banco?.codigo ?? ''), nome: recente.banco?.nome || nomeBanco(recente.banco?.codigo) },
+      agencia: recente.agencia || '', conta: recente.conta || '',
+      emitente: { nome: recente.emitente?.nome || '', doc: recente.emitente?.doc || '' },
+      terceiro: !!recente.terceiro,
+      vezes: lista.length,
+      ultimaData: recente.recebidoEm || '',
+      ultimoNumero: maior.numero || '',
+      proximoNumero: numeroSeguinte(maior.numero, 1),
+    }
+  }).sort((a, b) => b.ultimaData.localeCompare(a.ultimaData) || b.vezes - a.vezes)
 }
 
 // ============================================================

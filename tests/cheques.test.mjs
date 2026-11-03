@@ -10,7 +10,7 @@ import {
   diasDepositado, compensacaoAtrasada, podeDepositarHoje, filtraCheques, irmasDoLote,
   nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
-  gaveta, resumoChequesDoPedido,
+  gaveta, resumoChequesDoPedido, contasDoCliente, clienteChave,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -340,5 +340,29 @@ t('cheques do pedido por situação, sem os cancelados', rp5458.porSituacao.map(
   [['carteira', 3, 1101], ['devolvido', 1, 367], ['repassado', 2, 467]])
 t('total do pedido', [rp5458.qtd, rp5458.valor], [6, 1935])
 t('pedido sem cheque', resumoChequesDoPedido([]), { qtd: 0, valor: 0, porSituacao: [], folhas: [] })
+
+// ---------- as contas do cliente (C6a) ----------
+t('o cliente é gravado na forma de comparar', [c1.clienteChave, clienteChave(' Magalhães e  cia ltda ')],
+  ['MAGALHAES E CIA LTDA', 'MAGALHAES E CIA LTDA'])
+const corrCli = corrigeCheque(c1, { cliente: 'Outra Loja' }, { porUid: 'u', agora: AGORA })
+t('corrigir o cliente atualiza a chave', corrCli.cheque.clienteChave, 'OUTRA LOJA')
+const T = (o) => ({ banco: { codigo: '047', nome: 'Banese' }, agencia: '0036', conta: '03/100.483-1',
+  emitente: { nome: 'JOAO', doc: '' }, situacao: 'carteira', ...o })
+const contas = contasDoCliente([
+  T({ numero: '000246', recebidoEm: '2026-11-03' }),
+  T({ numero: '000249', recebidoEm: '2026-11-03', emitente: { nome: 'JOAO DA SILVA', doc: '52998224725' } }),
+  // folha ANTIGA lançada por último: não pode puxar a sequência para trás
+  T({ numero: '000120', recebidoEm: '2026-11-04', criadoEm: '2026-11-04' }),
+  // mesma conta escrita sem zeros e pontuação: é a mesma conta
+  T({ numero: '247', agencia: '36', conta: '031004831', banco: { codigo: '47' }, recebidoEm: '2026-10-01' }),
+  T({ numero: '500', banco: { codigo: '237', nome: 'Bradesco' }, agencia: '1234', conta: '98765-0', terceiro: true, recebidoEm: '2026-09-01' }),
+  T({ numero: '999', agencia: '9', conta: '9', situacao: 'cancelado', recebidoEm: '2026-11-10' }),
+])
+t('uma linha por conta, a mais recente primeiro; cancelado não conta',
+  contas.map((c) => [c.banco.nome, c.vezes, c.ultimaData]), [['Banese', 4, '2026-11-04'], ['Bradesco', 1, '2026-09-01']])
+t('o próximo número sai do MAIOR já lançado, com os zeros', [contas[0].ultimoNumero, contas[0].proximoNumero], ['000249', '000250'])
+t('os dados vêm da folha mais recente', contas[0].emitente.nome, 'JOAO')
+t('cheque de terceiro é lembrado', contas[1].terceiro, true)
+t('sem histórico, sem contas', contasDoCliente([]), [])
 
 export default resultado('cheques')

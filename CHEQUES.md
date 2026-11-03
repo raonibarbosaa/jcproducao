@@ -422,3 +422,155 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
   demanda.
 - **Ainda sem resposta (não trava):** os vídeos tinham áudio que não deu para
   ouvir aqui; se havia explicação falada, entra depois.
+
+---
+
+# FASE C6 — CONTAS DO CLIENTE E RECEBIMENTO EM CHEQUE (desenho FECHADO em 03/11/2026)
+
+> Pedido do Raoni em 03/11/2026: "ao cadastrar o cheque, registrar razão
+> social/nome, conta e agência do emitente; esta conta fica ligada ao cliente
+> que passou o cheque, para os próximos a informação já vir; e selecionar na
+> hora de cadastrar o recebimento via cheque". Mostrado no Chrome com um caso
+> REAL: a cobrança da **RUBI SEMI JOIAS (#5912)**, lançada pela Jéssica em
+> 03/11 em 4 parcelas de R$ 375,00, **todas na forma "Cheque"** — o
+> Financeiro já está em uso, e com cheque.
+
+## O buraco que o caso mostrou
+Hoje Financeiro e Cheques não se falam (decisão "só controle" de 20/10):
+- "Receber" com forma Cheque dá baixa NA HORA e pergunta em que conta o
+  dinheiro "entrou" — nenhum cheque nasce;
+- lançar a folha em Cheques não toca na parcela;
+- cheque que volta sem fundos deixa a parcela "quitada", sem ninguém saber.
+Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que divergem.
+
+## Decisões do Raoni (03/11/2026)
+| Pergunta | Decisão |
+|---|---|
+| Como lembrar as contas do cliente | **Pelo histórico** dos cheques que ele já passou — sem cadastro novo |
+| Quando a parcela paga com cheque conta como recebida | **Quando o cheque compensa ou é repassado.** Na gaveta, a parcela fica "em cheque"; voltou sem fundos, ela reabre |
+| Repasse lança saída no caixa? | **Não — só controle, como hoje.** O pagamento ao fornecedor entra quando houver contas a pagar |
+
+## C6a — as contas do cliente vêm prontas
+- No lançamento, escolhido o cliente (ou o pedido, que traz o cliente), o
+  sistema lista as **contas que ele já usou**: emitente + CPF/CNPJ + banco +
+  agência + conta, de terceiro ou não, com o **último número** e a data.
+  Um clique preenche a 1ª folha e sugere o **próximo número** (o maior já
+  lançado naquela conta + 1, preservando os zeros).
+- **Fonte:** os próprios cheques. Consulta `where('clienteChave','==', …)` —
+  um campo, sem índice composto; lê só os cheques daquele cliente.
+  `clienteChave` = razão normalizada (sem acento/caixa/espaço duplo), gravada
+  em todo cheque novo: "Rubi Semi Joias" e "RUBI SEMI JOIAS" são o mesmo
+  cliente. A produção ainda não tem cheque lançado (conferido em 03/11), então
+  não há migração.
+- Regra pura `contasDoCliente(cheques)` no núcleo portátil: agrupa por
+  banco+agência+conta (a chave sem o número), ignora cancelados, ordena pela
+  última vez usada.
+- Conta nova continua sendo digitada — e aparece da próxima vez.
+- ✅ **FEITA (03/11/2026).** Sem rule nova. Ensaiada no navegador com o caso
+  da RUBI (folhas 246–249 já compensadas): digitando "rubi semi joias" em
+  minúsculas, a conta aparece com "último nº 000249 · próximo 000250", um
+  clique preenche tudo e "Gerar folhas" dá 000250–000253. **Uma consulta só**
+  ao servidor: a busca espera a pessoa parar de digitar (500 ms) e depende da
+  FUNÇÃO de busca, não do objeto `acoes` (recriado a cada render — consultaria
+  de novo a cada redesenho, regra 2.2). Junta o que veio do servidor com o que
+  a tela já tem (a folha recém-lançada pode não ter voltado). O próximo número
+  sai do MAIOR já lançado na conta, não do último lançado.
+
+## C6b — receber a parcela em cheque
+- **No Financeiro**, a parcela com forma Cheque ganha **"Lançar cheque(s)"**,
+  e a cobrança inteira ganha **"Lançar os cheques de todas as parcelas"** (o
+  caso da RUBI: 4 folhas → 4 parcelas). Abre o lançamento de cheques **já
+  preenchido**: cliente, pedido, empresa, e por folha o valor e o "bom para"
+  da sua parcela. As contas do cliente (C6a) aparecem ali.
+- **Cada folha guarda `cobrancaId` + `parcelaN`.** Várias folhas podem pagar a
+  mesma parcela.
+- **A parcela fica "em cheque"** enquanto a folha está na gaveta ou no banco:
+  chip "💳 em cheque · nº 000002 · bom para 13/11". Derivado no render (os
+  cheques vivos já são lidos pela tela; regra da fonte única).
+- **Compensou ou foi repassada → vira recebimento:** na MESMA transação da
+  mudança de situação nasce um `movimento` de entrada (forma `cheque`, conta =
+  a do depósito; no repasse, a conta virtual **"Repasse de cheque"**), com
+  `chequeId`; o cheque guarda o `movimentoId`. É assim que o "recebido" do
+  Financeiro (que soma movimentos) passa a valer sem mudar a conta dele, e o
+  OFX da Fase 5 continua conciliando contra `movimentos`.
+- **Voltou sem fundos depois de compensado/repassado → o movimento é
+  CANCELADO** na mesma transação (cancelar, não apagar — regra do caixa), e a
+  parcela reabre sozinha.
+- **"Receber" com forma Cheque deixa de dar baixa direto:** a janela leva ao
+  lançamento da folha. Baixa direta só com as outras formas.
+- Cheque cancelado (lançado errado) solta a parcela; cobrança cancelada com
+  cheque ligado avisa antes.
+- ⚠️ **Repasse continua só controle** (decisão acima): o recebimento do
+  cliente acontece no repasse, mas a saída para o fornecedor não é lançada.
+
+## C6c — "onde está o cheque 246 da RUBI?" (pedido do Raoni, 03/11/2026)
+- **O número da folha já é obrigatório** e a sequência já é gerada: "Nº da 1ª
+  folha" = 246 → 246, 247, 248, 249 (zeros preservados, cada linha editável se
+  o talão pular). Vale também para o lançamento pela cobrança (C6b).
+- **O que falta é ACHAR.** Hoje a busca da aba Cheques lê o termo como número
+  OU como nome ("246 rubi" não acha nada) e só olha as folhas vivas — o 246 já
+  compensado ou repassado só aparece com "incluir os encerrados", que carrega
+  o arquivo inteiro.
+- **Busca mista:** cada pedaço do termo vale por si — o que é número procura o
+  nº da folha (246 = 000246) e o pedido; o que é palavra procura cliente,
+  emitente e fornecedor. Todos os pedaços precisam casar (é E, como o
+  `casaBusca`).
+- **O número procura no BANCO INTEIRO, sozinho:** todo cheque grava
+  `numeroChave` (o número sem zeros à esquerda) e a busca por número consulta
+  `where('numeroChave','==', …)` — um campo, sem índice composto, lê só as
+  folhas daquele número (o número repete entre clientes: lista todas). Sem
+  marcar nada, sem carregar o arquivo. Produção ainda sem cheque: sem migração.
+- **A resposta é "onde está", numa linha** (`ondeEstaOCheque`, no núcleo
+  portátil): "na gaveta desde 03/11 · bom para 13/11" · "depositado no Bradesco
+  em 13/11, esperando compensar" · "compensou em 15/11 (Bradesco)" ·
+  "repassado a RESINAS em 20/11 · NF 1234" · "voltou do banco em 15/11 · sem
+  fundos (11)" · "voltou de RESINAS em 25/11" · "resgatado pelo cliente" ·
+  "cancelado". Um clique abre a ficha com o histórico.
+
+## C6d — o cliente quer RESGATAR um cheque que está com o fornecedor (03/11/2026)
+> O caso do Raoni: a RUBI passou o 246, a JC repassou o 246 à RESINAS, e a
+> RUBI liga querendo pagar em dinheiro e pegar o cheque de volta. A JC precisa
+> saber COM QUEM ele está, buscar a folha e acertar com o fornecedor.
+
+**Decisões do Raoni (03/11/2026):**
+| Pergunta | Decisão |
+|---|---|
+| Quem paga o fornecedor no resgate | **A JC paga e busca**; depois o cliente paga a JC e leva a folha (dois passos) |
+| O que a JC paga ao fornecedor entra no caixa? | **Não — só controle**, coerente com o repasse |
+| Lista de resgates pendentes | **Sim**: "🔁 Resgates a buscar" |
+
+- **Por que é caminho NOVO:** hoje de `repassado` só se sai por "voltou do
+  fornecedor" (`devolvido`), que exige ALÍNEA — resgate não é devolução
+  bancária, é acerto combinado, e marcá-lo como "sem fundos" sujaria o
+  histórico de crédito do emitente.
+- **"Resgate pedido"** (folha repassada): evento que só MARCA, sem mudar a
+  situação (`tipo: 'resgatePedido'`, data, quem pediu, obs). A folha entra em
+  **"🔁 Resgates a buscar"**: nº, valor, cliente, **com quem está** (fornecedor
+  + telefone + contato do cadastro), desde quando está com ele e há quantos
+  dias o resgate foi pedido. Desmarcar = evento "resgate desistido".
+- **"Recolhido do fornecedor"** — transição nova `repassado → carteira`, SEM
+  alínea: data, **como a JC pagou o fornecedor** pela folha (dinheiro · PIX ·
+  transferência · outro cheque · abatido em conta), valor, quem buscou, obs.
+  Só controle (não vira saída de caixa). Some da lista de resgates.
+  `podeReapresentar` não é afetado (não houve devolução bancária).
+- **"Resgatado pelo cliente"** (que já existe, `carteira|devolvido →
+  resgatado`) passa a registrar **quanto e como o cliente pagou** (forma +
+  valor).
+- **No "onde está" (C6c):** "🤝 com a RESINAS desde 20/11 · 📞 (79) 3431-0000 ·
+  resgate pedido há 2 dias".
+- **Com a C6b (Financeiro):** a parcela que virou "recebida" no repasse tem o
+  movimento CANCELADO no recolhimento (a folha voltou, o cheque não pagou), e
+  o resgate do cliente gera o movimento novo com a forma real (dinheiro/PIX) —
+  o extrato mostra o que de fato entrou. Antes da C6b, só o controle.
+- **No recibo/aba Repassados:** a folha recolhida continua no recibo daquele
+  dia (o papel assinado não muda) e aparece como "recolhida em dd/mm".
+
+## Ordem
+1. **C6a** (independente, pequena): contas do cliente no lançamento.
+2. **C6c** (independente): busca "246 rubi" no banco inteiro + "onde está".
+3. **C6d**: resgate de folha repassada (pedido → lista → recolhido → resgatado).
+4. **C6b**: ligação com o Financeiro (lançar pela parcela, "em cheque",
+   movimento na compensação/repasse, estorno na devolução e no recolhimento).
+Cada uma com testes no núcleo + teste de tela + ensaio no navegador, como as
+outras fases. Rules: a conferir na C6b (`movimentos` criado junto com o
+cheque na transação — a regra atual já aceita, mas será testado).

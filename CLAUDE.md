@@ -94,8 +94,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > fornecedor com recibo impresso, aba Repassados por fornecedor/entrega,
 > resumo entre empresas; `repassadoEm` gravado para a consulta; sem rule nova).
 > **C5 FEITA e no ar em 03/11/2026** (`1116fcf`): conferência da gaveta impressa (carteira +
-> devolvidos) e cheques do pedido no Localizar (só financeiro). **O desenho
-> do CHEQUES.md está todo feito.**
+> devolvidos) e cheques do pedido no Localizar (só financeiro). O desenho
+> original (C1–C5) está todo feito. **C6 desenhada em 03/11/2026** (fim do
+> CHEQUES.md): contas do cliente lembradas pelo histórico (C6a — **FEITA em
+> 03/11/2026**: `clienteChave` + `contasDoCliente`, consulta única por cliente) e receber a
+> parcela do Financeiro em cheque — parcela "em cheque" até compensar/repassar,
+> movimento nasce na compensação e é cancelado na devolução (C6b), e achar
+> "o cheque 246 da RUBI" — busca mista número+nome no banco inteiro, com a
+> resposta "onde está" numa linha (C6c), e o resgate de folha que está com o
+> fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
+> só controle) → resgatado pelo cliente (C6d). Nada codado.
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
 > dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou

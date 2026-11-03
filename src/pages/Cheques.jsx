@@ -20,9 +20,10 @@ import {
   diasParaBomPara, diasDepositado, compensacaoAtrasada, totaisCheques, ordenaPorBomPara,
   filtraCheques, historicoDe, situacaoBate, entreEmpresas, chaveCheque, fmtDoc, ehViva,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, gaveta,
+  contasDoCliente, clienteChave,
 } from '../lib/cheques.js'
 import {
-  useChequesVivos, useChequesArquivo, useChequesRepassados, gravaLote, novoLoteId, chequesComChaves,
+  useChequesVivos, useChequesArquivo, useChequesRepassados, gravaLote, novoLoteId, chequesComChaves, chequesDoCliente,
   aplicaEmLote, corrigeNoServidor,
 } from '../hooks/useCheques.js'
 import { useFornecedores } from '../hooks/useFornecedores.js'
@@ -69,6 +70,7 @@ export default function Cheques({ pedidos }) {
     novoLoteId,
     gravaLote,
     chequesComChaves,
+    chequesDoCliente,
     aplicar: (ids, ev) => aplicaEmLote(ids, { ...ev, ...quem }, { hoje: hojeISO() }),
     corrigir: (id, mudancas, obs) => corrigeNoServidor(id, mudancas, { ...quem, obs }),
   }
@@ -724,6 +726,48 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
     ? (pedidos || []).find((p) => String(p.idVenda) === cab.idVenda.trim()) : null), [pedidos, cab.idVenda])
   const codBanco = base.banco === 'outro' ? base.bancoOutro.trim() : base.banco
 
+  // AS CONTAS QUE O CLIENTE JÁ USOU (C6a). Espera a pessoa parar de digitar
+  // (cada letra seria uma consulta) e junta o que veio do servidor com o que a
+  // tela já tem — a folha lançada agora há pouco ainda pode não ter voltado.
+  const clienteEfetivo = cab.cliente.trim() || pedido?.cliente || ''
+  const chaveCli = clienteChave(clienteEfetivo)
+  const [doServidor, setDoServidor] = useState({ chave: '', lista: [] })
+  const [contaUsada, setContaUsada] = useState('')
+  // ⚠️ a dependência é a FUNÇÃO (estável, vem do módulo), não o objeto `acoes`:
+  // ele é recriado a cada render do pai, e o efeito consultaria o servidor de
+  // novo a cada render (regra 2.2 da skill de desempenho)
+  const buscaCliente = acoes?.chequesDoCliente
+  useEffect(() => {
+    if (chaveCli.length < 3 || !buscaCliente) { setDoServidor({ chave: '', lista: [] }); return undefined }
+    let vivo = true
+    const t = setTimeout(() => {
+      buscaCliente(chaveCli)
+        .then((lista) => { if (vivo) setDoServidor({ chave: chaveCli, lista }) })
+        .catch((e) => console.error('contas do cliente:', e))
+    }, 500)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [chaveCli, buscaCliente])
+  const contas = useMemo(() => {
+    if (chaveCli.length < 3) return []
+    const porId = new Map()
+    const locais = (existentes || []).filter((c) => (c.clienteChave || clienteChave(c.cliente)) === chaveCli)
+    const remotos = doServidor.chave === chaveCli ? doServidor.lista : []
+    for (const c of [...remotos, ...locais]) porId.set(c.id, c)
+    return contasDoCliente([...porId.values()])
+  }, [chaveCli, doServidor, existentes])
+
+  function usarConta(ct) {
+    // o banco do talão pode ter sido gravado como '47' e a lista usa '047'
+    const naLista = BANCOS.find((b) => b.codigo.replace(/^0+/, '') === String(ct.banco.codigo).replace(/^0+/, ''))
+    setBase({
+      banco: naLista ? naLista.codigo : 'outro', bancoOutro: naLista ? '' : ct.banco.codigo,
+      agencia: ct.agencia, conta: ct.conta, emitente: ct.emitente.nome, doc: ct.emitente.doc, terceiro: ct.terceiro,
+    })
+    // sugere o próximo número — a pessoa confere com a folha na mão
+    if (ct.proximoNumero) setRep((r) => ({ ...r, numero: ct.proximoNumero }))
+    setContaUsada(ct.chave)
+  }
+
   function gerar() {
     const quantas = Math.max(1, Math.min(48, Number(rep.quantas) || 1))
     setFolhas(geraFolhas({
@@ -857,6 +901,8 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
           </div>
 
           <div className="chq-bloco"><span>A 1ª folha</span>
+            <ContasDoCliente contas={contas} usada={contaUsada} onUsar={usarConta}
+              cliente={clienteEfetivo ? nomeCliente(clienteEfetivo, clientes) : ''} />
             <div className="fin-cond">
               <div className="field"><label>Banco</label>
                 <select value={base.banco} onChange={(e) => setBase({ ...base, banco: e.target.value })}>
@@ -1147,6 +1193,26 @@ export function ConferenciaGaveta({ cheques, empresa, clientes, hoje }) {
         <div><span />Conferido por</div>
         <div><span />Data</div>
       </div>
+    </div>
+  )
+}
+
+// ---------- as contas que o cliente já usou (C6a) ----------
+// Um botão por conta: um clique preenche banco, agência, conta, emitente e
+// CPF/CNPJ e sugere o próximo número. Conta nova continua sendo digitada.
+export function ContasDoCliente({ contas, usada, onUsar, cliente }) {
+  if (!contas?.length) return null
+  return (
+    <div className="chq-contas">
+      <small>Contas que {cliente || 'este cliente'} já usou — clique para preencher:</small>
+      {contas.map((ct) => (
+        <button key={ct.chave} type="button" className={'chq-conta' + (usada === ct.chave ? ' usada' : '')}
+          onClick={() => onUsar(ct)}>
+          <b>{ct.emitente.nome || 'sem emitente'}</b>
+          <span>{ct.banco.nome || `banco ${ct.banco.codigo}`} · ag {ct.agencia} · cc {ct.conta}{ct.terceiro ? ' · de terceiro' : ''}</span>
+          <span>último nº {ct.ultimoNumero} · {ct.vezes} folha(s){ct.proximoNumero ? ` · próximo ${ct.proximoNumero}` : ''}</span>
+        </button>
+      ))}
     </div>
   )
 }
