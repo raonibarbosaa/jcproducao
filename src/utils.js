@@ -2994,9 +2994,15 @@ export const contasDaEmpresa = (emp) =>
   CONTAS.filter((c) => !emp || c.empresas.includes(emp))
 export const nomeConta = (id) => CONTAS.find((c) => c.id === id)?.nome || ''
 
-// quem enxerga a aba Financeiro. O DESIGNER fica de fora de propósito: ele é
-// staff para todo o resto (`ehStaff` nas rules o inclui), mas dinheiro não.
-export const veFinanceiro = (perfil) => perfil === 'dono' || perfil === 'financeiro'
+// quem enxerga as telas de DINHEIRO: aba Financeiro, aba Cheques e Cadastros ›
+// Fornecedores. O DESIGNER fica de fora de propósito: ele é staff para todo o
+// resto (`ehStaff` nas rules o inclui), mas dinheiro não.
+// ⚠️ 03/11/2026: o DONO também saiu — "por enquanto tudo de dinheiro apenas
+// financeiro, depois a gente reorganiza" (Raoni). É SÓ NA TELA, por decisão
+// dele: as rules (`ehFinanceiro()`) continuam aceitando o dono, então os dados
+// seguem legíveis para ele pela API. Os valores de pedido nas outras telas
+// (`veValor`) e a baixa em Entregues não mudaram.
+export const veFinanceiro = (perfil) => perfil === 'financeiro'
 
 export const arredondaMoeda = (n) => Math.round((Number(n) || 0) * 100) / 100
 

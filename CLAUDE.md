@@ -84,8 +84,23 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > (núcleo portátil `src/lib/cheques.js` — não importa nada — + 122 asserções
 > em `tests/cheques.test.mjs`). **C2 FEITA em 20/10/2026**: Fornecedores
 > num documento só (`configFinanceiro/fornecedores`, rule própria — ✅
-> publicada em 26/10/2026), gravado por transação, sem excluir. Próxima = C3
-> (aba Cheques) — refazer antes a conta de leituras da carteira (ver CHEQUES.md).
+> publicada em 26/10/2026 às 10:19, conferida na API do Firebase), gravado por transação, sem excluir.
+> **C3 FEITA em 26/10/2026**: aba `cheques` (dono/financeiro) — lançar em
+> lote, carteira/depositados/devolvidos/localizar, ficha com histórico,
+> depositar/compensar/devolver/reapresentar/gaveta/resgatar/cancelar/corrigir,
+> tudo por transação; abre com a carteira inteira (decisão do Raoni, custo
+> registrado). ✅ Rules `match /cheques` publicadas em 26/10/2026 (10:19). Próxima =
+> C4 (repasse a fornecedor + recibo).
+
+> ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
+> dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou
+> `perfil === 'financeiro'`, e o DONO perdeu as abas **Financeiro** e
+> **Cheques** e o **Cadastros › Fornecedores**. **Só na tela** (escolha dele):
+> as rules `ehFinanceiro()` continuam aceitando o dono, então os dados seguem
+> legíveis para ele pela API. NÃO mudaram: os valores de pedido nas outras
+> telas (`veValor` no quadro/Localizar/Controle, e Rota/Entregues/Triagem que
+> nem têm trava) e a baixa financeira em Entregues (`podeBaixa`, dono e
+> financeiro). Ao reorganizar, revisar esses três pontos juntos.
 
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:

@@ -172,7 +172,7 @@ t('recebido no mês sai dos MOVIMENTOS: toda entrada do mês, menos as cancelada
 
 // ---------- permissão e contas ----------
 ok('financeiro entra', veFinanceiro('financeiro'))
-ok('dono entra', veFinanceiro('dono'))
+ok('dono NÃO entra (03/11/2026: só o financeiro, por enquanto)', !veFinanceiro('dono'))
 ok('⚠️ o DESIGNER não vê dinheiro, mesmo sendo staff', !veFinanceiro('designer'))
 ok('vendedor não vê', !veFinanceiro('vendedor'))
 t('as contas da JC Plástico', contasDaEmpresa('plastico').map((c) => c.id),

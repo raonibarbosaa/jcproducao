@@ -60,8 +60,20 @@ export function nomeAcao(de, para) {
   if (para === 'carteira') return 'Voltou para a gaveta'
   return {
     compensado: 'Compensado', devolvido: de === 'repassado' ? 'Voltou do fornecedor' : 'Devolvido',
-    repassado: 'Repassar', resgatado: 'Resgatado', cancelado: 'Cancelar',
+    repassado: 'Repassar', resgatado: 'Resgatado',
+    // "Cancelar" sozinho, ao lado de outros botões, parece "fechar a janela"
+    cancelado: 'Cancelar cheque',
   }[para] || para
+}
+
+// o nome do EVENTO no histórico, no passado: o que aconteceu, não o botão
+export function nomeEvento(e) {
+  if (e?.tipo === 'corrigido') return 'Dados corrigidos'
+  if (!e?.de) return 'Lançado'
+  if (e.para === 'depositado') return e.de === 'devolvido' ? 'Reapresentado' : 'Depositado'
+  if (e.para === 'devolvido') return e.de === 'repassado' ? 'Voltou do fornecedor' : 'Devolvido'
+  if (e.para === 'carteira') return 'Voltou para a gaveta'
+  return nomeSituacao(e.para)
 }
 
 // ============================================================

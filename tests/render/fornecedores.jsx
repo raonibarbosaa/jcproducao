@@ -21,5 +21,7 @@ export function roda() {
   try { out.fnAba = renderToString(<AbaFornecedores />) } finally { globalThis.__auth = undefined }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }
   try { out.fnDesigner = renderToString(<AbaFornecedores />) } finally { globalThis.__auth = undefined }
+  globalThis.__auth = { perfil: 'dono', nome: 'Dono', user: { uid: 'd' } }
+  try { out.fnDono = renderToString(<AbaFornecedores />) } finally { globalThis.__auth = undefined }
   return out
 }

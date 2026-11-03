@@ -68,7 +68,7 @@ export default function Financeiro({ pedidos }) {
     .filter((c) => situacaoDaCobranca(c, movimentosEmp).st === 'vencida').length
 
   if (!veFinanceiro(perfil)) {
-    return <div className="empty">Esta tela é do financeiro e do dono.</div>
+    return <div className="empty">Esta tela é só do financeiro.</div>
   }
 
   const abas = [

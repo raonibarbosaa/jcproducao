@@ -287,6 +287,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // CHEQUES — uma folha por documento (CHEQUES.md, C3). Só dono e financeiro.
+    // O `historico` só cresce: toda mudança acrescenta UM evento, assinado por
+    // quem está logado. A regra NÃO confere se a transição é válida nem se os
+    // eventos antigos ficaram iguais — quem faz isso é o núcleo, na tela (mesma
+    // natureza do mapa de etapas: bom contra engano, não contra má-fé).
+    // Não se apaga: cheque lançado errado é CANCELADO e continua no histórico.
+    match /cheques/{id} {
+      allow read: if ehFinanceiro();
+      allow create: if ehFinanceiro()
+        && request.resource.data.criadoUid == request.auth.uid
+        && request.resource.data.historico.size() >= 1
+        && request.resource.data.historico[0].porUid == request.auth.uid;
+      allow update: if ehFinanceiro()
+        && request.resource.data.historico.size() == resource.data.historico.size() + 1
+        && request.resource.data.historico[resource.data.historico.size()].porUid == request.auth.uid;
+      allow delete: if false;
+    }
+
     // ORDENS DE FABRICAÇÃO — soltam e cancelam só dono e designer (decisão do
     // dono em 16/09/2026; o financeiro é staff, mas não mexe em produção).
     // O chão de fábrica LÊ (o quadro vai andar por OF). Não se apaga: o número

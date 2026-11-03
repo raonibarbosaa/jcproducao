@@ -1465,3 +1465,90 @@ tr.sit-producao td { color: var(--text-dim); }
 }
 .aviso-versao button { white-space: nowrap; }
 @media print { .aviso-versao { display: none; } }
+
+/* ---------- CHEQUES (CHEQUES.md, C3) ---------- */
+.chq-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
+  background: var(--surface-2); border: 1px solid var(--ok); color: var(--text); border-radius: 10px;
+  padding: 10px 16px; box-shadow: var(--shadow); font-size: 14px; cursor: pointer; max-width: 92vw; }
+.chq-card-qtd { display: block; color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+.chq-explica { font-size: 13px; color: var(--text-dim); margin: 4px 0 12px; max-width: 760px; line-height: 1.5; }
+.chq-barra { position: sticky; top: 64px; z-index: 5; display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 10px;
+  padding: 9px 12px; margin-bottom: 10px; }
+.chq-barra b { margin-right: 6px; font-variant-numeric: tabular-nums; }
+.chq-mudo { color: var(--text-faint); font-size: 12.5px; }
+.chq-barra-vazia { position: static; border-color: var(--border); background: var(--surface);
+  color: var(--text-faint); font-size: 13px; min-height: 46px; }
+.chq-perigo { color: var(--danger); }
+.chq-lista { display: flex; flex-direction: column; gap: 6px; }
+.chq-linha { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.chq-linha input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
+.chq-marcado { border-color: var(--accent); background: var(--surface-2); }
+.chq-divergente { border-color: var(--danger); }
+.chq-abre { background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; min-width: 150px; }
+.chq-abre:hover .chq-num { color: var(--accent); }
+.chq-abre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.chq-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+.chq-banco { font-size: 12px; color: var(--text-faint); }
+.chq-quem { flex: 1; min-width: 180px; display: flex; flex-direction: column; }
+.chq-quem small { color: var(--text-faint); }
+.chq-emit { font-size: 12px; }
+.chq-data { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); }
+.chq-ok { color: var(--ok); }
+.chq-atencao { color: var(--danger); }
+.chq-valor { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 96px; text-align: right; margin-left: auto; }
+.chq-sit { font-size: 12.5px; color: var(--text-dim); min-width: 110px; }
+.chq-sit small { color: var(--text-faint); }
+.chq-filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.chq-filtros select, .chq-filtros input[type="date"] { background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; color: var(--text); }
+.chq-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.chq-periodo { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-faint); }
+.chq-arquivo { margin: 2px 0 12px; }
+.chq-arquivo small { color: var(--text-faint); }
+.chq-problemas { background: rgba(229,72,77,0.08); border-left: 3px solid var(--danger); border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; margin-top: 10px; }
+.chq-avisos { background: var(--surface-2); border-left: 3px solid var(--warn); border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; margin-top: 10px; line-height: 1.5; }
+.chq-ficha, .chq-lancar { width: min(860px, 96vw); }
+.chq-ficha-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 16px; }
+.chq-ficha-grade span, .chq-irmas > span, .chq-hist > span, .chq-bloco > span {
+  display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
+.chq-ficha-grade small, .chq-terc { color: var(--text-faint); }
+.chq-irmas, .chq-hist { margin-top: 16px; font-size: 13px; }
+.chq-irmas > div { padding: 3px 0; }
+.chq-ev { border-left: 2px solid var(--border); padding: 4px 0 8px 12px; margin-left: 4px; }
+.chq-ev span { color: var(--text-dim); }
+.chq-ev-mud, .chq-ev-obs { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.chq-ev-quem { font-size: 11.5px; color: var(--text-faint); }
+.chq-ficha-pe { flex-wrap: wrap; }
+.chq-corrige { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.chq-corrige > small { display: block; color: var(--text-faint); margin-bottom: 8px; }
+.chq-bloco { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.chq-bloco > span { margin-bottom: 6px; }
+.chq-dica { display: block; color: var(--ok); font-size: 12px; margin-top: 3px; }
+.chq-folhas { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.chq-folha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; }
+.chq-folha > input { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; color: var(--text); width: 110px; }
+.chq-folha > input.chq-curto { width: 62px; }
+.chq-folha-erro { border-color: var(--danger); }
+.chq-folha-rep { border-color: var(--warn); }
+.chq-folha-msg { flex-basis: 100%; color: var(--danger); font-size: 12px; }
+.chq-folha-rep .chq-folha-msg { color: var(--warn); }
+.chq-soma { margin-top: 6px; font-size: 13.5px; }
+.chq-soma small { color: var(--text-faint); }
+/* tela larga: colunas fixas, para nº / cliente / data / valor alinharem de
+   uma folha para a outra; abaixo disso a linha quebra (celular) */
+@media (min-width: 900px) {
+  .chq-linha { display: grid; align-items: center;
+    grid-template-columns: 20px minmax(150px, 1fr) minmax(170px, 1.3fr) 250px 100px 140px; }
+  .chq-valor { margin-left: 0; }
+}
+@media (max-width: 600px) {
+  .chq-valor { margin-left: 0; text-align: left; }
+  .chq-barra { top: 56px; }
+}

@@ -17,6 +17,7 @@ const LABEL = {
   controle: 'Controle de entrega',
   localizar: 'Localizar',
   financeiro: 'Financeiro',
+  cheques: 'Cheques',
   relatorios: 'Relatórios',
   cadastros: 'Cadastros',
   usuarios: 'Usuários',

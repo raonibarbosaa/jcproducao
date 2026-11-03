@@ -8,7 +8,7 @@ import {
   chequesDoLote, aplicaEvento, podeIr, podeReapresentar, corrigeCheque, acoesComuns,
   situacaoBate, devolvidoPeloFornecedor, entreEmpresas, totaisCheques, agrupaPorFornecedor,
   diasDepositado, compensacaoAtrasada, podeDepositarHoje, filtraCheques, irmasDoLote,
-  nomeBanco, nomeAcao, ehViva, passosAte,
+  nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -176,6 +176,7 @@ const dev1 = aplicaEvento(dep.cheque, { para: 'devolvido', alinea: '11', data: '
 t('devolvido pelo banco', [dev1.situacao, dev1.historico[2].origemDevolucao, dev1.contaDeposito], ['devolvido', 'banco', 'bradesco'])
 ok('depois da 1ª sem fundos pode reapresentar', podeReapresentar(dev1).ok)
 t('a ação se chama reapresentar', nomeAcao('devolvido', 'depositado'), 'Reapresentar')
+t('no histórico o evento vem no passado', dev1.historico.map(nomeEvento), ['Lançado', 'Depositado', 'Devolvido'])
 const dep2 = aplicaEvento(dev1, { para: 'depositado', conta: 'bradesco', data: '2026-11-25', porUid: 'u-fin' }, QUEM).cheque
 t('o prazo de compensação conta do ÚLTIMO depósito', diasDepositado(dep2, '2026-11-26'), 1)
 const dev2 = aplicaEvento(dep2, { para: 'devolvido', alinea: '12', data: '2026-11-27', porUid: 'u-fin' }, QUEM).cheque
@@ -183,6 +184,9 @@ ok('depois da alínea 12 não reapresenta', !podeReapresentar(dev2).ok)
 ok('nem pelo botão de depositar', !podeIr(dev2, 'depositado').ok)
 const naGaveta = aplicaEvento(dev2, { para: 'carteira', data: '2026-11-28', porUid: 'u-fin' }, QUEM).cheque
 ok('e a gaveta não vira atalho para reapresentar', !podeIr(naGaveta, 'depositado').ok)
+t('reapresentar e voltar para a gaveta, no passado', [nomeEvento(dep2.historico[3]), nomeEvento(naGaveta.historico.at(-1))],
+  ['Reapresentado', 'Voltou para a gaveta'])
+t('o botão de cancelar não parece "fechar"', nomeAcao('carteira', 'cancelado'), 'Cancelar cheque')
 ok('na gaveta ainda pode ser resgatado com o cliente', podeIr(naGaveta, 'resgatado').ok)
 
 const duasOnze = aplicaEvento(

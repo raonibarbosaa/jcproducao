@@ -26,8 +26,9 @@ const ABAS_CADASTRO = [
   { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
   // ponte com o Esmero (aviso ao cliente no WhatsApp): só o dono liga/desliga
   { id: 'integracoes', label: 'Integrações', perfis: ['dono'] },
-  // para quem o cheque é repassado: assunto de dinheiro, então dono e financeiro
-  { id: 'fornecedores', label: 'Fornecedores', perfis: ['dono', 'financeiro'] },
+  // para quem o cheque é repassado: assunto de dinheiro — só o financeiro
+  // (o dono saiu em 03/11/2026, ver `veFinanceiro`)
+  { id: 'fornecedores', label: 'Fornecedores', perfis: ['financeiro'] },
 ]
 
 export default function Cadastros() {
@@ -1088,7 +1089,7 @@ export function AbaFornecedores() {
   const { perfil, nome, user } = useAuth()
   const ligado = veFinanceiro(perfil)
   const estado = useFornecedores(ligado)
-  if (!ligado) return <div className="empty">O cadastro de fornecedores é do financeiro e do dono.</div>
+  if (!ligado) return <div className="empty">O cadastro de fornecedores é só do financeiro.</div>
   const quem = { por: nome || '', porUid: user?.uid || '' }
   const salvar = (form, idAtual) => gravaFornecedores(
     (lista) => salvaFornecedor(lista, form, idAtual, { por: quem.por }),

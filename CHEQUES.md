@@ -4,7 +4,9 @@
 > (*Cadastro de Cheque* em lote e *Localização de cheques* com "Alterar
 > situação"). Decisões fechadas no mesmo dia.
 > **C1 FEITA em 20/10/2026** (núcleo `src/lib/cheques.js` +
-> `tests/cheques.test.mjs`, 122 asserções). Próxima: C2 (Fornecedores).
+> `tests/cheques.test.mjs`, 122 asserções). **C2 FEITA** (Fornecedores, no ar em
+> 26/10/2026). **C3 FEITA em 26/10/2026** (aba Cheques; rules publicadas,
+> site a publicar). Próxima: C4 (repasse).
 
 ## O que o controle responde
 1. **De onde veio** — qual cliente entregou, em qual pedido, e se o cheque é
@@ -21,7 +23,7 @@
 | Liga com cobranças/caixa do Financeiro? | **Não.** É só o controle do cheque: origem, situação e destino. Não dá baixa em parcela nem lança movimento. |
 | Reuso | **"Este controle de cheque podemos usar no finance também"** → o núcleo nasce PORTÁTIL (ver abaixo). |
 | Destino do repasse | **Cadastro de fornecedores** (sub-aba nova em Cadastros). |
-| Quem lança e vê | **Só financeiro e dono** (`veFinanceiro` / `ehFinanceiro()`). |
+| Quem lança e vê | **Só financeiro e dono** (`veFinanceiro` / `ehFinanceiro()`). ⚠️ **03/11/2026: só o FINANCEIRO, na tela** ("por enquanto tudo de dinheiro apenas financeiro") — as rules seguem aceitando o dono. |
 | Cheque de uma empresa pagando fornecedor da outra | **Pode, e fica registrado** (marca "entre empresas"). |
 | "Finance" é o quê? | **O TotaliFinance** (`~/Code/Finance`) — o núcleo nasce portátil. |
 | Cheques que já estão na Zeus | **Lançados à mão** pelo próprio lançamento em lote. Sem importação. |
@@ -313,11 +315,43 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
 - **C2 — Fornecedores.** ✅ **FEITA (20/10/2026)** — documento único em
   `configFinanceiro/fornecedores`, sub-aba em Cadastros, rules, regra pura em
   `src/lib/fornecedores.js` (26 asserções), hook `src/hooks/useFornecedores.js`,
-  render em `test:tela`. ✅ **Rules publicadas em 26/10/2026** (`match
-  /configFinanceiro`).
+  render em `test:tela`. ✅ **Rules publicadas em 26/10/2026 às 10:19** (`match /configFinanceiro` e
+  `match /cheques`), conferidas na API do Firebase. ⚠️ O commit `9c80ffd`
+  diz "publicadas" antes da hora: naquele momento a versão no ar ainda era a
+  de 07/10.
 - **C3 — Aba Cheques.** Lançar lote, Carteira/Depositados/Devolvidos/
   Localizar, ficha com histórico, depositar/compensar/devolver/reapresentar/
   resgatar/cancelar/corrigir. Rules de `cheques`. Render em `test:tela`.
+  ✅ **FEITA (26/10/2026).** `src/pages/Cheques.jsx` (aba `cheques`, dono +
+  financeiro), `src/hooks/useCheques.js`, rules `match /cheques`, render em
+  `test:tela`. Ensaiada no navegador com a tela de verdade e o Firebase trocado
+  por memória (lançar o lote de 4, repetição, depósito antecipado, devolver 11
+  → reapresentar → devolver 12, gaveta, corrigir, cheque antigo já
+  compensado, celular a 375px). O que o código decidiu além do desenho:
+  - **Carteira inteira na abertura** (decisão do Raoni em 26/10/2026, sabendo
+    do custo — ver Desempenho). O **arquivo** só é lido com "incluir os
+    encerrados", no Localizar.
+  - **Toda mudança de situação é TRANSAÇÃO** (`aplicaEmLote`): lê cada folha
+    no servidor e aplica o evento sobre a versão de lá. O `historico` é
+    regravado inteiro, e sobre uma cópia velha o evento de outra pessoa
+    sumiria. Uma folha com problema barra a seleção inteira.
+  - **Repetição conferida contra o BANCO inteiro** na hora de lançar
+    (`chequesComChaves`, `where('chave','in')` de 30 em 30), não só contra o
+    que a tela carregou — a folha compensada do mês passado está no arquivo.
+  - **Depósito só em conta de BANCO:** Cielo (maquininha) e Caixa interno
+    saem da lista (`contasDeDeposito`).
+  - **A barra de seleção fica sempre no lugar** e a mensagem de resultado é
+    flutuante (`.chq-toast`): as duas, aparecendo no fluxo, empurravam a
+    lista e o clique seguinte caía na folha errada (visto no ensaio).
+  - **Histórico no passado** (`nomeEvento`: "Depositado", "Reapresentado",
+    "Voltou do fornecedor"); o botão de cancelar diz **"Cancelar cheque"**
+    para não parecer "fechar a janela".
+  - **Cheque antigo da Zeus:** "Situação hoje" carteira · depositado ·
+    compensado · devolvido, com as datas de cada passo. O já encerrado vai
+    para o arquivo, e o aviso diz onde encontrá-lo.
+  - **Repassar ainda não aparece** (é a C4); cheque já repassado é lido.
+  - Sem badge no menu: ele exigiria assinar os cheques no App para todo
+    perfil. O contador fica nas sub-abas.
 - **C4 — Repasse.** Ação de repassar, aba Repassados, recibo impresso, "entre
   empresas" + relatório.
 - **C5 — Fechamento.** Conferência da gaveta impressa; no Localizar (só para
@@ -336,7 +370,10 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
   prazo normal (D+2) sem ninguém marcar — sem presumir nada sozinho.
 - **50 a 300 por mês** (até ~3.600 por ano) confirma a escolha de assinar só
   as vivas e ler o arquivo sob demanda.
-  ⚠️ **Conta a refazer na C3 (regra 1.1):** com pré-datado de até 120 dias, a
+  ✅ **Decidido em 26/10/2026: a tela abre com a carteira INTEIRA**, sabendo
+  do pior caso abaixo; se a cota apertar, o remédio é a janela pelo "bom
+  para". A conta que foi apresentada:
+  ⚠️ **Conta (regra 1.1):** com pré-datado de até 120 dias, a
   CARTEIRA pode ter 4 meses de folhas ao mesmo tempo — com 300/mês são
   ~1.200 vivas. 1.200 × 2 perfis × ~10 aberturas/dia = 24 mil leituras/dia
   no pior caso, perto da metade da cota gratuita. O cache persistente corta

@@ -22,7 +22,7 @@ await build({
   root: join(aqui, '..', '..'), logLevel: 'error',
   build: {
     ssr: true, outDir: OUT, emptyOutDir: true, minify: false,
-    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx'), aviso: join(aqui, 'aviso.jsx'), fornecedores: join(aqui, 'fornecedores.jsx') } },
+    rollupOptions: { input: { financeiro: join(aqui, 'financeiro.jsx'), usuarios: join(aqui, 'usuarios.jsx'), meupin: join(aqui, 'meupin.jsx'), posto: join(aqui, 'posto.jsx'), triagem: join(aqui, 'triagem.jsx'), ordens: join(aqui, 'ordens.jsx'), cores: join(aqui, 'cores.jsx'), controle: join(aqui, 'controle.jsx'), paginas: join(aqui, 'paginas.jsx'), clientes: join(aqui, 'clientes.jsx'), aviso: join(aqui, 'aviso.jsx'), fornecedores: join(aqui, 'fornecedores.jsx'), cheques: join(aqui, 'cheques.jsx') } },
   },
   resolve: {
     alias: [
@@ -49,6 +49,7 @@ const bruto = {
   ...(await import(join(OUT, 'clientes.js'))).roda(),
   ...(await import(join(OUT, 'aviso.js'))).roda(),
   ...(await import(join(OUT, 'fornecedores.js'))).roda(),
+  ...(await import(join(OUT, 'cheques.js'))).roda(),
 }
 // ⚠️ Duas normalizações, e sem elas o teste acusa falha onde não há:
 //   1. o SSR do React separa expressões vizinhas com <!-- -->, então
@@ -178,7 +179,28 @@ const ESPERA = {
   fnNegado: ['Não foi possível ler o cadastro de fornecedores', 'configFinanceiro'],
   fnForm: ['Editar fornecedor', 'Resinas do Nordeste', 'CNPJ / CPF (opcional)', 'Contato', 'Observação', 'Salvar'],
   fnAba: ['Carregando fornecedores', '+ Novo fornecedor'],
-  fnDesigner: ['é do financeiro e do dono'],
+  fnDesigner: ['é só do financeiro'],
+  fnDono: ['é só do financeiro'],
+  // cheques (C3): carteira com o "2 de 4", terceiro e o que já pode depositar
+  chCarteira: ['Cheques', '+ Lançar cheques', 'Em carteira', 'Carteira (2)', 'Depositados (1)', 'Devolvidos (1)',
+    'nº 047470', 'Banese', 'INGRID', '#5458', '⚠ terceiro', 'JOAO TERCEIRO', 'já pode depositar', 'faltam', '1 de 4', 'R$ 734,00'],
+  chDepositados: ['nº 047471', 'Bradesco', 'há 6 dia(s)', 'chq-atencao', 'marque as que compensaram'],
+  // alínea 12 na lista e na ficha: não reapresenta
+  chDevolvidos: ['nº 047472', 'voltou do banco', '12 · Sem fundos — 2ª apresentação'],
+  chLocalizar: ['Nº do cheque, nº do pedido', 'incluir os encerrados', 'só de terceiro', 'Todos os bancos'],
+  chCarregando: ['Carregando cheques'],
+  chNegado: ['Não foi possível ler os cheques', 'As regras do Firestore'],
+  chLancar: ['Lançar cheques', 'Empresa que recebeu', 'Pedido (opcional)', 'Cliente que entregou', 'cheque antigo, que estava na Zeus',
+    'A 1ª folha', 'Banese', 'cheque de terceiro', 'Quantas folhas', 'Nº da 1ª folha', 'o total (dividir)', 'todo mês no mesmo dia', 'Gerar folhas'],
+  chDepositar: ['Depositar · 1 folha(s)', 'Depositado em', 'Conta', 'escolha a conta do depósito', 'Bradesco'],
+  chDevolver: ['Devolvido · 1 folha(s)', 'Motivo (alínea)', '11 · Sem fundos — 1ª apresentação', '21 · Sustação'],
+  chFichaDev: ['Cheque nº 047472', 'Devolvido', 'Não dá para reapresentar', 'As outras folhas deste parcelamento', 'nº 047470', 'nº 047471',
+    'Histórico', 'Lançado', 'Depositado', 'Bradesco', 'registrado por Anny', 'Voltou para a gaveta', 'Resgatado', '✎ Corrigir dados'],
+  chBarraMista: ['2 marcado(s)', 'R$ 734,00', 'Cancelar cheque'],
+  chNumBR: ['[1468,367.5,1468.5,true]'],
+  chDesigner: ['Esta tela é só do financeiro'],
+  chDono: ['Esta tela é só do financeiro'],
+  chFinanceiro: ['Carregando cheques'],
 }
 
 // o que NÃO pode aparecer
@@ -216,6 +238,15 @@ const PROIBE = {
   fnLista: ['Excluir', 'Carregando'],             // fornecedor não se apaga; lista pronta não "carrega"
   fnCarregando: ['Nenhum fornecedor cadastrado'], // lista que não chegou NÃO é lista vazia (regra 1.7)
   fnDesigner: ['Resinas', '+ Novo fornecedor'],   // designer não vê o cadastro
+  chCarteira: ['Repassar', 'Carregando cheques'],   // repasse é a C4; lista pronta não "carrega"
+  chFichaDev: ['>Reapresentar<', 'Repassar'],       // alínea 12: sem reapresentar; repasse ainda não
+  chBarraMista: ['>Depositar<', '>Compensado<'],    // gaveta + depositado: só o que vale para os dois
+  chCarregando: ['Nenhum cheque na gaveta'],        // lista que não chegou não é lista vazia
+  chDesigner: ['Lançar cheques'],
+  chDono: ['Lançar cheques'],                      // 03/11/2026: dinheiro só do financeiro
+  fnDono: ['Resinas', '+ Novo fornecedor'],
+  chDevolvidos: ['ª vez'],
+  chDepositar: ['Cielo', 'Caixa interno'],          // cheque não se deposita na maquininha nem na gaveta                         // voltou uma vez só: sem contador
 }
 
 let mal = 0
