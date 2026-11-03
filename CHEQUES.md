@@ -502,7 +502,7 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   cheque ligado avisa antes.
 - ⚠️ **Repasse continua só controle** (decisão acima): o recebimento do
   cliente acontece no repasse, mas a saída para o fornecedor não é lançada.
-- ✅ **FEITA em 03/11/2026 (falta publicar).** Núcleo: `efeitoNoCaixa(c, ev)`
+- ✅ **FEITA e no ar em 03/11/2026** (`b4fb0e9`). Núcleo: `efeitoNoCaixa(c, ev)`
   decide criar/cancelar o movimento, `movimentoDoCheque` o monta,
   `chequesDaParcela` liga folha e parcela; `aplicaEmLote` aplica tudo na MESMA
   transação. Conta virtual `repasse-cheque` em `CONTAS` (`virtual: true`, fora

@@ -106,8 +106,8 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
 > só controle) → resgatado pelo cliente (C6d — **FEITA e no ar em 03/11/2026**, `1c13a6d`; de
 > brinde, `mudancasDe`: marcas no histórico não contam mais como mudança de
-> situação — corrigia um bug da C3). **C6b FEITA em 03/11/2026, falta
-> publicar** (Financeiro ↔ cheques: lançar as folhas pela cobrança — `preset`
+> situação — corrigia um bug da C3). **C6b FEITA e no ar em 03/11/2026**
+> (`b4fb0e9`; Financeiro ↔ cheques: lançar as folhas pela cobrança — `preset`
 > do `ModalLancar` —, chip "em cheque" por parcela, o movimento nasce na
 > compensação/repasse e é cancelado na devolução/recolhimento dentro da
 > transação do cheque — `efeitoNoCaixa`; conta virtual `repasse-cheque`;
@@ -1630,5 +1630,9 @@ função que devolve MAPA**.
   da previsão continuando dentro de `plano.pedidos`, invisível.
 
 ## Método de trabalho
+**Desempenho e custo:** antes de criar tela, listener, coleção ou migração, seguir a
+skill `.claude/skills/desempenho-react-firebase/` (regras + casos reais deste projeto
++ fontes do GitHub). A primeira regra é fazer a conta de leituras do Firestore.
+
 Fechar o desenho antes de codar. Implementar **uma feature por vez** e testar/ajustar
 entre uma e outra. Token do GitHub compartilhado na sessão é revogado depois.
