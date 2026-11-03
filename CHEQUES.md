@@ -383,7 +383,7 @@ O `src/lib/cheques.js` vai como está; muda só quem grava.
     Repassados aberta, o bloco das listas simples era desenhado sem lista.
 - **C5 — Fechamento.** Conferência da gaveta impressa; no Localizar (só para
   quem `veFinanceiro`) os cheques daquele pedido.
-  ✅ **FEITA (03/11/2026).** Sem rule nova.
+  ✅ **FEITA e no ar (03/11/2026, `1116fcf`).** Sem rule nova.
   - **A gaveta é carteira + DEVOLVIDOS** (`gaveta`): o banco e o fornecedor
     devolvem o papel, e ele fica com a empresa até alguém resolver. Folha
     impressa com um ☐ por folha, os dois blocos, total e "Conferido por /
