@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server'
 import F, { AbaCobrar, AbaAberto, AbaCaixa, ModalCobranca, ModalReceber }
   from '../../src/pages/Financeiro.jsx'
-import { entregasParaCobrar, situacaoDaCobranca, geraParcelas, parcelasDaCobranca }
+import { entregasParaCobrar, situacaoDaCobranca, geraParcelas, parcelasDaCobranca, somaDias, hojeISO }
   from '../../src/utils.js'
 
 const CAD=[{produto:'SACOLA PAPEL P02',preco:4},{produto:'SACOLA PLASTICA 30X40',preco:32}]
@@ -19,9 +19,14 @@ const entregues=[
   {id:'77-1',idVenda:'77',remessa:1,parcial:true,valorTotal:900,cliente:'DAMALI',
    entregueEm:'2026-08-29T10:00:00',itens:[{produto:'PRODUTO SEM PRECO',qtd:5,qtdItem:9}]},
 ]
+// ⚠️ As parcelas nascem a partir de HOJE, não de uma data fixa: a 1ª venceu há
+// 5 dias (e está paga), a 2ª vence daqui a 25. Com datas fixas (25/08, 24/09…)
+// o teste esperava "Parcial" e, passado o 2º vencimento, a tela dizia
+// "Vencida" — o teste quebrava sozinho com o calendário (03/11/2026).
+const HOJE=hojeISO()
 const cobrancas=[{id:'c1',empresa:'sacolas',idVenda:'5458',remessa:1,cliente:'INGRID MODAS',
   valor:200,status:'aberta',criadaPor:'Anny',criadaEm:'2026-08-21T09:00:00',obs:'entrega parcial',
-  parcelas:geraParcelas(200,3,'2026-08-25',30,'boleto')}]
+  parcelas:geraParcelas(200,3,somaDias(HOJE,-5),30,'boleto')}]
 const movimentos=[
   {id:'m1',empresa:'sacolas',tipo:'entrada',data:'2026-08-25',valor:66.68,forma:'pix',
    conta:'bradesco',cobrancaId:'c1',parcelaN:1,cliente:'INGRID MODAS',idVenda:'5458',por:'Anny'},
@@ -29,7 +34,7 @@ const movimentos=[
    conta:'cielo',cliente:'OUTRO',por:'Anny',cancelado:true,canceladoPor:'Anny'},
 ]
 const aCobrar=entregasParaCobrar(entregues,cobrancas,pedidos,CAD)
-const sit=situacaoDaCobranca(cobrancas[0],movimentos,'2026-10-01')
+const sit=situacaoDaCobranca(cobrancas[0],movimentos,HOJE)
 const pcs=parcelasDaCobranca(cobrancas[0],movimentos)
 const hoje=new Date()
 const MES=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`
