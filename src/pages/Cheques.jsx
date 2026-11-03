@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import {
-  EMPRESAS, nomeEmpresa, CONTAS, contasDaEmpresa, nomeConta, fmtMoeda, fmtDia, hojeISO,
+  EMPRESAS, nomeEmpresa, contasDaEmpresa, nomeConta, fmtMoeda, fmtDia, hojeISO,
   nomeCliente, casaBusca, veFinanceiro, fmtDataHora,
 } from '../utils.js'
 import {
@@ -44,7 +44,7 @@ export const PERIODOS_REPASSE = [
 // maquininha e o caixa interno é a gaveta — ninguém deposita cheque neles.
 const NAO_DEPOSITA = ['cielo', 'caixa']
 export const contasDeDeposito = (empresa) =>
-  (empresa ? contasDaEmpresa(empresa) : CONTAS).filter((c) => !NAO_DEPOSITA.includes(c.id))
+  contasDaEmpresa(empresa).filter((c) => !NAO_DEPOSITA.includes(c.id))
 
 // '1.468,00' → 1468 · '1468.5' → 1468.5 · '' → NaN
 export function numBR(txt) {
@@ -376,6 +376,7 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
       <span className="chq-quem">
         <b>{nomeCliente(c.cliente, clientes)}</b>
         {c.idVenda && <small> · #{c.idVenda}</small>}
+        {c.cobrancaId && <small className="chq-parcela" title="paga uma parcela do Financeiro"> · 💳 parcela {c.parcelaN}</small>}
         <small className="chq-emit">
           {c.terceiro && <span className="chip rota-warn">⚠ terceiro</span>} {c.emitente?.nome}
         </small>
@@ -500,12 +501,17 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
   const [formaPgto, setFormaPgto] = useState('')
   const [valorPago, setValorPago] = useState(cheques.length === 1 ? String(cheques[0].valor ?? '').replace('.', ',') : '')
   const [buscadoPor, setBuscadoPor] = useState('')
+  // resgate de folha que paga parcela (C6b): o dinheiro do cliente vira o
+  // recebimento da parcela, então precisa dizer em que conta entrou
+  const [contaReceb, setContaReceb] = useState('')
+  const pedeConta = para === 'resgatado' && formaPgto && formaPgto !== 'abatimento' && cheques.some((c) => c.cobrancaId)
+  const contasReceb = contasDaEmpresa(empresas.length === 1 ? empresas[0] : '')
 
   // ensaio no navegador: os mesmos problemas e avisos que a transação vai achar
   const rep = para === 'repassado'
     ? { fornecedorId: fornId, fornecedorNome: forn?.nome || '', empresaPagadora: pagadora, referencia } : {}
   const acertoEv = acerto ? { formaPgto, valorPago: cheques.length === 1 ? numBR(valorPago) : undefined,
-    buscadoPor: para === 'carteira' ? buscadoPor : undefined } : {}
+    buscadoPor: para === 'carteira' ? buscadoPor : undefined, contaRecebimento: pedeConta ? contaReceb : undefined } : {}
   const ev = { para, data, conta, alinea: alineaId, obs, porUid: 'ensaio', ...rep, ...acertoEv }
   const ensaio = cheques.map((c) => ({ c, r: aplicaEvento(c, ev, { hoje }) }))
   const problemas = [...new Set(ensaio.flatMap(({ r }) => r.problemas.map((p) => p.msg)))]
@@ -611,6 +617,15 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
                   <input value={valorPago} inputMode="decimal" onChange={(e) => setValorPago(e.target.value)} />
                 </div>
               )}
+              {pedeConta && (
+                <div className="field">
+                  <label>Entrou em</label>
+                  <select value={contaReceb} onChange={(e) => setContaReceb(e.target.value)}>
+                    <option value="">escolha…</option>
+                    {contasReceb.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </div>
+              )}
               {para === 'carteira' && (
                 <div className="field">
                   <label>Quem buscou</label>
@@ -619,7 +634,8 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
               )}
             </div>
             <div className="fin-explica">{para === 'resgatado'
-              ? 'O cliente pagou e levou a folha. Registre como e quanto ele pagou (pode ser diferente do cheque, com juros ou desconto).'
+              ? `O cliente pagou e levou a folha. Registre como e quanto ele pagou (pode ser diferente do cheque, com juros ou desconto).${
+                cheques.some((c) => c.cobrancaId) ? ' A folha paga uma parcela: o que ele pagou entra como recebimento dela no Financeiro (abatimento não entra).' : ''}`
               : 'A folha volta para a gaveta da empresa. Não é devolução do banco: não tem alínea e não pesa no histórico do emitente. Fica registrado só como controle — não lança no caixa.'}</div>
           </>)}
           {para === 'devolvido' && de === 'repassado' && (
@@ -685,6 +701,8 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
             <div><span>Recebido em</span><b>{fmtDia(c.recebidoEm)}</b>
               <small> · {nomeEmpresa(c.empresa)}{c.tardio ? ' · lançado depois (Zeus)' : ''}</small></div>
             {c.loteTotal > 1 && <div><span>Parcelamento</span><b>folha {c.loteN} de {c.loteTotal}</b></div>}
+            {c.cobrancaId && <div><span>Financeiro</span><b>💳 parcela {c.parcelaN}{c.idVenda ? ` do pedido #${c.idVenda}` : ''}</b>
+              <small> · {c.movimentoId ? 'já conta como recebida' : 'conta como recebida quando compensar ou for repassado'}</small></div>}
             {c.destino && <div><span>Destino</span><b>{c.destino.fornecedorNome}</b>
               <small> · {fmtDia(c.destino.data)}{c.destino.referencia ? ` · ${c.destino.referencia}` : ''}
                 {entreEmpresas(c) ? ' · ⇄ entre empresas' : ''}</small></div>}
@@ -842,9 +860,15 @@ function FormCorrigir({ c, onSalvar, onCancelar }) {
 // ============================================================
 // LANÇAR — em lote, como no Cadastro de Cheque da Zeus
 // ============================================================
+// `preset` (C6b): os cheques de uma COBRANÇA, aberto pelo Financeiro.
+// { empresa, cliente, idVenda, cobrancaId, parcelas: [{ n, valor, venc }] } —
+// empresa, pedido e cliente vêm travados (são da cobrança) e cada folha nasce
+// com o valor e o vencimento da sua parcela; a pessoa digita só o nº da 1ª
+// folha e os dados do talão.
 export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresaInicial, acoes, fornecedores = SEM_LISTA,
-  onFeito, onFechar }) {
-  const [cab, setCab] = useState({ empresa: empresaInicial, idVenda: '', cliente: '', recebidoEm: hoje, tardio: false })
+  preset = null, onFeito, onFechar }) {
+  const [cab, setCab] = useState({ empresa: preset?.empresa || empresaInicial, idVenda: String(preset?.idVenda || ''),
+    cliente: preset?.cliente || '', recebidoEm: hoje, tardio: false })
   const [ini, setIni] = useState({ para: 'carteira', conta: '', dataDeposito: '', data: '', alinea: '',
     fornecedorId: '', empresaPagadora: '', referencia: '' })
   const [base, setBase] = useState({ banco: '', bancoOutro: '', agencia: '', conta: '', emitente: '', doc: '', terceiro: false })
@@ -901,6 +925,16 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
   }
 
   function gerar() {
+    if (preset) {
+      const ps = preset.parcelas || []
+      setFolhas(geraFolhas({
+        quantas: ps.length, valor: { modo: 'folha', valor: 0 }, primeiroBomPara: ps[0]?.venc || '',
+        intervalo: { tipo: 'dias', dias: 30 }, numeroInicial: rep.numero.trim(),
+        base: { banco: { codigo: codBanco, nome: nomeBanco(codBanco) }, agencia: base.agencia.trim(), conta: base.conta.trim(),
+          emitente: { nome: base.emitente.trim(), doc: base.doc.trim() }, terceiro: base.terceiro },
+      }).map((f, i) => ({ ...f, valor: ps[i].valor, bomPara: ps[i].venc || '', cobrancaId: preset.cobrancaId, parcelaN: ps[i].n })))
+      return
+    }
     const quantas = Math.max(1, Math.min(48, Number(rep.quantas) || 1))
     setFolhas(geraFolhas({
       quantas, valor: { modo: rep.modo, valor: numBR(rep.valor) }, primeiroBomPara: rep.primeiro,
@@ -966,30 +1000,37 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
     <div className="assist-overlay" onClick={onFechar}>
       <div className="fin-modal chq-lancar" onClick={(e) => e.stopPropagation()}>
         <div className="fin-modal-head">
-          <b>Lançar cheques</b>
+          <b>{preset ? 'Lançar os cheques da cobrança' : 'Lançar cheques'}</b>
           <button className="assist-x" onClick={onFechar}>✕</button>
         </div>
         <div className="fin-modal-body">
+          {preset && (
+            <div className="chq-preset">
+              💳 #{preset.idVenda} · {nomeCliente(preset.cliente, clientes)} — {preset.parcelas.length} parcela(s) ·{' '}
+              <b>{fmtMoeda(somaFolhas(preset.parcelas))}</b>
+              <small>A parcela conta como recebida quando o cheque compensar ou for repassado; se ele voltar, ela reabre.</small>
+            </div>
+          )}
           <div className="chq-bloco"><span>De onde veio</span>
             <div className="fin-cond">
               <div className="field"><label>Empresa que recebeu</label>
-                <select value={cab.empresa} onChange={(e) => mudaCab('empresa', e.target.value)}>
+                <select value={cab.empresa} disabled={!!preset} onChange={(e) => mudaCab('empresa', e.target.value)}>
                   {EMPRESAS.map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
                 </select></div>
               <div className="field"><label>Pedido (opcional)</label>
-                <input value={cab.idVenda} inputMode="numeric" onChange={(e) => mudaCab('idVenda', e.target.value)} placeholder="5458" />
+                <input value={cab.idVenda} inputMode="numeric" readOnly={!!preset} onChange={(e) => mudaCab('idVenda', e.target.value)} placeholder="5458" />
                 {pedido && <small className="chq-dica">{nomeCliente(pedido.cliente, clientes)}</small>}</div>
               <div className="field"><label>Recebido em</label>
                 <input type="date" value={cab.recebidoEm} onChange={(e) => mudaCab('recebidoEm', e.target.value)} /></div>
             </div>
             <div className="field"><label>Cliente que entregou</label>
-              <input value={cab.cliente} list="chq-clientes" onChange={(e) => mudaCab('cliente', e.target.value)}
+              <input value={cab.cliente} list="chq-clientes" readOnly={!!preset} onChange={(e) => mudaCab('cliente', e.target.value)}
                 placeholder={pedido ? `${pedido.cliente} (do pedido)` : 'razão social do cliente'} />
               <datalist id="chq-clientes">
                 {(clientes || []).slice(0, 2000).map((c) => <option key={c.razao} value={c.razao}>{c.nome}</option>)}
               </datalist></div>
-            <label className="chq-check"><input type="checkbox" checked={cab.tardio}
-              onChange={(e) => mudaCab('tardio', e.target.checked)} /> cheque antigo, que estava na Zeus (já pode estar depositado ou devolvido)</label>
+            {!preset && <label className="chq-check"><input type="checkbox" checked={cab.tardio}
+              onChange={(e) => mudaCab('tardio', e.target.checked)} /> cheque antigo, que estava na Zeus (já pode estar depositado ou devolvido)</label>}
             {cab.tardio && (
               <div className="fin-cond">
                 <div className="field"><label>Situação hoje</label>
@@ -1055,6 +1096,15 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               onChange={(e) => setBase({ ...base, terceiro: e.target.checked })} /> cheque de terceiro (o emitente não é o cliente)</label>
           </div>
 
+          {preset ? (
+            <div className="chq-bloco"><span>As folhas</span>
+              <div className="fin-cond">
+                <div className="field"><label>Nº da 1ª folha</label><input value={rep.numero} inputMode="numeric" onChange={(e) => setRep({ ...rep, numero: e.target.value })} placeholder="000246" /></div>
+              </div>
+              <small className="chq-dica">Uma folha por parcela, com o valor e o vencimento dela — os números seguem a sequência.</small>
+              <button className="btn" onClick={gerar}>{folhas.length ? '↻ Gerar de novo' : 'Gerar folhas'}</button>
+            </div>
+          ) : (
           <div className="chq-bloco"><span>As folhas</span>
             <div className="fin-cond">
               <div className="field"><label>Quantas folhas</label><input value={rep.quantas} inputMode="numeric" onChange={(e) => setRep({ ...rep, quantas: e.target.value })} /></div>
@@ -1077,6 +1127,7 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
             </div>
             <button className="btn" onClick={gerar}>{folhas.length ? '↻ Gerar de novo' : 'Gerar folhas'}</button>
           </div>
+          )}
 
           {probCab.length > 0 && <div className="chq-problemas">{probCab.map((p) => <div key={p}>• {p}</div>)}</div>}
 
@@ -1084,7 +1135,7 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
             <div className="chq-folhas">
               {folhas.map((f, i) => (
                 <div key={i} className={'chq-folha' + (probPorFolha[i] ? ' chq-folha-erro' : repetidas[i] ? ' chq-folha-rep' : '')}>
-                  <b>{i + 1}</b>
+                  <b title={f.parcelaN ? `parcela ${f.parcelaN}` : undefined}>{f.parcelaN ? `p${f.parcelaN}` : i + 1}</b>
                   <input value={f.numero} onChange={(e) => mudaFolha(i, 'numero', e.target.value)} aria-label="número" placeholder="nº" />
                   <input value={typeof f.valor === 'number' ? String(f.valor).replace('.', ',') : f.valor}
                     onChange={(e) => mudaFolha(i, 'valor', e.target.value)} inputMode="decimal" aria-label="valor" placeholder="valor" />

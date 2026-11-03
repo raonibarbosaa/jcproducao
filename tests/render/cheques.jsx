@@ -33,6 +33,12 @@ const arq = { pronto: false, erro: '', lista: [] }
 const base = { vivos, arquivo: arq, arquivoLigado: false, onArquivo: () => {}, pedidos: [], clientes: [{ razao: 'INGRID MODAS', nome: 'INGRID' }],
   quem: QUEM, hoje: HOJE, acoes, fornecedores: FORN, repassados, periodoRep: '90', onPeriodoRep: () => {}, onAba: () => {} }
 
+// C6b: a cobrança da RUBI, 4 × R$ 375 — o lançamento já sabe as parcelas
+const PRESET = { empresa: 'sacolas', cliente: 'RUBI SEMI JOIAS', idVenda: '5912', cobrancaId: 'cobR',
+  parcelas: [{ n: 1, valor: 375, venc: '2026-11-03' }, { n: 2, valor: 375, venc: '2026-11-13' },
+    { n: 3, valor: 375, venc: '2026-11-23' }, { n: 4, valor: 375, venc: '2026-12-03' }] }
+const daParcela = { ...lote[0], id: 'cp', cobrancaId: 'cobR', parcelaN: 2, idVenda: '5912' }
+
 export function roda() {
   const out = {
     chCarteira: renderToString(<TelaCheques {...base} />),
@@ -44,6 +50,8 @@ export function roda() {
     chLancar: renderToString(<ModalLancar pedidos={[]} clientes={[]} existentes={[]} quem={QUEM} hoje={HOJE}
       empresaInicial="sacolas" acoes={acoes} onFeito={() => {}} onFechar={() => {}} />),
     chDepositar: renderToString(<ModalEvento para="depositado" cheques={[lote[3]]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
+    chDepositarMisto: renderToString(<ModalEvento para="depositado" cheques={[lote[3], { ...lote[0], id: 'pl', empresa: 'plastico' }]}
+      hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
     chDevolver: renderToString(<ModalEvento para="devolvido" cheques={[dep]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
     chFichaDev: renderToString(<FichaCheque cheque={dev} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
       onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
@@ -72,6 +80,13 @@ export function roda() {
       onAcao={() => {}} onCorrigir={nada} onResgate={nada} onFechar={() => {}} />),
     chFichaResg: renderToString(<FichaCheque cheque={comResgate} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
       onAcao={() => {}} onCorrigir={nada} onResgate={nada} onFechar={() => {}} />),
+    chLancarPreset: renderToString(<ModalLancar preset={PRESET} pedidos={[]} clientes={[]} existentes={[]} quem={QUEM} hoje={HOJE}
+      empresaInicial="sacolas" acoes={acoes} onFeito={() => {}} onFechar={() => {}} />),
+    chLinhaParcela: renderToString(<ListaCheques cheques={[daParcela]} marcados={[]} onMarcar={() => {}} onAbrir={() => {}}
+      clientes={base.clientes} hoje={HOJE} vazio="" />),
+    chFichaParcela: renderToString(<FichaCheque cheque={daParcela} todos={[daParcela]} clientes={base.clientes} hoje={HOJE}
+      onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
+    chResgatarParcela: renderToString(<ModalEvento para="resgatado" cheques={[daParcela]} hoje={HOJE} onConfirmar={nada} onFechar={() => {}} />),
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }

@@ -14,7 +14,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, query, where, runTransaction, writeBatch, getDocs } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { doDoc } from '../utils.js'
-import { SITUACOES_VIVAS, SITUACOES_CHEQUE, aplicaEvento, corrigeCheque, marcaResgate, desisteResgate } from '../lib/cheques.js'
+import { SITUACOES_VIVAS, SITUACOES_CHEQUE, aplicaEvento, corrigeCheque, marcaResgate, desisteResgate,
+  efeitoNoCaixa, movimentoDoCheque } from '../lib/cheques.js'
 
 const col = () => collection(db, 'cheques')
 export const SITUACOES_ARQUIVO = Object.keys(SITUACOES_CHEQUE).filter((s) => !SITUACOES_VIVAS.includes(s))
@@ -77,17 +78,38 @@ export async function chequesComChaves(chaves) {
 // regravado inteiro, e sobre uma cópia velha o evento do outro sumiria).
 // Qualquer folha com problema barra todas — mudança pela metade numa seleção
 // deixaria a pessoa sem saber quais foram.
+//
+// C6b — FOLHA LIGADA A UMA PARCELA: na MESMA transação, compensar/repassar cria
+// o recebimento (`movimentos`) e voltar/recolher/cancelar o CANCELA (os três
+// campos de cancelamento, que é o que a rule de `movimentos` deixa mudar). Ou a
+// folha muda E o caixa acompanha, ou nada acontece — parcela "recebida" com o
+// cheque devolvido seria exatamente o buraco que esta fase fecha.
 export async function aplicaEmLote(ids, ev, { agora, hoje } = {}) {
+  const em = agora || new Date().toISOString()
   await runTransaction(db, async (tx) => {
     const refs = ids.map((id) => doc(db, 'cheques', id))
     const snaps = await Promise.all(refs.map((r) => tx.get(r)))
-    const patches = snaps.map((s, i) => {
+    const passos = snaps.map((s, i) => {
       if (!s.exists()) throw new Error(`cheque ${ids[i]} não existe mais`)
-      const r = aplicaEvento({ ...s.data(), id: s.id }, ev, { agora, hoje })
-      if (!r.ok) throw new Error(`nº ${s.data().numero}: ${r.problemas.map((p) => p.msg).join('; ')}`)
-      return r.patch
+      const antes = { ...s.data(), id: s.id }
+      const r = aplicaEvento(antes, ev, { agora: em, hoje })
+      if (!r.ok) throw new Error(`nº ${antes.numero}: ${r.problemas.map((p) => p.msg).join('; ')}`)
+      return { antes, patch: { ...r.patch }, caixa: efeitoNoCaixa(antes, ev) }
     })
-    refs.forEach((r, i) => tx.update(r, patches[i]))
+    passos.forEach(({ antes, patch, caixa }, i) => {
+      if (caixa?.cancelar) {
+        tx.update(doc(db, 'movimentos', caixa.cancelar),
+          { cancelado: true, canceladoPor: ev.por || '', canceladoEm: em })
+        patch.movimentoId = null
+      }
+      if (caixa?.criar) {
+        const ref = doc(collection(db, 'movimentos'))
+        // o cheque já com a mudança: a obs do repasse diz o fornecedor novo
+        tx.set(ref, movimentoDoCheque({ ...antes, ...patch }, caixa.criar, { por: ev.por, porUid: ev.porUid, agora: em }))
+        patch.movimentoId = ref.id
+      }
+      tx.update(refs[i], patch)
+    })
   })
 }
 

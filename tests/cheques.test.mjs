@@ -12,6 +12,7 @@ import {
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
   gaveta, resumoChequesDoPedido, contasDoCliente, clienteChave, pedacosDaBusca, ondeEstaOCheque,
   marcaResgate, desisteResgate, resgatesPendentes, FORMAS_ACERTO, devolucoesDe,
+  efeitoNoCaixa, movimentoDoCheque, chequesDaParcela, CONTA_REPASSE,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -435,5 +436,54 @@ ok('valor zero é recusado', !aplicaEvento(recolhido.cheque, { para: 'resgatado'
 const rec = repassesDe([recolhido.cheque])[0]
 t('no recibo daquele dia a folha continua, marcada como recolhida (não "voltou")', [rec.qtd, rec.recolhidas, rec.voltaram], [1, 1, 0])
 t('formas de acerto', FORMAS_ACERTO.map((f) => f.id), ['dinheiro', 'pix', 'transferencia', 'cheque', 'abatimento'])
+
+// ---------- o cheque e a cobrança (C6b) ----------
+// a RUBI: cobrança c-rubi, 4 parcelas de 375, as 4 folhas (250–253) ligadas a elas
+const folhasRubi = geraFolhas({ quantas: 4, valor: { modo: 'folha', valor: 375 }, primeiroBomPara: '2026-11-03',
+  intervalo: { tipo: 'dias', dias: 10 }, numeroInicial: '000250', base: BASE })
+  .map((f, i) => ({ ...f, cobrancaId: 'c-rubi', parcelaN: i + 1 }))
+const loteRubi = chequesDoLote({ ...CAB, cliente: 'RUBI SEMI JOIAS', idVenda: '5912' }, folhasRubi, { loteId: 'LR', ...QUEM })
+  .cheques.map((c, i) => ({ ...c, id: `r${i + 1}` }))
+t('cada folha guarda a parcela que paga', loteRubi.map((c) => [c.numero, c.cobrancaId, c.parcelaN, c.movimentoId]),
+  [['000250', 'c-rubi', 1, null], ['000251', 'c-rubi', 2, null], ['000252', 'c-rubi', 3, null], ['000253', 'c-rubi', 4, null]])
+ok('cheque solto (sem cobrança) não mexe no caixa', efeitoNoCaixa(c1, { para: 'compensado' }) === null)
+ok('na gaveta e depositado: ainda NÃO é recebimento', efeitoNoCaixa(loteRubi[0], { para: 'depositado' }) === null)
+
+const r1dep = aplicaEvento(loteRubi[0], { para: 'depositado', conta: 'bradesco', data: '2026-11-03', porUid: 'u' }, QUEM).cheque
+t('compensou: nasce o recebimento, na conta do depósito', efeitoNoCaixa(r1dep, { para: 'compensado', data: '2026-11-05' }),
+  { criar: { forma: 'cheque', conta: 'bradesco', valor: 375, data: '2026-11-05' } })
+const mov = movimentoDoCheque(r1dep, { forma: 'cheque', conta: 'bradesco', valor: 375, data: '2026-11-05' }, { por: 'Jéssica', porUid: 'u', agora: AGORA })
+t('o movimento no formato do Financeiro, ligado à parcela e ao cheque',
+  [mov.tipo, mov.cobrancaId, mov.parcelaN, mov.chequeId, mov.forma, mov.conta, mov.obs, mov.conciliado],
+  ['entrada', 'c-rubi', 1, 'r1', 'cheque', 'bradesco', 'cheque nº 000250', false])
+const r1comp = { ...aplicaEvento(r1dep, { para: 'compensado', data: '2026-11-05', porUid: 'u' }, QUEM).cheque, movimentoId: 'm1' }
+t('compensado que VOLTA: o recebimento é cancelado (a parcela reabre)', efeitoNoCaixa(r1comp, { para: 'devolvido', alinea: '11' }), { cancelar: 'm1' })
+
+t('repassou: o recebimento nasce na conta do repasse', efeitoNoCaixa(loteRubi[1], { para: 'repassado', data: '2026-11-06' }),
+  { criar: { forma: 'cheque', conta: CONTA_REPASSE, valor: 375, data: '2026-11-06' } })
+const r2rep = { ...aplicaEvento(loteRubi[1], { ...REP, data: '2026-11-06' }, QUEM).cheque, movimentoId: 'm2' }
+t('a obs diz para quem foi', movimentoDoCheque(r2rep, { forma: 'cheque', conta: CONTA_REPASSE, valor: 375, data: '2026-11-06' }).obs,
+  'cheque nº 000251 repassado a RESINAS NE')
+t('voltou do fornecedor: cancela', efeitoNoCaixa(r2rep, { para: 'devolvido', alinea: '11' }), { cancelar: 'm2' })
+t('recolhido do fornecedor (resgate): cancela também', efeitoNoCaixa(r2rep, { para: 'carteira', formaPgto: 'pix' }), { cancelar: 'm2' })
+t('cancelar a folha cancela o recebimento', efeitoNoCaixa(r1comp, { para: 'cancelado', obs: 'x' }), { cancelar: 'm1' })
+
+const r3 = loteRubi[2]
+t('o resgate do cliente vira o recebimento, com a forma e o valor reais',
+  efeitoNoCaixa(r3, { para: 'resgatado', formaPgto: 'dinheiro', valorPago: 380, contaRecebimento: 'caixa', data: '2026-11-07' }),
+  { criar: { forma: 'dinheiro', conta: 'caixa', valor: 380, data: '2026-11-07' } })
+t('resgate de folha com parcela exige a conta onde o dinheiro entrou',
+  aplicaEvento(r3, { para: 'resgatado', formaPgto: 'pix', data: '2026-11-07', porUid: 'u' }, QUEM).problemas.map((p) => p.campo), ['contaRecebimento'])
+ok('abatido em conta não gera recebimento (e não pede conta)',
+  efeitoNoCaixa(r3, { para: 'resgatado', formaPgto: 'abatimento' }) === null
+  && aplicaEvento(r3, { para: 'resgatado', formaPgto: 'abatimento', data: '2026-11-07', porUid: 'u' }, QUEM).ok)
+
+const devRubi = aplicaEvento(aplicaEvento(loteRubi[3], { para: 'depositado', conta: 'bradesco', data: '2026-11-03', porUid: 'u' }, QUEM).cheque,
+  { para: 'devolvido', alinea: '11', data: '2026-11-04', porUid: 'u' }, QUEM).cheque
+const par = (n) => chequesDaParcela([r1dep, r2rep, r3, devRubi, { ...r3, id: 'x', situacao: 'cancelado' }], 'c-rubi', n)
+t('parcela 1: em cheque (depositado)', par(1).emCheque.map((c) => c.numero), ['000250'])
+t('parcela 2: repassada já é recebimento, não "em cheque"', [par(2).emCheque.length, par(2).todas.length], [0, 1])
+t('parcela 3: em cheque (na gaveta); cancelada não conta', par(3).emCheque.map((c) => c.id), ['r3'])
+t('parcela 4: cheque devolvido é problema', par(4).problemas.map((c) => c.numero), ['000253'])
 
 export default resultado('cheques')

@@ -502,6 +502,44 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   cheque ligado avisa antes.
 - ⚠️ **Repasse continua só controle** (decisão acima): o recebimento do
   cliente acontece no repasse, mas a saída para o fornecedor não é lançada.
+- ✅ **FEITA em 03/11/2026 (falta publicar).** Núcleo: `efeitoNoCaixa(c, ev)`
+  decide criar/cancelar o movimento, `movimentoDoCheque` o monta,
+  `chequesDaParcela` liga folha e parcela; `aplicaEmLote` aplica tudo na MESMA
+  transação. Conta virtual `repasse-cheque` em `CONTAS` (`virtual: true`, fora
+  do `contasDaEmpresa`, então ninguém a escolhe à mão). Tela:
+  - `ModalLancar` ganhou o modo `preset` (empresa, pedido e cliente travados;
+    a pessoa digita só o nº da 1ª folha e o talão; cada folha nasce com o valor
+    do que FALTA na parcela e o vencimento dela; a linha mostra `p1…p4`).
+  - Resgate de folha ligada a parcela pede **"Entrou em"** (a conta do
+    dinheiro do cliente); abatimento não gera recebimento.
+  - Financeiro › Em aberto: chip "💳 em cheque nº 000246 · bom para · na
+    gaveta / no banco (Bradesco)", "⚠ cheque nº … devolvido", "💳 Lançar
+    cheque" por parcela e "💳 Lançar os cheques das N parcelas". Parcela coberta
+    por folha viva perde o "💰 Receber" (receber de novo contaria duas vezes).
+  - "Receber" com forma Cheque explica e leva ao lançamento; Confirmar trava.
+  - Recebimentos: movimento que nasceu de cheque não tem "✕ cancelar" — se
+    desfaz pelo cheque (cancelado ali, a folha seguiria "compensada" com a
+    parcela reaberta).
+  - Cancelar cobrança com folha ligada avisa: as folhas NÃO são canceladas
+    junto, e se compensarem o dinheiro entra no caixa mesmo assim.
+  - **Leituras:** o Financeiro assina os cheques vivos só com a aba Em aberto
+    na tela (a mesma consulta da aba Cheques; o cache persistente divide).
+  - **Ensaio:** a transação real (`aplicaEmLote`) rodou contra um Firestore em
+    memória no caso da RUBI (4 × R$ 375, folhas 000246–000249): compensou →
+    parcela recebida (conta Bradesco); repassou → recebida (Repasse de cheque);
+    devolveu depois de compensar → movimento cancelado e parcela reaberta;
+    recolhido do fornecedor → reabre e a folha volta à gaveta; resgatado com
+    R$ 380 em dinheiro → recebimento de R$ 380 no Caixa (a parcela fica com
+    −R$ 5: juros, aceito). A tela foi clicada num ensaio no navegador (lançar
+    as 4 pela cobrança, o devolvido reabrindo, o Receber com Cheque levando ao
+    lançamento com a conta da RUBI sugerida e o próximo nº 000250).
+  - ⚠️ **Limites conhecidos:** corrigir o VALOR de uma folha que já virou
+    recebimento não corrige o movimento (cancelar e relançar pelo cheque);
+    cheque lançado em 2+ folhas para a MESMA parcela some o "Receber" só quando
+    a soma cobre o saldo.
+  - **Rules: nada novo.** `movimentos` create já exige `ehFinanceiro()` +
+    `porUid == auth.uid` (o movimento do cheque leva o `porUid` de quem
+    aplicou), e o cancelamento mexe só nos três campos aceitos.
 
 ## C6c — "onde está o cheque 246 da RUBI?" (pedido do Raoni, 03/11/2026)
 - **O número da folha já é obrigatório** e a sequência já é gerada: "Nº da 1ª

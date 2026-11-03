@@ -106,7 +106,12 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
 > só controle) → resgatado pelo cliente (C6d — **FEITA e no ar em 03/11/2026**, `1c13a6d`; de
 > brinde, `mudancasDe`: marcas no histórico não contam mais como mudança de
-> situação — corrigia um bug da C3). Falta a C6b (Financeiro).
+> situação — corrigia um bug da C3). **C6b FEITA em 03/11/2026, falta
+> publicar** (Financeiro ↔ cheques: lançar as folhas pela cobrança — `preset`
+> do `ModalLancar` —, chip "em cheque" por parcela, o movimento nasce na
+> compensação/repasse e é cancelado na devolução/recolhimento dentro da
+> transação do cheque — `efeitoNoCaixa`; conta virtual `repasse-cheque`;
+> Receber com forma Cheque leva ao lançamento; sem rule nova).
 
 > ⚠️ **DINHEIRO SÓ DO FINANCEIRO, POR ENQUANTO (03/11/2026, Raoni):** "tudo de
 > dinheiro apenas financeiro, depois a gente reorganiza". `veFinanceiro` virou

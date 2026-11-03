@@ -200,6 +200,17 @@ const ESPERA = {
   chBarraMista: ['2 marcado(s)', 'R$ 734,00', 'Cancelar cheque'],
   chNumBR: ['[1468,367.5,1468.5,true]'],
   chDesigner: ['Esta tela é só do financeiro'],
+  // C6b: lançar a partir da cobrança, a parcela em cheque, receber com cheque
+  chLancarPreset: ['Lançar os cheques da cobrança', '#5912', 'RUBI SEMI JOIAS', '4 parcela(s)', 'R$ 1.500,00',
+    'conta como recebida quando o cheque compensar', 'Nº da 1ª folha', 'Uma folha por parcela', 'readonly', 'disabled'],
+  chLinhaParcela: ['💳 parcela 2'],
+  chDepositarMisto: ['Bradesco', 'Banese'],
+  chFichaParcela: ['💳 parcela 2 do pedido #5912', 'conta como recebida quando compensar ou for repassado'],
+  chResgatarParcela: ['A folha paga uma parcela', 'abatimento não entra'],
+  abertoChq: ['💳 em cheque nº 000247', 'na gaveta', '⚠ cheque nº 000248 devolvido', '💰 Receber', '💳 Lançar cheque'],
+  abertoSemChq: ['💳 Lançar os cheques das 2 parcelas', '💳 Lançar cheque'],
+  caixaChq: ['pelo cheque — desfaz na aba Cheques'],
+  mReceberChq: ['Cheque não se recebe aqui', 'Lançar o cheque desta parcela', 'disabled'],
   // C6a: as contas que o cliente já usou, com o próximo número
   chContas: ['Contas que INGRID já usou', 'JOAO TERCEIRO', 'Banese · ag 0036 · cc 03/100.483-1 · de terceiro',
     'último nº 047473', '4 folha(s)', 'próximo 047474'],
@@ -281,7 +292,15 @@ const PROIBE = {
   chRepassar: ['TINTAS VELHAS'],                   // fornecedor inativo não aparece no repasse                      // 03/11/2026: dinheiro só do financeiro
   fnDono: ['Resinas', '+ Novo fornecedor'],
   chDevolvidos: ['ª vez'],
-  chDepositar: ['Cielo', 'Caixa interno'],          // cheque não se deposita na maquininha nem na gaveta                         // voltou uma vez só: sem contador
+  chDepositar: ['Cielo', 'Caixa interno'],
+  chDepositarMisto: ['Cielo', 'Caixa interno', 'Repasse de cheque'],   // a conta virtual nunca é escolhida à mão
+  // C6b: cheque e Financeiro
+  chLancarPreset: ['Quantas folhas', 'O valor é', 'cheque antigo, que estava na Zeus'],   // a cobrança já diz quantas e quanto
+  chLinhaParcela: ['undefined'],
+  abertoChq: ['999999', 'Lançar os cheques das'],   // cheque de outra cobrança não aparece; só 1 parcela sem folha
+  abertoSemChq: ['em cheque nº'],
+  caixaChq: ['✕ cancelar'],                          // recebimento de cheque se desfaz pelo cheque
+  mReceberChq: ['Recebimento parcial'],          // cheque não se deposita na maquininha nem na gaveta                         // voltou uma vez só: sem contador
 }
 
 let mal = 0

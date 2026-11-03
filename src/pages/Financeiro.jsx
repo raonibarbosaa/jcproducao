@@ -13,6 +13,9 @@ import { useCadastros } from '../contexts/CadastrosContext.jsx'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import SubTabs from '../components/SubTabs.jsx'
 import Realce from '../components/Realce.jsx'
+import { useChequesVivos, novoLoteId, gravaLote, chequesComChaves, chequesDoCliente } from '../hooks/useCheques.js'
+import { chequesDaParcela, nomeSituacao } from '../lib/cheques.js'
+import { ModalLancar } from './Cheques.jsx'
 
 // ============================================================
 // FINANCEIRO — CONTAS A RECEBER (Fase 1). Desenho: FINANCEIRO.md
@@ -35,6 +38,10 @@ export default function Financeiro({ pedidos }) {
   const [aba, setAba] = useState('cobrar')
   const [lancando, setLancando] = useState(null)   // entrega (ou {manual:true}) no modal
   const [recebendo, setRecebendo] = useState(null) // { cob, parcela }
+  const [emCheque, setEmCheque] = useState(null)   // preset do ModalLancar (C6b)
+  // os cheques VIVOS ligam a parcela à folha ("em cheque nº 246, na gaveta").
+  // Só com a aba Em aberto na tela — é a única que mostra parcela.
+  const cheques = useChequesVivos(veFinanceiro(perfil) && aba === 'aberto')
 
   useEffect(() => {
     const un = [
@@ -112,7 +119,7 @@ export default function Financeiro({ pedidos }) {
       )}
       {aba === 'aberto' && (
         <AbaAberto cobrancas={cobrancasEmp} movimentos={movimentosEmp} clientes={clientes}
-          nome={nome} onReceber={setRecebendo} />
+          nome={nome} onReceber={setRecebendo} cheques={cheques.lista} onCheque={setEmCheque} />
       )}
       {aba === 'caixa' && (
         <AbaCaixa movimentos={movimentosEmp} empresa={empresa} clientes={clientes} nome={nome} />
@@ -126,11 +133,39 @@ export default function Financeiro({ pedidos }) {
       )}
       {recebendo && (
         <ModalReceber alvo={recebendo} empresa={empresa} nome={nome} uid={user?.uid}
-          clientes={clientes} onFechar={() => setRecebendo(null)} />
+          clientes={clientes} onFechar={() => setRecebendo(null)}
+          onCheque={() => { setEmCheque(presetDaCobranca(recebendo.cob, [recebendo.parcela])); setRecebendo(null) }} />
+      )}
+      {emCheque && (
+        <ModalLancar preset={emCheque} pedidos={pedidos} clientes={clientes} existentes={cheques.lista}
+          quem={{ por: nome || '', porUid: user?.uid || '' }} hoje={hojeISO()} empresaInicial={emCheque.empresa}
+          acoes={ACOES_LANCAR}
+          onFeito={(cs) => { setEmCheque(null); alert(`${cs.length} folha(s) lançada(s) — estão na aba Cheques, na gaveta.`) }}
+          onFechar={() => setEmCheque(null)} />
       )}
     </>
   )
 }
+
+const SEM_CHEQUES = []
+// o que o ModalLancar precisa para gravar (funções de módulo: referência estável)
+const ACOES_LANCAR = { novoLoteId, gravaLote, chequesComChaves, chequesDoCliente }
+
+// O preset do lançamento a partir da cobrança: uma folha por parcela, no valor
+// do que FALTA nela (parcela meio paga em dinheiro leva cheque só do resto).
+export function presetDaCobranca(cob, parcelas) {
+  return {
+    empresa: cob.empresa || EMPRESA_PADRAO, cliente: cob.cliente || '', idVenda: cob.idVenda || '',
+    cobrancaId: cob.id,
+    parcelas: parcelas.map((pc) => ({ n: pc.n, valor: arredondaMoeda(pc.saldo ?? pc.valor), venc: pc.venc || '' })),
+  }
+}
+
+// onde está a folha, na língua de quem cobra (só as vivas chegam aqui: a
+// repassada e a compensada já viraram recebimento, e é ele que a parcela mostra)
+const ondeFolha = (c) => (c.situacao === 'carteira' ? 'na gaveta'
+  : c.situacao === 'depositado' ? `no banco${c.contaDeposito ? ` (${nomeConta(c.contaDeposito)})` : ''}`
+    : nomeSituacao(c.situacao))
 
 const Card = ({ rot, v, cor }) => (
   <div className="fin-card">
@@ -246,11 +281,12 @@ export function AbaCobrar({ lista, empresa, clientes, onLancar }) {
 // ============================================================
 // ABA 2 — EM ABERTO: quem me deve, por vencimento
 // ============================================================
-export function AbaAberto({ cobrancas, movimentos, clientes, nome, onReceber }) {
+// `abertoInicial`: o card que já nasce aberto (o teste de render não clica)
+export function AbaAberto({ cobrancas, movimentos, clientes, nome, onReceber, cheques = SEM_CHEQUES, onCheque, abertoInicial = '' }) {
   const [busca, setBusca] = useState('')
   const [soVencidas, setSoVencidas] = useState(false)
   const [verFechadas, setVerFechadas] = useState(false)
-  const [abertoId, setAbertoId] = useState('')
+  const [abertoId, setAbertoId] = useState(abertoInicial)
 
   const hoje = hojeISO()
   const termo = busca.trim()
@@ -270,9 +306,16 @@ export function AbaAberto({ cobrancas, movimentos, clientes, nome, onReceber }) 
       ? `\n\n⚠️ ATENÇÃO: já entraram ${fmtMoeda(s.recebido)} nesta cobrança. `
         + `Os recebimentos CONTINUAM no caixa — cancele-os um a um se eles também não valem.`
       : ''
+    // as folhas ligadas não somem com a cobrança: o papel existe
+    const folhas = cheques.filter((x) => x.cobrancaId === c.id)
+    const avisoCheque = folhas.length
+      ? `\n\n⚠️ ${folhas.length} cheque(s) desta cobrança continuam na aba Cheques `
+        + `(nº ${folhas.map((x) => x.numero).join(', ')}). Eles NÃO são cancelados junto — `
+        + 'se compensarem, o dinheiro entra no caixa mesmo assim. Resolva cada folha lá.'
+      : ''
     if (!confirm(`Cancelar a cobrança de ${nomeCliente(c.cliente, clientes)}`
       + `${c.idVenda ? ` (pedido #${c.idVenda})` : ''}, no valor de ${fmtMoeda(c.valor)}?`
-      + `\n\nEla sai da lista e a entrega volta a poder ser cobrada.${aviso}`)) return
+      + `\n\nEla sai da lista e a entrega volta a poder ser cobrada.${aviso}${avisoCheque}`)) return
     await updateDoc(doc(db, 'cobrancas', c.id), {
       status: 'cancelada', canceladaPor: nome || '', canceladaEm: new Date().toISOString(),
     })
@@ -335,6 +378,12 @@ export function AbaAberto({ cobrancas, movimentos, clientes, nome, onReceber }) 
                   {s.parcelas.map((pc) => {
                     const quit = pc.saldo <= 0.004
                     const venc = pc.venc && pc.venc < hoje && !quit
+                    // C6b: a folha que paga esta parcela. Na gaveta ou no banco a
+                    // parcela continua em aberto (só conta quando compensar ou for
+                    // repassada) — mas não se recebe de novo o que já está em cheque.
+                    const ch = chequesDaParcela(cheques, c.id, pc.n)
+                    const coberto = ch.emCheque.reduce((t, x) => t + (Number(x.valor) || 0), 0)
+                    const cobertaPorCheque = ch.emCheque.length > 0 && coberto >= pc.saldo - 0.004
                     return (
                       <div className={'fin-pc' + (venc ? ' fin-pc-atrasada' : '')} key={pc.n}>
                         <span className="fin-pc-n">{pc.n}/{s.parcelas.length}</span>
@@ -346,15 +395,38 @@ export function AbaAberto({ cobrancas, movimentos, clientes, nome, onReceber }) 
                             : <>falta {fmtMoeda(pc.saldo)}</>}
                         </span>
                         {pc.forma ? <span className="chip">{nomeForma(pc.forma)}</span> : null}
-                        {!quit && s.st !== 'cancelada' && (
+                        {ch.emCheque.map((x) => (
+                          <span className="chip fin-pc-cheque" key={x.id}>
+                            💳 em cheque nº {x.numero} · bom para {fmtDia(x.bomPara)} · {ondeFolha(x)}
+                          </span>
+                        ))}
+                        {!quit && ch.problemas.map((x) => (
+                          <span className="chip fin-pc-devolvido" key={x.id}>⚠ cheque nº {x.numero} devolvido</span>
+                        ))}
+                        {!quit && s.st !== 'cancelada' && !cobertaPorCheque && (
                           <button className="mini-btn"
                             onClick={() => onReceber({ cob: c, parcela: pc, total: s.parcelas.length })}>
                             💰 Receber
                           </button>
                         )}
+                        {!quit && s.st !== 'cancelada' && !ch.emCheque.length && onCheque && (
+                          <button className="mini-btn" onClick={() => onCheque(presetDaCobranca(c, [pc]))}>
+                            💳 Lançar cheque
+                          </button>
+                        )}
                       </div>
                     )
                   })}
+                  {(() => {
+                    // várias parcelas sem folha: um lançamento só, com os números em sequência
+                    const sem = s.parcelas.filter((pc) => pc.saldo > 0.004
+                      && !chequesDaParcela(cheques, c.id, pc.n).emCheque.length)
+                    return onCheque && s.st !== 'cancelada' && sem.length > 1 ? (
+                      <button className="mini-btn fin-todos-cheque" onClick={() => onCheque(presetDaCobranca(c, sem))}>
+                        💳 Lançar os cheques das {sem.length} parcelas
+                      </button>
+                    ) : null
+                  })()}
                   {c.obs ? <div className="fin-obs">{c.obs}</div> : null}
                   <div className="fin-rodape">
                     <small>
@@ -449,7 +521,12 @@ export function AbaCaixa({ movimentos, empresa, clientes, nome }) {
               <span className="chip">{nomeConta(m.conta) || '—'}</span>
               {m.cancelado
                 ? <small className="fin-cancelado">cancelado por {m.canceladoPor || '—'}</small>
-                : <button className="mini-btn" onClick={() => cancelar(m)}>✕ cancelar</button>}
+                // o recebimento que nasceu de um cheque se desfaz PELO cheque (devolvido,
+                // recolhido): cancelado aqui, a folha continuaria "compensada" e a
+                // parcela reabriria com o dinheiro no banco
+                : m.chequeId
+                  ? <small className="fin-cancelado" title={m.obs || ''}>💳 pelo cheque — desfaz na aba Cheques</small>
+                  : <button className="mini-btn" onClick={() => cancelar(m)}>✕ cancelar</button>}
             </div>
           ))}
         </div>
@@ -733,7 +810,7 @@ export function ModalCobranca({ entrega, empresa, pedidos, entregues, cobrancas,
 // ============================================================
 // MODAL — RECEBER (dá origem a um MOVIMENTO)
 // ============================================================
-export function ModalReceber({ alvo, empresa, nome, uid, clientes, onFechar }) {
+export function ModalReceber({ alvo, empresa, nome, uid, clientes, onFechar, onCheque }) {
   const { cob, parcela, total } = alvo
   // O saldo é CALCULADO, não um chute — prefigurar aqui não é o mesmo que
   // preencher um vencimento que ninguém conferiu. E a data é a de HOJE porque é
@@ -754,6 +831,7 @@ export function ModalReceber({ alvo, empresa, nome, uid, clientes, onFechar }) {
     // conciliação com o OFX (Fase 5) nasce quebrada
     if (!forma) { alert('Escolha a forma de pagamento.'); return }
     if (!conta) { alert('Escolha em que conta o dinheiro entrou.'); return }
+    if (forma === 'cheque') return
     if (valorNum > parcela.saldo + 0.004
       && !confirm(`Você está recebendo ${fmtMoeda(valorNum)} numa parcela cujo saldo é `
         + `${fmtMoeda(parcela.saldo)}.\n\nConfirma? A cobrança vai ficar com saldo negativo.`)) return
@@ -824,7 +902,18 @@ export function ModalReceber({ alvo, empresa, nome, uid, clientes, onFechar }) {
             </div>
           </div>
 
-          {valorNum > 0 && valorNum < parcela.saldo - 0.004 && (
+          {forma === 'cheque' && (
+            <div className="fin-explica">
+              💳 <b>Cheque não se recebe aqui.</b> Lance a folha (nº, banco, bom para): a parcela conta
+              como recebida quando o cheque compensar ou for repassado a um fornecedor — e reabre
+              sozinha se ele voltar.
+              {onCheque && <div style={{ marginTop: 8 }}>
+                <button className="btn primary" onClick={onCheque}>💳 Lançar o cheque desta parcela</button>
+              </div>}
+            </div>
+          )}
+
+          {forma !== 'cheque' && valorNum > 0 && valorNum < parcela.saldo - 0.004 && (
             <div className="fin-explica">
               Recebimento parcial: continuam faltando{' '}
               <b>{fmtMoeda(arredondaMoeda(parcela.saldo - valorNum))}</b> nesta parcela.
@@ -838,7 +927,7 @@ export function ModalReceber({ alvo, empresa, nome, uid, clientes, onFechar }) {
         </div>
         <div className="fin-modal-pe">
           <button className="btn" onClick={onFechar}>Cancelar</button>
-          <button className="btn" onClick={salvar} disabled={salvando}
+          <button className="btn" onClick={salvar} disabled={salvando || forma === 'cheque'}
             style={{ background: 'var(--ok)', borderColor: 'var(--ok)' }}>
             {salvando ? 'Salvando…' : '💰 Confirmar recebimento'}
           </button>

@@ -1220,6 +1220,11 @@ mark.hl {
 .fin-pc-val { font-weight: 600; min-width: 88px; }
 .fin-pc-sit { color: var(--text-dim); }
 .fin-pc .mini-btn { margin-left: auto; }
+.fin-pc .mini-btn + .mini-btn { margin-left: 0; }
+/* Cheques C6b: a folha que paga a parcela */
+.fin-pc-cheque { border-color: var(--accent); color: var(--accent); }
+.fin-pc-devolvido { border-color: var(--danger); color: var(--danger); }
+.fin-todos-cheque { margin: 8px 0 0; }
 /* modificador da LINHA (parcela atrasada) x classe do elemento (.fin-pc-venc,
    a data). Nomes iguais colidiriam na cascata — por isso o modificador é outro. */
 .fin-pc-atrasada .fin-pc-venc { color: var(--danger); font-weight: 600; }
@@ -1600,3 +1605,9 @@ tr.sit-producao td { color: var(--text-dim); }
   .chq-valor { margin-left: 0; text-align: left; }
   .chq-barra { top: 56px; }
 }
+
+/* Cheques C6b: lançamento aberto a partir de uma cobrança */
+.chq-preset { background: var(--surface-2); border-left: 3px solid var(--accent);
+  padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; }
+.chq-preset small { display: block; color: var(--text-dim); margin-top: 4px; }
+.chq-parcela { color: var(--accent); }

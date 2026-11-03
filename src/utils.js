@@ -2989,9 +2989,13 @@ export const CONTAS = [
   { id: 'nordeste', nome: 'Banco do Nordeste', empresas: ['plastico'] },
   { id: 'cielo', nome: 'Cielo', empresas: ['sacolas'] },
   { id: 'caixa', nome: 'Caixa interno', empresas: ['sacolas', 'plastico'] },
+  // VIRTUAL (Cheques C6b): onde cai o recebimento de uma parcela paga com
+  // cheque que foi REPASSADO a fornecedor — o dinheiro não passou por banco.
+  // Nunca é escolhida à mão (não aparece no "Receber"), só nasce do repasse.
+  { id: 'repasse-cheque', nome: 'Repasse de cheque', empresas: ['sacolas', 'plastico'], virtual: true },
 ]
 export const contasDaEmpresa = (emp) =>
-  CONTAS.filter((c) => !emp || c.empresas.includes(emp))
+  CONTAS.filter((c) => !c.virtual && (!emp || c.empresas.includes(emp)))
 export const nomeConta = (id) => CONTAS.find((c) => c.id === id)?.nome || ''
 
 // quem enxerga as telas de DINHEIRO: aba Financeiro, aba Cheques e Cadastros ›

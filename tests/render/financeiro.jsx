@@ -40,6 +40,12 @@ const hoje=new Date()
 const MES=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`
 movimentos[0].data=`${MES}-05`; movimentos[1].data=`${MES}-06`
 const nada=()=>{}
+// C6b: a parcela 2 está em cheque (na gaveta); a 3 teve o cheque devolvido
+const CHQ=[
+  {id:'q2',cobrancaId:'c1',parcelaN:2,situacao:'carteira',numero:'000247',bomPara:'2026-12-03',valor:66.66},
+  {id:'q3',cobrancaId:'c1',parcelaN:3,situacao:'devolvido',numero:'000248',bomPara:'2027-01-02',valor:66.66},
+  {id:'qx',cobrancaId:'outra',parcelaN:2,situacao:'carteira',numero:'999999',valor:1},
+]
 const de=(id)=>aCobrar.find(e=>String(e.idVenda)===id)
 
 export function roda(){
@@ -48,7 +54,15 @@ export function roda(){
     cobrar:  renderToString(<AbaCobrar lista={aCobrar} empresa="sacolas" clientes={[]} onLancar={nada} />),
     plast:   renderToString(<AbaCobrar lista={[]} empresa="plastico" clientes={[]} onLancar={nada} />),
     aberto:  renderToString(<AbaAberto cobrancas={cobrancas} movimentos={movimentos} clientes={[]} nome="Anny" onReceber={nada} />),
+    abertoChq: renderToString(<AbaAberto cobrancas={cobrancas} movimentos={movimentos} clientes={[]} nome="Anny"
+               onReceber={nada} cheques={CHQ} onCheque={nada} abertoInicial="c1" />),
+    abertoSemChq: renderToString(<AbaAberto cobrancas={cobrancas} movimentos={movimentos} clientes={[]} nome="Anny"
+               onReceber={nada} cheques={[]} onCheque={nada} abertoInicial="c1" />),
     caixa:   renderToString(<AbaCaixa movimentos={movimentos} empresa="sacolas" clientes={[]} nome="Anny" />),
+    caixaChq: renderToString(<AbaCaixa movimentos={[{...movimentos[0],id:'m9',forma:'cheque',chequeId:'q2',obs:'cheque nº 000247'}]}
+               empresa="sacolas" clientes={[]} nome="Anny" />),
+    mReceberChq: renderToString(<ModalReceber alvo={{cob:cobrancas[0],parcela:{...pcs[1],forma:'cheque'},total:3}}
+               empresa="sacolas" nome="Anny" uid="u1" clientes={[]} onFechar={nada} onCheque={nada} />),
     mCobr:   renderToString(<ModalCobranca entrega={de('5458')} empresa="sacolas" pedidos={pedidos}
                entregues={entregues} cobrancas={cobrancas} itensCad={CAD} clientes={[]}
                nome="Anny" uid="u1" onFechar={nada} />),

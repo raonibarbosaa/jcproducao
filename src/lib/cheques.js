@@ -513,6 +513,11 @@ export function problemasDoEvento(c, ev) {
   }
   // recolher do fornecedor / resgate do cliente: COMO o dinheiro foi acertado
   // é o que se precisa saber depois ("pagamos a RESINAS em PIX")
+  // resgate de folha que paga uma parcela: o dinheiro do cliente vira o
+  // recebimento da parcela, e recebimento sem conta não fecha o extrato
+  if (para === 'resgatado' && c?.cobrancaId && ev?.formaPgto && ev.formaPgto !== 'abatimento' && !ev?.contaRecebimento) {
+    p.push({ campo: 'contaRecebimento', msg: 'diga em que conta o dinheiro do cliente entrou' })
+  }
   if (pedeAcerto(c?.situacao, para)) {
     if (!FORMAS_ACERTO.some((f) => f.id === ev?.formaPgto)) {
       p.push({ campo: 'formaPgto', msg: para === 'resgatado' ? 'diga como o cliente pagou' : 'diga como a empresa pagou o fornecedor' })
@@ -693,6 +698,10 @@ export function chequesDoLote(cab, folhas, { loteId, por, porUid, agora, hoje } 
       // o número na forma de PROCURAR (C6c): "246" acha a folha 000246 no banco
       // inteiro com `where('numeroChave','==')`, sem carregar o arquivo
       numeroChave: numeroNormal(f.numero),
+      // a PARCELA que esta folha paga (C6b) — vazio = cheque solto, sem cobrança
+      cobrancaId: String(f.cobrancaId ?? cab.cobrancaId ?? ''),
+      parcelaN: f.parcelaN != null ? Number(f.parcelaN) : null,
+      movimentoId: null,
       idVenda: String(cab.idVenda || '').trim(),
       recebidoEm: diaDe(cab.recebidoEm),
       lote: loteId || '',
@@ -748,6 +757,66 @@ export function passosAte(ini) {
       : [deposito, ini]
   }
   return [ini]
+}
+
+// ============================================================
+// O CHEQUE E A COBRANÇA (C6b) — quando a parcela vira RECEBIDA
+// ============================================================
+// Decisão do Raoni (03/11/2026): a parcela paga com cheque conta como recebida
+// quando a folha COMPENSA ou é REPASSADA. Antes disso ela está "em cheque".
+// O Financeiro soma o recebido pelos MOVIMENTOS (o livro-caixa) — então é um
+// movimento que nasce na compensação/repasse e é CANCELADO (nunca apagado)
+// quando a folha volta, é recolhida do fornecedor ou é cancelada. No resgate,
+// o dinheiro do cliente é que vira o recebimento.
+//   → null | { criar?: { forma, conta, valor, data }, cancelar?: movimentoId }
+// Só para folha ligada a uma cobrança; cheque solto não mexe no caixa.
+export function efeitoNoCaixa(c, ev) {
+  if (!c?.cobrancaId || !ev?.para) return null
+  const de = c.situacao
+  const out = {}
+  const desfaz = c.movimentoId && (
+    (ev.para === 'devolvido' && (de === 'compensado' || de === 'repassado'))
+    || (ev.para === 'carteira' && de === 'repassado')
+    || ev.para === 'cancelado')
+  if (desfaz) out.cancelar = c.movimentoId
+  if (ev.para === 'compensado') {
+    out.criar = { forma: 'cheque', conta: c.contaDeposito || '', valor: arredondaReais(c.valor), data: diaDe(ev.data) }
+  } else if (ev.para === 'repassado') {
+    out.criar = { forma: 'cheque', conta: CONTA_REPASSE, valor: arredondaReais(c.valor), data: diaDe(ev.data) }
+  } else if (ev.para === 'resgatado' && ev.formaPgto && ev.formaPgto !== 'abatimento') {
+    const v = ev.valorPago != null && ev.valorPago !== '' ? ev.valorPago : c.valor
+    out.criar = { forma: ev.formaPgto, conta: ev.contaRecebimento || '', valor: arredondaReais(v), data: diaDe(ev.data) }
+  }
+  return out.criar || out.cancelar ? out : null
+}
+// a conta "virtual" do recebimento por repasse: o dinheiro não passou por banco
+export const CONTA_REPASSE = 'repasse-cheque'
+
+// o documento do movimento, no formato que o Financeiro já usa
+export function movimentoDoCheque(c, criar, { por = '', porUid = '', agora } = {}) {
+  return {
+    empresa: c.empresa, tipo: 'entrada', data: criar.data, valor: criar.valor,
+    forma: criar.forma, conta: criar.conta,
+    cobrancaId: c.cobrancaId, parcelaN: c.parcelaN,
+    cliente: c.cliente || '', idVenda: c.idVenda || '',
+    obs: `cheque nº ${c.numero}${criar.conta === CONTA_REPASSE && c.destino?.fornecedorNome ? ` repassado a ${c.destino.fornecedorNome}` : ''}`,
+    chequeId: c.id || '', conciliado: false,
+    por, porUid, quando: agora || new Date().toISOString(),
+  }
+}
+
+// As folhas ligadas a uma parcela, para o Financeiro mostrar "em cheque".
+//   emCheque  = na gaveta ou no banco (ainda não virou dinheiro)
+//   problemas = devolvidas (a parcela continua aberta e alguém precisa agir)
+// Compensada/repassada/resgatada já é recebimento (o movimento conta).
+export function chequesDaParcela(cheques, cobrancaId, n) {
+  const minhas = (cheques || []).filter((c) => c?.cobrancaId === cobrancaId && Number(c.parcelaN) === Number(n)
+    && c.situacao !== 'cancelado')
+  return {
+    emCheque: ordenaPorBomPara(minhas.filter((c) => c.situacao === 'carteira' || c.situacao === 'depositado')),
+    problemas: ordenaPorBomPara(minhas.filter((c) => c.situacao === 'devolvido')),
+    todas: ordenaPorBomPara(minhas),
+  }
 }
 
 // ============================================================
