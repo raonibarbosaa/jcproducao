@@ -1,8 +1,8 @@
 import { renderToString } from 'react-dom/server'
 import Cheques, { TelaCheques, ModalLancar, ModalEvento, FichaCheque, BarraSelecao, numBR,
-  ModalReciboPronto, ReciboRepasse, reciboDoRepasse, ConferenciaGaveta, ContasDoCliente } from '../../src/pages/Cheques.jsx'
+  ModalReciboPronto, ReciboRepasse, reciboDoRepasse, ConferenciaGaveta, ContasDoCliente, ListaCheques } from '../../src/pages/Cheques.jsx'
 import { ChequesDoPedido } from '../../src/pages/Localizar.jsx'
-import { chequesDoLote, geraFolhas, aplicaEvento, contasDoCliente } from '../../src/lib/cheques.js'
+import { chequesDoLote, geraFolhas, aplicaEvento, contasDoCliente, ondeEstaOCheque } from '../../src/lib/cheques.js'
 
 const HOJE = '2026-10-26'
 const QUEM = { por: 'Anny', porUid: 'u1', agora: '2026-10-20T10:00:00Z', hoje: HOJE }
@@ -57,6 +57,11 @@ export function roda() {
     chLocAberto: renderToString(<ChequesDoPedido cheques={[lote[0], dep, rep4]} aberto />),
     chContas: renderToString(<ContasDoCliente contas={contasDoCliente(lote)} usada="" onUsar={() => {}} cliente="INGRID" />),
     chContasVazio: renderToString(<ContasDoCliente contas={[]} usada="" onUsar={() => {}} cliente="INGRID" />) || '<vazio>',
+    chOnde: renderToString(<ListaCheques cheques={[rep4, dev]} marcados={[]} onMarcar={() => {}} onAbrir={() => {}}
+      clientes={base.clientes} hoje={HOJE} vazio="" ondeDe={(c) => ondeEstaOCheque(c, {
+        nomeConta: (id) => id, contatoFornecedor: () => ({ telefone: '(79) 3431-0000', contato: 'Marcos' }) })} />),
+    chFichaOnde: renderToString(<FichaCheque cheque={rep4} todos={vivos.lista} clientes={base.clientes} hoje={HOJE}
+      ondeDe={(c) => ondeEstaOCheque(c, {})} onAcao={() => {}} onCorrigir={nada} onFechar={() => {}} />),
     chNumBR: JSON.stringify([numBR('1.468,00'), numBR('367,5'), numBR('1468.5'), Number.isNaN(numBR(''))]),
   }
   globalThis.__auth = { perfil: 'designer', nome: 'Davi', user: { uid: 'u2' } }

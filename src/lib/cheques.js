@@ -607,6 +607,7 @@ export function corrigeCheque(c, mudancas, { por, porUid, agora, obs } = {}) {
   })
   const patch = { ...depois, chave: chaveCheque(novo), historico: [...h, evento] }
   if ('cliente' in depois) patch.clienteChave = clienteChave(depois.cliente)
+  if ('numero' in depois) patch.numeroChave = numeroNormal(depois.numero)
   return { ok: true, problemas: [], patch, cheque: { ...c, ...patch } }
 }
 
@@ -648,6 +649,9 @@ export function chequesDoLote(cab, folhas, { loteId, por, porUid, agora, hoje } 
       // o cliente na forma de COMPARAR — é por ela que se acham as contas que
       // ele já usou (C6a): "Rubi Semi Joias" e "RUBI SEMI JOIAS" são o mesmo
       clienteChave: clienteChave(cab.cliente),
+      // o número na forma de PROCURAR (C6c): "246" acha a folha 000246 no banco
+      // inteiro com `where('numeroChave','==')`, sem carregar o arquivo
+      numeroChave: numeroNormal(f.numero),
       idVenda: String(cab.idVenda || '').trim(),
       recebidoEm: diaDe(cab.recebidoEm),
       lote: loteId || '',
@@ -971,10 +975,22 @@ export function casaTextoSimples(termo, ...textos) {
   return !!alvo && palavras.every((p) => alvo.includes(p))
 }
 
+// O termo em PEDAÇOS (C6c): "246 rubi" = o número 246 E a palavra rubi. Cada
+// pedaço que é número procura o nº da folha (sem zeros: 246 = 000246) e o nº
+// do pedido; o resto é texto (cliente, emitente, fornecedor). Todos os pedaços
+// precisam casar — digitar mais estreita, como no `casaBusca`.
+export function pedacosDaBusca(termo) {
+  const numeros = []; const palavras = []
+  for (const p of String(termo || '').trim().split(/\s+/).filter(Boolean)) {
+    if (/^[\d.\-/]+$/.test(p) && /\d/.test(p)) numeros.push(semZeros(p))
+    else palavras.push(p)
+  }
+  return { numeros, texto: palavras.join(' ') }
+}
+
 export function filtraCheques(cheques, f = {}, casaTexto = casaTextoSimples) {
   const termo = String(f.termo || '').trim()
-  const soNumero = /^[\d\s.\-/]+$/.test(termo)
-  const num = soNumero ? semZeros(termo) : ''
+  const { numeros, texto } = pedacosDaBusca(termo)
   const nomeCli = f.nomeCliente || ((r) => r)
   return (cheques || []).filter((c) => {
     if (f.situacoes?.length && !f.situacoes.includes(c.situacao)) return false
@@ -986,11 +1002,54 @@ export function filtraCheques(cheques, f = {}, casaTexto = casaTextoSimples) {
     if (f.bomParaDe && String(c.bomPara || '') < f.bomParaDe) return false
     if (f.bomParaAte && String(c.bomPara || '') > f.bomParaAte) return false
     if (!termo) return true
-    if (soNumero) {
-      return (!!num && semZeros(c.numero).includes(num)) || String(c.idVenda || '').includes(soDigitos(termo))
-    }
-    return casaTexto(termo, c.cliente, nomeCli(c.cliente), c.emitente?.nome, c.destino?.fornecedorNome)
+    const nFolha = semZeros(c.numero); const pedido = String(c.idVenda || '')
+    if (!numeros.every((n) => (!!n && nFolha.includes(n)) || (!!n && pedido.includes(n)))) return false
+    return !texto || casaTexto(texto, c.cliente, nomeCli(c.cliente), c.emitente?.nome, c.destino?.fornecedorNome)
   })
+}
+
+// ============================================================
+// ONDE ESTÁ O CHEQUE (C6c) — a resposta numa linha
+// ============================================================
+// "Onde está o 246 da RUBI?" — a resposta é FÍSICA: na gaveta, no banco, com
+// qual fornecedor (e como falar com ele). Os nomes que o núcleo não conhece
+// entram por função: `nomeConta(id)` e `contatoFornecedor(id)` → { telefone, contato }.
+//   → { icone, texto, detalhe }
+export function ondeEstaOCheque(c, { nomeConta = (id) => id || '', contatoFornecedor = () => null } = {}) {
+  const ult = historicoDe(c).filter((e) => e?.para === c?.situacao && e?.tipo !== 'corrigido').slice(-1)[0]
+  const quando = ult?.data ? fmtDiaCurto(ult.data) : ''
+  switch (c?.situacao) {
+    case 'carteira':
+      return { icone: '🗄', texto: `Na gaveta${quando ? ` desde ${quando}` : ''}`,
+        detalhe: c.bomPara ? `bom para ${fmtDiaCurto(c.bomPara)}` : '' }
+    case 'depositado':
+      return { icone: '🏦', texto: `Depositado${c.contaDeposito ? ` no ${nomeConta(c.contaDeposito)}` : ''}${quando ? ` em ${quando}` : ''}`,
+        detalhe: 'esperando compensar' }
+    case 'compensado':
+      return { icone: '✅', texto: `Compensou${quando ? ` em ${quando}` : ''}`,
+        detalhe: c.contaDeposito ? nomeConta(c.contaDeposito) : '' }
+    case 'devolvido': {
+      const forn = devolvidoPeloFornecedor(c)
+      const a = alinea(ult?.alinea)
+      return forn
+        ? { icone: '↩', texto: `Voltou de ${forn.fornecedorNome}${quando ? ` em ${quando}` : ''}`, detalhe: 'está com a empresa' }
+        : { icone: '↩', texto: `Voltou do banco${quando ? ` em ${quando}` : ''}`,
+          detalhe: [a ? nomeAlinea(a.id) : '', 'está com a empresa'].filter(Boolean).join(' · ') }
+    }
+    case 'repassado': {
+      const d = c.destino || {}
+      const ct = contatoFornecedor(d.fornecedorId) || {}
+      return { icone: '🤝', texto: `Com ${d.fornecedorNome || 'o fornecedor'}${d.data ? ` desde ${fmtDiaCurto(d.data)}` : ''}`,
+        detalhe: [d.referencia, ct.telefone ? `📞 ${ct.telefone}` : '', ct.contato ? `falar com ${ct.contato}` : '']
+          .filter(Boolean).join(' · ') }
+    }
+    case 'resgatado':
+      return { icone: '🔙', texto: `Resgatado pelo cliente${quando ? ` em ${quando}` : ''}`, detalhe: 'a folha voltou para ele' }
+    case 'cancelado':
+      return { icone: '✖', texto: `Cancelado${quando ? ` em ${quando}` : ''}`, detalhe: ult?.obs || 'lançado errado' }
+    default:
+      return { icone: '?', texto: 'Situação desconhecida', detalhe: '' }
+  }
 }
 
 // ---------- formatação curta (a tela tem a dela; esta é para os avisos) ----------

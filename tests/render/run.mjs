@@ -188,7 +188,7 @@ const ESPERA = {
   chDepositados: ['nº 047471', 'Bradesco', 'há 6 dia(s)', 'chq-atencao', 'marque as que compensaram'],
   // alínea 12 na lista e na ficha: não reapresenta
   chDevolvidos: ['nº 047472', 'voltou do banco', '12 · Sem fundos — 2ª apresentação'],
-  chLocalizar: ['Nº do cheque, nº do pedido', 'incluir os encerrados', 'só de terceiro', 'Todos os bancos'],
+  chLocalizar: ['Ex.: 246 rubi', 'o número do cheque e o cliente já procuram em tudo', 'incluir os encerrados', 'só de terceiro', 'Todos os bancos'],
   chCarregando: ['Carregando cheques'],
   chNegado: ['Não foi possível ler os cheques', 'As regras do Firestore'],
   chLancar: ['Lançar cheques', 'Empresa que recebeu', 'Pedido (opcional)', 'Cliente que entregou', 'cheque antigo, que estava na Zeus',
@@ -204,6 +204,10 @@ const ESPERA = {
   chContas: ['Contas que INGRID já usou', 'JOAO TERCEIRO', 'Banese · ag 0036 · cc 03/100.483-1 · de terceiro',
     'último nº 047473', '4 folha(s)', 'próximo 047474'],
   chContasVazio: ['<vazio>'],
+  // C6c: a resposta de "onde está", na lista da busca e na ficha
+  chOnde: ['🤝 Com RESINAS NE desde 24/10/2026', 'NF 1234 · 📞 (79) 3431-0000 · falar com Marcos',
+    '↩ Voltou do banco em 23/10/2026', '12 · Sem fundos — 2ª apresentação · está com a empresa'],
+  chFichaOnde: ['chq-onde-ficha', '🤝 Com RESINAS NE desde 24/10/2026'],
   // C5: a gaveta = carteira + devolvidos (o papel voltou); repassada e depositada não entram
   chGaveta: ['Conferência da gaveta de cheques', 'as duas empresas', 'Em carteira — 2 folha(s) · R$ 734,00',
     'Devolvidos (a folha voltou para a empresa) — 1 folha(s) · R$ 367,00', '047470', '047473', '047472', 'INGRID · #5458', '☐', 'Conferido por'],

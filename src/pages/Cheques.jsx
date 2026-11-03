@@ -20,10 +20,10 @@ import {
   diasParaBomPara, diasDepositado, compensacaoAtrasada, totaisCheques, ordenaPorBomPara,
   filtraCheques, historicoDe, situacaoBate, entreEmpresas, chaveCheque, fmtDoc, ehViva,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, gaveta,
-  contasDoCliente, clienteChave,
+  contasDoCliente, clienteChave, ondeEstaOCheque, pedacosDaBusca,
 } from '../lib/cheques.js'
 import {
-  useChequesVivos, useChequesArquivo, useChequesRepassados, gravaLote, novoLoteId, chequesComChaves, chequesDoCliente,
+  useChequesVivos, useChequesArquivo, useChequesRepassados, useChequesDaBusca, gravaLote, novoLoteId, chequesComChaves, chequesDoCliente,
   aplicaEmLote, corrigeNoServidor,
 } from '../hooks/useCheques.js'
 import { useFornecedores } from '../hooks/useFornecedores.js'
@@ -64,6 +64,10 @@ export default function Cheques({ pedidos }) {
   const [periodoRep, setPeriodoRep] = useState('90')
   const repassados = useChequesRepassados(ligado && abaRep, cortePeriodo(periodoRep, hojeISO()))
   const forn = useFornecedores(ligado)
+  // C6c: o que se digita no Localizar procura no BANCO INTEIRO — o número da
+  // folha e os clientes que o texto achou no cadastro
+  const [buscaServidor, setBuscaServidor] = useState(null)
+  const porNumero = useChequesDaBusca(buscaServidor, ligado)
   if (!ligado) return <div className="empty">Esta tela é só do financeiro.</div>
   const quem = { por: nome || '', porUid: user?.uid || '' }
   const acoes = {
@@ -79,7 +83,8 @@ export default function Cheques({ pedidos }) {
       onArquivo={setArquivoLigado} pedidos={pedidos} clientes={clientes}
       quem={quem} hoje={hojeISO()} acoes={acoes}
       repassados={repassados} periodoRep={periodoRep} onPeriodoRep={setPeriodoRep}
-      onAba={(id) => setAbaRep(id === 'repassados')} fornecedores={forn.lista} />
+      onAba={(id) => setAbaRep(id === 'repassados')} fornecedores={forn.lista}
+      porNumero={porNumero} onBuscaServidor={setBuscaServidor} />
   )
 }
 
@@ -87,7 +92,8 @@ export default function Cheques({ pedidos }) {
 // A TELA (sem hook de dados: o teste monta com dados)
 // ============================================================
 export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos, clientes, quem, hoje, acoes,
-  repassados, periodoRep = '90', onPeriodoRep, onAba, fornecedores = SEM_LISTA, abaInicial = 'carteira' }) {
+  repassados, periodoRep = '90', onPeriodoRep, onAba, fornecedores = SEM_LISTA, abaInicial = 'carteira',
+  porNumero, onBuscaServidor }) {
   const [empresa, setEmpresa] = useState('')            // '' = as duas
   const [aba, setAba] = useState(abaInicial)
   const [marcados, setMarcados] = useState([])          // ids
@@ -101,9 +107,13 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
 
   const todos = useMemo(() => {
     const porId = new Map()
-    for (const c of [...(vivos?.lista || []), ...(arquivo?.lista || []), ...(repassados?.lista || [])]) porId.set(c.id, c)
+    for (const c of [...(vivos?.lista || []), ...(arquivo?.lista || []), ...(repassados?.lista || []),
+      ...(porNumero?.lista || [])]) porId.set(c.id, c)
     return [...porId.values()]
-  }, [vivos, arquivo, repassados])
+  }, [vivos, arquivo, repassados, porNumero])
+  // "onde está" com os nomes que só a tela conhece: a conta e o telefone do fornecedor
+  const ondeDe = useMemo(() => (c) => ondeEstaOCheque(c, {
+    nomeConta, contatoFornecedor: (id) => achaFornecedor(fornecedores, id) }), [fornecedores])
   const daEmpresa = useMemo(
     () => (empresa ? todos.filter((c) => c.empresa === empresa) : todos), [todos, empresa])
 
@@ -222,7 +232,7 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
       {aba === 'localizar' && (
         <AbaLocalizar todos={daEmpresa} arquivoLigado={arquivoLigado} onArquivo={onArquivo}
           arquivoPronto={!!arquivo?.pronto} marcados={marcados} onMarcar={marca} onAbrir={setAbertoId}
-          clientes={clientes} hoje={hoje}
+          clientes={clientes} hoje={hoje} ondeDe={ondeDe} onBuscaServidor={onBuscaServidor}
           barra={<BarraSelecao cheques={marcadosCheques} onAcao={(para) => setEvento({ para, cheques: marcadosCheques })}
             onLimpar={() => setMarcados([])} />} />
       )}
@@ -252,7 +262,7 @@ export function TelaCheques({ vivos, arquivo, arquivoLigado, onArquivo, pedidos,
           onFechar={() => setReciboPronto(null)} />
       )}
       {aberto && !evento && (
-        <FichaCheque cheque={aberto} todos={todos} clientes={clientes} hoje={hoje}
+        <FichaCheque cheque={aberto} todos={todos} clientes={clientes} hoje={hoje} ondeDe={ondeDe}
           onAcao={(para) => setEvento({ para, cheques: [aberto] })}
           onCorrigir={async (mud, obs) => { await acoes.corrigir(aberto.id, mud, obs); avisa('Cheque corrigido.') }}
           onFechar={() => setAbertoId('')} />
@@ -311,14 +321,14 @@ export function BarraSelecao({ cheques, onAcao, onLimpar }) {
 }
 
 // ---------- a lista ----------
-export function ListaCheques({ cheques, marcados, onMarcar, onAbrir, clientes, hoje, todos, vazio, corte = LIMITE_LISTA }) {
+export function ListaCheques({ cheques, marcados, onMarcar, onAbrir, clientes, hoje, todos, vazio, corte = LIMITE_LISTA, ondeDe }) {
   if (!cheques.length) return <div className="fin-vazio"><p>{vazio}</p></div>
   const mostra = cheques.slice(0, corte)
   return (
     <div className="chq-lista">
       {mostra.map((c) => (
         <LinhaCheque key={c.id} c={c} marcado={marcados.includes(c.id)} onMarcar={() => onMarcar(c.id)}
-          onAbrir={() => onAbrir(c.id)} clientes={clientes} hoje={hoje} todos={todos} />
+          onAbrir={() => onAbrir(c.id)} clientes={clientes} hoje={hoje} todos={todos} onde={ondeDe ? ondeDe(c) : null} />
       ))}
       {cheques.length > corte && (
         <div className="fin-corte">Mostrando {corte} de {cheques.length} — refine a busca para ver o resto.</div>
@@ -327,7 +337,7 @@ export function ListaCheques({ cheques, marcados, onMarcar, onAbrir, clientes, h
   )
 }
 
-function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje }) {
+function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
   const dias = diasParaBomPara(c, hoje)
   const dep = diasDepositado(c, hoje)
   const ult = ultimaDevolucao(c)
@@ -370,22 +380,39 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje }) {
         {c.loteTotal > 1 && <small> · {c.loteN} de {c.loteTotal}</small>}
         {c.empresa && <small> · {nomeEmpresa(c.empresa)}</small>}
       </span>
+      {/* a resposta de "onde está" (C6c), na busca — a linha inteira */}
+      {onde && <div className="chq-onde"><b>{onde.icone} {onde.texto}</b>{onde.detalhe ? ` · ${onde.detalhe}` : ''}</div>}
     </div>
   )
 }
 
 // ---------- localizar (inclui o arquivo, sob demanda) ----------
 const FILTRO_VAZIO = { termo: '', situacoes: [], banco: '', terceiro: false, bomParaDe: '', bomParaAte: '' }
-export function AbaLocalizar({ todos, arquivoLigado, onArquivo, arquivoPronto, marcados, onMarcar, onAbrir, clientes, hoje, barra }) {
+export function AbaLocalizar({ todos, arquivoLigado, onArquivo, arquivoPronto, marcados, onMarcar, onAbrir, clientes, hoje, barra,
+  ondeDe, onBuscaServidor }) {
   const [f, setF] = useState(FILTRO_VAZIO)
   const muda = (campo, v) => setF((x) => ({ ...x, [campo]: v }))
+  // O que vai ao servidor, depois que a pessoa para de digitar ("2", "24",
+  // "246" seriam três consultas): os NÚMEROS do termo e os CLIENTES que o
+  // texto acha no cadastro (razão ou apelido, nome parecido) — até 30.
+  const { numeros, texto } = pedacosDaBusca(f.termo)
+  const chaveNums = numeros.join(',')
+  const chaveClis = useMemo(() => (texto.trim().length < 3 ? ''
+    : (clientes || []).filter((c) => casaBusca(texto, c.razao, c.nome)).slice(0, 30)
+      .map((c) => clienteChave(c.razao)).join('|')), [texto, clientes])
+  useEffect(() => {
+    if (!onBuscaServidor) return undefined
+    const t = setTimeout(() => onBuscaServidor(chaveNums || chaveClis
+      ? { numeros: chaveNums ? chaveNums.split(',') : [], clientes: chaveClis ? chaveClis.split('|') : [] } : null), 400)
+    return () => clearTimeout(t)
+  }, [chaveNums, chaveClis, onBuscaServidor])
   const achados = useMemo(() => ordenaPorBomPara(filtraCheques(todos,
     { ...f, nomeCliente: (r) => nomeCliente(r, clientes) }, casaBusca)), [todos, f, clientes])
   return (
     <>
       <div className="chq-filtros no-print">
         <input className="fin-busca" value={f.termo} onChange={(e) => muda('termo', e.target.value)}
-          placeholder="Nº do cheque, nº do pedido, cliente, emitente ou fornecedor…" />
+          placeholder="Ex.: 246 rubi — nº do cheque, pedido, cliente, emitente ou fornecedor" />
         <select value={f.situacoes[0] || ''} onChange={(e) => muda('situacoes', e.target.value ? [e.target.value] : [])}>
           <option value="">Todas as situações</option>
           {['carteira', 'depositado', 'devolvido', 'compensado', 'repassado', 'resgatado', 'cancelado']
@@ -406,14 +433,14 @@ export function AbaLocalizar({ todos, arquivoLigado, onArquivo, arquivoPronto, m
         <input type="checkbox" checked={arquivoLigado} onChange={(e) => onArquivo(e.target.checked)} />
         incluir os encerrados (compensados, repassados, resgatados, cancelados)
         {arquivoLigado && !arquivoPronto && <small> · carregando…</small>}
-        {!arquivoLigado && <small> · sem isto, a busca olha só a carteira, os depositados e os devolvidos</small>}
+        {!arquivoLigado && <small> · o número do cheque e o cliente já procuram em tudo; isto traz os encerrados para os outros filtros</small>}
       </label>
       {/^\s*\d/.test(f.termo) && achados.length > 1 && (
         <div className="chq-explica">O número de cheque repete entre clientes: confira banco, agência e conta antes de agir.</div>
       )}
       {barra}
       <ListaCheques cheques={achados} marcados={marcados} onMarcar={onMarcar} onAbrir={onAbrir}
-        clientes={clientes} hoje={hoje} todos={todos}
+        clientes={clientes} hoje={hoje} todos={todos} ondeDe={f.termo.trim() ? ondeDe : null}
         vazio={arquivoLigado ? 'Nenhum cheque com esses filtros.' : 'Nenhum cheque em aberto com esses filtros — marque "incluir os encerrados" para procurar no arquivo.'} />
     </>
   )
@@ -561,7 +588,8 @@ export function ModalEvento({ para, cheques, hoje, fornecedores = SEM_LISTA, onC
 // ============================================================
 // A FICHA DA FOLHA
 // ============================================================
-export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrigir, onFechar }) {
+export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrigir, onFechar, ondeDe }) {
+  const onde = ondeDe ? ondeDe(c) : null
   const [corrigindo, setCorrigindo] = useState(false)
   const irmas = irmasDoLote(c, todos)
   const acoes = ['depositado', 'compensado', 'repassado', 'devolvido', 'carteira', 'resgatado', 'cancelado']
@@ -581,6 +609,7 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
               A situação gravada ({nomeSituacao(c.situacao)}) não bate com o histórico. Confira o histórico abaixo antes de agir.
             </div>
           )}
+          {onde && <div className="chq-onde chq-onde-ficha"><b>{onde.icone} {onde.texto}</b>{onde.detalhe ? ` · ${onde.detalhe}` : ''}</div>}
           <div className="chq-ficha-grade">
             <div><span>Situação</span><b>{nomeSituacao(c.situacao)}</b>
               {c.contaDeposito && ['depositado', 'compensado', 'devolvido'].includes(c.situacao) && <small> · {nomeConta(c.contaDeposito)}</small>}</div>

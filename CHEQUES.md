@@ -526,6 +526,17 @@ Controlar os 4 cheques da RUBI exigiria lançar duas vezes, em telas que diverge
   "repassado a RESINAS em 20/11 · NF 1234" · "voltou do banco em 15/11 · sem
   fundos (11)" · "voltou de RESINAS em 25/11" · "resgatado pelo cliente" ·
   "cancelado". Um clique abre a ficha com o histórico.
+- ✅ **FEITA (03/11/2026).** Sem rule nova. Conferido antes: a produção tinha
+  **0 cheques** (consulta só de leitura na API), então `numeroChave` entra sem
+  migração. Ensaiada no navegador: "246 rubi" → só o 246 da RUBI, "🤝 Com
+  RESINAS DO NORDESTE desde 28/10 · NF 1234 · 📞 … · falar com Marcos";
+  "246" → as duas folhas com esse número; **"rubi" → todas as folhas da RUBI,
+  inclusive a que está com o fornecedor**. Esse último caso o ensaio pegou
+  faltando (a busca por NOME só via as folhas vivas) e foi corrigido no mesmo
+  dia: o texto acha os clientes no cadastro (razão ou apelido, `casaBusca`) e
+  consulta `clienteChave in [...]` (até 30). Uma consulta por número e uma por
+  cliente, só depois que a pessoa para de digitar (400 ms). A linha "onde está"
+  aparece na busca e no topo da ficha.
 
 ## C6d — o cliente quer RESGATAR um cheque que está com o fornecedor (03/11/2026)
 > O caso do Raoni: a RUBI passou o 246, a JC repassou o 246 à RESINAS, e a

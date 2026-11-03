@@ -10,7 +10,7 @@ import {
   diasDepositado, compensacaoAtrasada, podeDepositarHoje, filtraCheques, irmasDoLote,
   nomeBanco, nomeAcao, nomeEvento, ehViva, passosAte,
   repassesDe, repassesPorFornecedor, resumoEntreEmpresas, cortePeriodo, chaveRepasse,
-  gaveta, resumoChequesDoPedido, contasDoCliente, clienteChave,
+  gaveta, resumoChequesDoPedido, contasDoCliente, clienteChave, pedacosDaBusca, ondeEstaOCheque,
 } from '../src/lib/cheques.js'
 import { ok, t, resultado } from './_harness.mjs'
 
@@ -364,5 +364,29 @@ t('o próximo número sai do MAIOR já lançado, com os zeros', [contas[0].ultim
 t('os dados vêm da folha mais recente', contas[0].emitente.nome, 'JOAO')
 t('cheque de terceiro é lembrado', contas[1].terceiro, true)
 t('sem histórico, sem contas', contasDoCliente([]), [])
+
+// ---------- "onde está o cheque 246 da RUBI?" (C6c) ----------
+t('o número é gravado sem zeros', [c1.numeroChave, corrigeCheque(c1, { numero: '000246' }, { porUid: 'u' }).cheque.numeroChave], ['1', '246'])
+t('termo em pedaços: número e texto', pedacosDaBusca(' 000246  rubi semi '), { numeros: ['246'], texto: 'rubi semi' })
+const rubi = [
+  { id: 'r1', situacao: 'carteira', numero: '000246', cliente: 'RUBI SEMI JOIAS', emitente: { nome: 'RUBI LTDA' }, idVenda: '5912' },
+  { id: 'r2', situacao: 'compensado', numero: '246', cliente: 'NOVO STYLO', emitente: { nome: 'X' }, idVenda: '' },
+  { id: 'r3', situacao: 'carteira', numero: '247', cliente: 'RUBI SEMI JOIAS', emitente: { nome: 'RUBI LTDA' }, idVenda: '5912' },
+]
+t('"246 rubi" acha só o 246 da RUBI (o número repete entre clientes)', filtraCheques(rubi, { termo: '246 rubi' }).map((c) => c.id), ['r1'])
+t('"246" sozinho lista todos com esse número', filtraCheques(rubi, { termo: '246' }).map((c) => c.id), ['r1', 'r2'])
+t('"rubi 5912" casa pelo pedido', filtraCheques(rubi, { termo: 'rubi 5912' }).map((c) => c.id), ['r1', 'r3'])
+t('palavra que não casa derruba', filtraCheques(rubi, { termo: '246 resinas' }).length, 0)
+
+const NOMES = { nomeConta: (id) => ({ bradesco: 'Bradesco' }[id] || id),
+  contatoFornecedor: (id) => (id === 'f1' ? { telefone: '(79) 3431-0000', contato: 'Marcos' } : null) }
+const onde = (c) => { const o = ondeEstaOCheque(c, NOMES); return `${o.icone} ${o.texto} — ${o.detalhe}` }
+t('na gaveta', onde({ ...c1, bomPara: '2026-11-13' }), '🗄 Na gaveta desde 20/10/2026 — bom para 13/11/2026')
+t('no banco', onde(dep.cheque), '🏦 Depositado no Bradesco em 19/11/2026 — esperando compensar')
+t('compensou', onde(compensado), '✅ Compensou em 20/11/2026 — Bradesco')
+t('voltou do banco, com a alínea', onde(dev1), '↩ Voltou do banco em 21/11/2026 — 11 · Sem fundos — 1ª apresentação · está com a empresa')
+t('com o fornecedor, com telefone e contato', onde(rp.cheque), '🤝 Com RESINAS NE desde 20/10/2026 — NF 1234 · 📞 (79) 3431-0000 · falar com Marcos')
+t('voltou do fornecedor', onde(volta), '↩ Voltou de RESINAS NE em 25/11/2026 — está com a empresa')
+t('cancelado diz o porquê', onde(cancelado), '✖ Cancelado em 20/10/2026 — lançado em dobro')
 
 export default resultado('cheques')

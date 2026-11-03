@@ -1556,6 +1556,11 @@ tr.sit-producao td { color: var(--text-dim); }
 .chq-soma { margin-top: 6px; font-size: 13.5px; }
 .chq-dica-aviso { color: var(--warn); }
 .chq-gaveta-btn { margin: 0 0 10px; }
+/* "onde está" (C6c): ocupa a linha inteira, embaixo da folha */
+.chq-onde { flex-basis: 100%; grid-column: 1 / -1; font-size: 13px; color: var(--text-dim);
+  border-top: 1px dashed var(--border); padding-top: 6px; margin-top: 2px; }
+.chq-onde b { color: var(--text); }
+.chq-onde-ficha { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin: 0 0 12px; }
 /* lançamento: as contas que o cliente já usou (C6a) */
 .chq-contas { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
 .chq-contas > small { flex-basis: 100%; color: var(--text-dim); }

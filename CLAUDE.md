@@ -101,7 +101,8 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > parcela do Financeiro em cheque — parcela "em cheque" até compensar/repassar,
 > movimento nasce na compensação e é cancelado na devolução (C6b), e achar
 > "o cheque 246 da RUBI" — busca mista número+nome no banco inteiro, com a
-> resposta "onde está" numa linha (C6c), e o resgate de folha que está com o
+> resposta "onde está" numa linha (C6c — **FEITA em 03/11/2026**: `numeroChave`,
+> `pedacosDaBusca`, `ondeEstaOCheque`, consultas por número e por cliente), e o resgate de folha que está com o
 > fornecedor — pedido → "Resgates a buscar" → recolhido (JC paga o fornecedor,
 > só controle) → resgatado pelo cliente (C6d). Nada codado.
 

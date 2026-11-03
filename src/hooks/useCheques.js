@@ -10,7 +10,7 @@
 // O ARQUIVO (compensado, repassado, resgatado, cancelado) só é lido quando
 // alguém pede: ele só cresce, e assiná-lo na abertura pagaria o passado
 // inteiro todo dia (regra 1.3).
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { collection, doc, onSnapshot, query, where, runTransaction, writeBatch, getDocs } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { doDoc } from '../utils.js'
@@ -161,4 +161,32 @@ export async function chequesDoCliente(chave) {
   if (!chave) return []
   const snap = await getDocs(query(col(), where('clienteChave', '==', chave)))
   return snap.docs.map(doDoc)
+}
+
+// As folhas com estes NÚMEROS no banco inteiro — a busca do Localizar (C6c).
+// `numeroChave in [...]`: um campo, sem índice composto; lê só as folhas
+// daqueles números (o número repete entre clientes — vêm todas). É o que acha
+// o 246 já compensado ou repassado sem carregar o arquivo.
+// E os cheques dos CLIENTES que o texto achou no cadastro (`clienteChave in
+// [...]`), para "rubi" trazer também a folha da RUBI que já está com o
+// fornecedor. As duas consultas se somam; cada uma lê só o que casa.
+//   busca = { numeros: [...], clientes: [clienteChave, ...] }
+export function useChequesDaBusca(busca, ligado = true) {
+  const nums = [...new Set((busca?.numeros || []).filter(Boolean))].slice(0, 30).sort().join(',')
+  const clis = [...new Set((busca?.clientes || []).filter(Boolean))].slice(0, 30).sort().join('|')
+  const [porNum, setPorNum] = useState([])
+  const [porCli, setPorCli] = useState([])
+  const [erro, setErro] = useState('')
+  const assinaUma = (campo, valores, set) => onSnapshot(query(col(), where(campo, 'in', valores)),
+    (snap) => { set(snap.docs.map(doDoc)); setErro('') },
+    (e) => { console.error(`cheques por ${campo}:`, e); setErro(e?.code || e?.message || 'erro') })
+  useEffect(() => {
+    if (!ligado || !nums) { setPorNum([]); return undefined }
+    return assinaUma('numeroChave', nums.split(','), setPorNum)
+  }, [nums, ligado])
+  useEffect(() => {
+    if (!ligado || !clis) { setPorCli([]); return undefined }
+    return assinaUma('clienteChave', clis.split('|'), setPorCli)
+  }, [clis, ligado])
+  return useMemo(() => ({ lista: [...porNum, ...porCli], pronto: true, erro }), [porNum, porCli, erro])
 }
