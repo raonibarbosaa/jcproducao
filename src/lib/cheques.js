@@ -400,7 +400,12 @@ export function repetidasNoLote(folhas, existentes = []) {
 export function problemasDoCabecalho(cab, hoje) {
   const p = []
   if (!cab?.empresa) p.push({ campo: 'empresa', msg: 'escolha a empresa que recebeu' })
-  if (!String(cab?.cliente || '').trim()) p.push({ campo: 'cliente', msg: 'falta o cliente que entregou o cheque' })
+  // cliente obrigatório, MENOS no avulso (Raoni, 06/11/2026): o cheque sem
+  // pedido pode não ter cliente de cadastro (venda no balcão, acerto de quem
+  // não é cliente) — o "Referente a", que continua obrigatório, é que explica.
+  if (cab?.origem !== 'avulso' && !String(cab?.cliente || '').trim()) {
+    p.push({ campo: 'cliente', msg: 'falta o cliente que entregou o cheque' })
+  }
   // DE ONDE VEIO (decisão do Raoni, 03/11/2026): a tela escolhe
   // "ligado a pedido" ou "avulso"; ligado sem número, ou avulso sem dizer a
   // que se refere, deixaria uma folha que ninguém sabe explicar depois.

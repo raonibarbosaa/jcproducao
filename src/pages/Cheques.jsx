@@ -361,6 +361,10 @@ export function ListaCheques({ cheques, marcados, onMarcar, onAbrir, clientes, h
   )
 }
 
+// quem entregou a folha: o avulso pode não ter cliente (06/11/2026), e nome
+// vazio deixaria a linha sem ninguém — o "Referente a" aparece ao lado
+const quemEntregou = (c, clientes) => nomeCliente(c.cliente, clientes) || 'sem cliente'
+
 function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
   const dias = diasParaBomPara(c, hoje)
   const dep = diasDepositado(c, hoje)
@@ -374,7 +378,7 @@ function LinhaCheque({ c, marcado, onMarcar, onAbrir, clientes, hoje, onde }) {
         <span className="chq-banco">{c.banco?.nome || nomeBanco(c.banco?.codigo) || `banco ${c.banco?.codigo}`} · ag {c.agencia} · cc {c.conta}</span>
       </button>
       <span className="chq-quem">
-        <b>{nomeCliente(c.cliente, clientes)}</b>
+        <b>{quemEntregou(c, clientes)}</b>
         {c.idVenda && <small> · #{c.idVenda}</small>}
         {!c.idVenda && c.referenteA && <small className="chq-avulso"> · avulso: {c.referenteA}</small>}
         {c.cobrancaId && <small className="chq-parcela" title="paga uma parcela do Financeiro"> · 💳 parcela {c.parcelaN}</small>}
@@ -698,7 +702,7 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
             <div><span>Emitente</span><b>{c.emitente?.nome}</b>
               {c.emitente?.doc && <small> · {fmtDoc(c.emitente.doc)}</small>}
               {c.terceiro && <small className="chq-terc"> · cheque de terceiro</small>}</div>
-            <div><span>Entregue por</span><b>{nomeCliente(c.cliente, clientes)}</b>
+            <div><span>Entregue por</span><b>{quemEntregou(c, clientes)}</b>
               {c.idVenda && <small> · pedido #{c.idVenda}</small>}
               {!c.idVenda && c.referenteA && <small> · avulso: {c.referenteA}</small>}</div>
             <div><span>Recebido em</span><b>{fmtDia(c.recebidoEm)}</b>
@@ -1040,7 +1044,7 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               <div className="field"><label>Recebido em</label>
                 <input type="date" value={cab.recebidoEm} onChange={(e) => mudaCab('recebidoEm', e.target.value)} /></div>
             </div>
-            <div className="field"><label>Cliente que entregou</label>
+            <div className="field"><label>Cliente que entregou{avulso ? ' (opcional)' : ''}</label>
               <input value={cab.cliente} list="chq-clientes" readOnly={!!preset} onChange={(e) => mudaCab('cliente', e.target.value)}
                 placeholder={pedido ? `${pedido.cliente} (do pedido)` : 'razão social do cliente'} />
               <datalist id="chq-clientes">
@@ -1254,7 +1258,7 @@ export function ReciboRepasse({ repasse: r, fornecedores, clientes }) {
               <td>{c.numero}</td>
               <td>{c.banco?.codigo} {c.banco?.nome || nomeBanco(c.banco?.codigo)} · {c.agencia} · {c.conta}</td>
               <td>{c.emitente?.nome}</td>
-              <td>{nomeCliente(c.cliente, clientes)}{ee ? ` (${nomeEmpresa(c.empresa)})` : ''}</td>
+              <td>{quemEntregou(c, clientes)}{ee ? ` (${nomeEmpresa(c.empresa)})` : ''}</td>
               <td>{fmtDia(c.bomPara)}</td>
               <td className="q">{fmtMoeda(c.valor)}</td>
             </tr>
@@ -1372,7 +1376,7 @@ export function ConferenciaGaveta({ cheques, empresa, clientes, hoje }) {
                 <td>{c.numero}</td>
                 <td>{c.banco?.codigo} {c.banco?.nome || nomeBanco(c.banco?.codigo)} · {c.agencia} · {c.conta}</td>
                 <td>{c.emitente?.nome}{c.terceiro ? ' (terceiro)' : ''}</td>
-                <td>{nomeCliente(c.cliente, clientes)}{c.idVenda ? ` · #${c.idVenda}` : c.referenteA ? ` · avulso: ${c.referenteA}` : ''}</td>
+                <td>{quemEntregou(c, clientes)}{c.idVenda ? ` · #${c.idVenda}` : c.referenteA ? ` · avulso: ${c.referenteA}` : ''}</td>
                 <td>{fmtDia(c.bomPara)}</td>
                 <td className="q">{fmtMoeda(c.valor)}</td>
               </tr>
