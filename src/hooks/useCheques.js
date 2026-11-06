@@ -20,8 +20,16 @@ import { SITUACOES_VIVAS, SITUACOES_CHEQUE, aplicaEvento, corrigeCheque, marcaRe
 const col = () => collection(db, 'cheques')
 export const SITUACOES_ARQUIVO = Object.keys(SITUACOES_CHEQUE).filter((s) => !SITUACOES_VIVAS.includes(s))
 
+// ⚠️ `includeMetadataChanges` é o que faz o "pronto" virar. Sem ele, a lista
+// VAZIA que já foi consultada neste aparelho chega primeiro do cache
+// (fromCache, vazia → "ainda não chegou") e a confirmação do servidor, por não
+// mudar nenhum documento, NÃO dispara outro evento: a tela fica em
+// "Carregando cheques…" para sempre (Jessica, 06/11/2026, sem folha viva).
+// Evento só de metadado não custa leitura.
+const COM_METADADOS = { includeMetadataChanges: true }
+
 function assina(situacoes, set) {
-  return onSnapshot(query(col(), where('situacao', 'in', situacoes)),
+  return onSnapshot(query(col(), where('situacao', 'in', situacoes)), COM_METADADOS,
     (snap) => set({ lista: snap.docs.map(doDoc), pronto: !(snap.metadata.fromCache && snap.empty), erro: '' }),
     (e) => {
       console.error('cheques:', e)
@@ -133,7 +141,7 @@ export function useChequesRepassados(ligado = false, corte = '') {
   const [estado, setEstado] = useState(VAZIO)
   useEffect(() => {
     if (!ligado) { setEstado(VAZIO); return undefined }
-    return onSnapshot(query(col(), where('repassadoEm', '>=', corte || '0000-00-00')),
+    return onSnapshot(query(col(), where('repassadoEm', '>=', corte || '0000-00-00')), COM_METADADOS,
       (snap) => setEstado({ lista: snap.docs.map(doDoc), pronto: !(snap.metadata.fromCache && snap.empty), erro: '' }),
       (e) => {
         console.error('cheques repassados:', e)

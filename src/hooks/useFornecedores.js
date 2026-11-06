@@ -16,7 +16,10 @@ export function useFornecedores(ligado = true) {
   const [estado, setEstado] = useState({ lista: [], pronto: false, erro: '' })
   useEffect(() => {
     if (!ligado) return undefined
-    return onSnapshot(refFornecedores(),
+    // includeMetadataChanges: sem ele, "não existe" vindo do cache nunca vira
+    // "não existe" confirmado pelo servidor (nenhum documento muda, nenhum
+    // evento) — ver o mesmo caso em useCheques.js
+    return onSnapshot(refFornecedores(), { includeMetadataChanges: true },
       (snap) => {
         // ⚠️ "veio do cache e não existe" NÃO é lista vazia: é lista que ainda
         // não chegou (regra 1.7). Até o servidor responder, a tela espera.
