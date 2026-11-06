@@ -704,7 +704,8 @@ export function FichaCheque({ cheque: c, todos, clientes, hoje, onAcao, onCorrig
               {c.terceiro && <small className="chq-terc"> · cheque de terceiro</small>}</div>
             <div><span>Entregue por</span><b>{quemEntregou(c, clientes)}</b>
               {c.idVenda && <small> · pedido #{c.idVenda}</small>}
-              {!c.idVenda && c.referenteA && <small> · avulso: {c.referenteA}</small>}</div>
+              {!c.idVenda && c.referenteA && <small> · avulso: {c.referenteA}</small>}
+              {c.clienteManual && <small> · nome digitado, fora do cadastro</small>}</div>
             <div><span>Recebido em</span><b>{fmtDia(c.recebidoEm)}</b>
               <small> · {nomeEmpresa(c.empresa)}{c.tardio ? ' · lançado depois (Zeus)' : ''}</small></div>
             {c.loteTotal > 1 && <div><span>Parcelamento</span><b>folha {c.loteN} de {c.loteTotal}</b></div>}
@@ -1029,7 +1030,7 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               <div className="modo-btns chq-origem">
                 {[['pedido', 'Ligado a pedido'], ['avulso', 'Avulso (sem pedido)']].map(([id, nm]) => (
                   <button key={id} type="button" className={'modo-btn' + (cab.origem === id ? ' ativo' : '')}
-                    aria-pressed={cab.origem === id} onClick={() => mudaCab('origem', id)}>{nm}</button>
+                    aria-pressed={cab.origem === id} onClick={() => setCab((x) => ({ ...x, origem: id, ...(id !== 'avulso' && x.clienteManual ? { clienteManual: false, cliente: '' } : {}) }))}>{nm}</button>
                 ))}
               </div>
             )}
@@ -1044,12 +1045,26 @@ export function ModalLancar({ pedidos, clientes, existentes, quem, hoje, empresa
               <div className="field"><label>Recebido em</label>
                 <input type="date" value={cab.recebidoEm} onChange={(e) => mudaCab('recebidoEm', e.target.value)} /></div>
             </div>
-            <div className="field"><label>Cliente que entregou{avulso ? ' (opcional)' : ''}</label>
-              <input value={cab.cliente} list="chq-clientes" readOnly={!!preset} onChange={(e) => mudaCab('cliente', e.target.value)}
-                placeholder={pedido ? `${pedido.cliente} (do pedido)` : 'razão social do cliente'} />
-              <datalist id="chq-clientes">
-                {(clientes || []).slice(0, 2000).map((c) => <option key={c.razao} value={c.razao}>{c.nome}</option>)}
-              </datalist></div>
+            {/* avulso: quem entregou pode não estar no cadastro (06/11/2026) —
+                aí o nome é digitado à mão e a folha leva `clienteManual` */}
+            {avulso && cab.clienteManual ? (
+              <div className="field"><label>Nome de quem entregou (digitado)</label>
+                <input value={cab.cliente} onChange={(e) => mudaCab('cliente', e.target.value)}
+                  placeholder="nome de quem entregou o cheque" autoFocus />
+                <button type="button" className="mini-btn chq-cli-modo"
+                  onClick={() => setCab((x) => ({ ...x, clienteManual: false, cliente: '' }))}>↩ escolher do cadastro</button></div>
+            ) : (
+              <div className="field"><label>Cliente que entregou{avulso ? ' (opcional)' : ''}</label>
+                <input value={cab.cliente} list="chq-clientes" readOnly={!!preset} onChange={(e) => mudaCab('cliente', e.target.value)}
+                  placeholder={pedido ? `${pedido.cliente} (do pedido)` : 'razão social do cliente'} />
+                <datalist id="chq-clientes">
+                  {(clientes || []).slice(0, 2000).map((c) => <option key={c.razao} value={c.razao}>{c.nome}</option>)}
+                </datalist>
+                {avulso && !cab.cliente.trim() && (
+                  <button type="button" className="mini-btn chq-cli-modo"
+                    onClick={() => setCab((x) => ({ ...x, clienteManual: true, cliente: '' }))}>✎ não está no cadastro — digitar o nome</button>
+                )}</div>
+            )}
             {avulso && <div className="field"><label>Referente a</label>
               <input value={cab.referenteA} onChange={(e) => mudaCab('referenteA', e.target.value)}
                 placeholder="ex.: venda no balcão, acerto de conta antiga, devolução de mercadoria" />

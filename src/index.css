@@ -1618,3 +1618,4 @@ tr.sit-producao td { color: var(--text-dim); }
 .chq-origem { margin: 4px 0 10px; }
 .chq-origem .modo-btn.ativo { background: var(--accent); color: #1a1205; border-color: var(--accent); }
 .chq-avulso { color: var(--text-dim); }
+.chq-cli-modo { display: inline-block; margin-top: 6px; font-size: 13px; padding: 5px 10px; }

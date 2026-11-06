@@ -505,6 +505,14 @@ t('sem origem (chamada antiga) sem cliente: continua cobrando o cliente',
   problemasDoCabecalho(semCli, HOJE).map((p) => p.campo), ['cliente'])
 const avSem = chequesDoLote({ ...semCli, origem: 'avulso', referenteA: 'acerto' }, umaFolha, { loteId: 'L', ...QUEM })
 t('avulso sem cliente grava a folha com cliente vazio', [avSem.ok, avSem.cheques[0].cliente, avSem.cheques[0].clienteChave], [true, '', ''])
+const avDig = chequesDoLote({ ...semCli, origem: 'avulso', referenteA: 'acerto', cliente: ' João da Feira ', clienteManual: true },
+  umaFolha, { loteId: 'L', ...QUEM }).cheques[0]
+t('avulso com nome digitado: grava o nome e marca clienteManual', [avDig.cliente, avDig.clienteManual], ['João da Feira', true])
+t('nome digitado vazio não marca clienteManual',
+  'clienteManual' in chequesDoLote({ ...semCli, origem: 'avulso', referenteA: 'x', clienteManual: true }, umaFolha, { loteId: 'L', ...QUEM }).cheques[0], false)
+t('clienteManual não vale fora do avulso',
+  'clienteManual' in chequesDoLote({ ...cabBase, origem: 'pedido', idVenda: '1', clienteManual: true }, umaFolha, { loteId: 'L', ...QUEM }).cheques[0], false)
+t('a busca acha o avulso pelo nome digitado', filtraCheques([avDig, avSem.cheques[0]], { termo: 'joao feira' }).length, 1)
 const av = chequesDoLote({ ...cabBase, origem: 'avulso', referenteA: 'venda no balcão', idVenda: '5458' }, umaFolha,
   { loteId: 'L', ...QUEM }).cheques[0]
 t('avulso grava a referência e NÃO o pedido (mesmo que tenha ficado digitado)', [av.referenteA, av.idVenda], ['venda no balcão', ''])

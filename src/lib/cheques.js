@@ -710,6 +710,9 @@ export function chequesDoLote(cab, folhas, { loteId, por, porUid, agora, hoje } 
       // o cliente na forma de COMPARAR — é por ela que se acham as contas que
       // ele já usou (C6a): "Rubi Semi Joias" e "RUBI SEMI JOIAS" são o mesmo
       clienteChave: clienteChave(cab.cliente),
+      // nome digitado à mão no avulso (06/11/2026): quem entregou não está no
+      // cadastro. Só existe quando é verdade — campo vazio em toda folha não diria nada.
+      ...(cab.origem === 'avulso' && cab.clienteManual && String(cab.cliente || '').trim() ? { clienteManual: true } : {}),
       // o número na forma de PROCURAR (C6c): "246" acha a folha 000246 no banco
       // inteiro com `where('numeroChave','==')`, sem carregar o arquivo
       numeroChave: numeroNormal(f.numero),
