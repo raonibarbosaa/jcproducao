@@ -13,7 +13,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 export default function Entregues() {
   const { clientes } = useCadastros()
   const { perfil, nome } = useAuth()
-  const podeCancelar = perfil === 'dono' || perfil === 'designer'
+  const podeCancelar = ['dono', 'designer', 'financeiro'].includes(perfil)
   const podeBaixa = perfil === 'dono' || perfil === 'financeiro'   // baixa financeira
   const [busca, setBusca] = useState('')
   const [motoristaFiltro, setMotoristaFiltro] = useState('')

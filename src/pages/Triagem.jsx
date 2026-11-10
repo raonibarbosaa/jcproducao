@@ -21,7 +21,7 @@ import SeloCor from '../components/SeloCor.jsx'
 export default function Triagem({ pedidos }) {
   const { vendedores, clientes, clientesProntos = true, clientesErro = '', itens, carregando: cadCarregando } = useCadastros()
   const { perfil } = useAuth()
-  const ehDono = perfil === 'dono'
+  const ehDono = perfil === 'dono' || perfil === 'financeiro'   // financeiro = acesso total (10/11/2026)
   const fileRef = useRef(null)
   const [soPendentes, setSoPendentes] = useState(false)
   // filtros por ITEM: o card esconde os itens de fora, mas recebe o pedido inteiro

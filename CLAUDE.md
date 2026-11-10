@@ -125,6 +125,16 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > nem têm trava) e a baixa financeira em Entregues (`podeBaixa`, dono e
 > financeiro). Ao reorganizar, revisar esses três pontos juntos.
 
+> ✅ **FINANCEIRO = ACESSO TOTAL (10/11/2026, Raoni):** "o usuário financeiro
+> tenha acesso a todas as funções do sistema". `ACESSO.financeiro` = abas do dono
+> + Financeiro e Cheques (inclui Usuários, Auditoria, Conciliação, Ordens,
+> Triagem, Ciência, Erros). Tudo que era só do dono ou "dono/designer" passou a
+> aceitar o financeiro: excluir pedido na Triagem, ligar/desligar a virada de OF,
+> retornar carga que já saiu, cancelar entrega, desbloquear no Localizar, data
+> manual, todas as sub-abas de Cadastros (Integrações inclusive). Rules:
+> `soltaOF()` e a leitura de `auditoria` aceitam o financeiro — **publicar
+> antes do build**. O dono continua SEM Financeiro/Cheques na tela.
+
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
 > em produção por encomenda a peça passa a maior parte do tempo esperando, e é a

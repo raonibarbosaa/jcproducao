@@ -14,7 +14,7 @@ import {
 
 const PERFIS = [
   { id: 'designer', nm: 'Designer', desc: 'Triagem, Produção, Cadastros e Usuários' },
-  { id: 'financeiro', nm: 'Financeiro', desc: 'Rota e Entregues' },
+  { id: 'financeiro', nm: 'Financeiro', desc: 'Acesso total (como o dono) + Financeiro e Cheques' },
   { id: 'vendedor', nm: 'Vendedor', desc: 'Vê só os próprios pedidos e dá ciência' },
   { id: 'operador', nm: 'Operador', desc: 'Chão de fábrica: move só os setores liberados (não vê valores)' },
   { id: 'expedicao', nm: 'Expedição', desc: 'Vê só o card de Expedição no quadro (não vê valores)' },

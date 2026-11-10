@@ -310,7 +310,7 @@ service cloud.firestore {
     // O chão de fábrica LÊ (o quadro vai andar por OF). Não se apaga: o número
     // não pode se repetir, e cancelar é mudar o status.
     function soltaOF() {
-      return temPerfil() && meu().perfil in ['dono', 'designer'];
+      return temPerfil() && meu().perfil in ['dono', 'designer', 'financeiro'];
     }
     match /ordens/{id} {
       allow read: if ehStaff() || ehOperador() || ehExpedicao();
@@ -320,7 +320,7 @@ service cloud.firestore {
     }
 
     match /auditoria/{id} {
-      allow read: if temPerfil() && meu().perfil == 'dono';
+      allow read: if temPerfil() && meu().perfil in ['dono', 'financeiro'];
       // ⚠️ `porUid` TEM que ser quem está assinando: sem isso dava para gravar
       // um movimento em nome de outra pessoa, e um log que aceita assinatura
       // falsa não serve de prova.

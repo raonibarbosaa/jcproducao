@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext.jsx'
 // no render, então salvar aqui reagrupa o pedido na hora em Produção/Rota.
 export default function DataEntrega({ p, atrasado }) {
   const { perfil, nome } = useAuth()
-  const podeEditar = perfil === 'dono' || perfil === 'designer'
+  const podeEditar = ['dono', 'designer', 'financeiro'].includes(perfil)
   const [editando, setEditando] = useState(false)
   const [valor, setValor] = useState('')
   const [salvando, setSalvando] = useState(false)

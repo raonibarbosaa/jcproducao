@@ -16,16 +16,16 @@ const REF = () => doc(db, 'config', 'cadastros')
 
 // abas do hub e quais perfis veem cada uma
 const ABAS_CADASTRO = [
-  { id: 'clientes',   label: 'Clientes',   perfis: ['designer', 'dono'] },
+  { id: 'clientes',   label: 'Clientes',   perfis: ['designer', 'dono', 'financeiro'] },
   // o financeiro entra SÓ aqui: é ele quem confere e corrige o preço que passa a
   // valer para cobrar a quantidade realmente produzida
   { id: 'itens',      label: 'Itens',      perfis: ['designer', 'dono', 'financeiro'] },
-  { id: 'motoristas', label: 'Motoristas', perfis: ['designer', 'dono'] },
+  { id: 'motoristas', label: 'Motoristas', perfis: ['designer', 'dono', 'financeiro'] },
   // cores da impressão do plástico (Triagem e Ordens de Fabricação)
-  { id: 'cores',      label: 'Cores',      perfis: ['designer', 'dono'] },
-  { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono'] },
+  { id: 'cores',      label: 'Cores',      perfis: ['designer', 'dono', 'financeiro'] },
+  { id: 'vendedores', label: 'Vendedores', perfis: ['designer', 'dono', 'financeiro'] },
   // ponte com o Esmero (aviso ao cliente no WhatsApp): só o dono liga/desliga
-  { id: 'integracoes', label: 'Integrações', perfis: ['dono'] },
+  { id: 'integracoes', label: 'Integrações', perfis: ['dono', 'financeiro'] },
   // para quem o cheque é repassado: assunto de dinheiro — só o financeiro
   // (o dono saiu em 03/11/2026, ver `veFinanceiro`)
   { id: 'fornecedores', label: 'Fornecedores', perfis: ['financeiro'] },

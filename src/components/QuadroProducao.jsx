@@ -59,7 +59,7 @@ export default function QuadroProducao({ pedidos, clientes, itensCad, paineis, p
   ordens = [], producaoCfg = {} }) {
   const { user, perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
   const { vendedores: cadastros } = useCadastros()   // ordem das rotas de cada vendedor
-  const ehStaff = perfil === 'dono' || perfil === 'designer'
+  const ehStaff = ['dono', 'designer', 'financeiro'].includes(perfil)
   const veValor = perfil === 'dono' || perfil === 'financeiro'
   // setores que este usuário pode MOVER: expedicao = só 'expedicao'; operador = liberados dele
   const setoresOp = perfil === 'expedicao'

@@ -34,7 +34,7 @@ import FiltrosBar from '../components/FiltrosBar.jsx'
 export default function Carga({ pedidos }) {
   const { clientes, motoristas, itens: itensCad, vendedores: cadastros, logistica } = useCadastros()
   const { nome, perfil } = useAuth()
-  const podeDesfazer = perfil === 'dono'   // desfazer uma viagem que já saiu
+  const podeDesfazer = perfil === 'dono' || perfil === 'financeiro'   // desfazer uma viagem que já saiu
   const [cargas, setCargas] = useState([])
   const [motorista, setMotorista] = useState('')
   const [salvando, setSalvando] = useState('')

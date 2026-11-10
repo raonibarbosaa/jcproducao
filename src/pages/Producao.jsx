@@ -29,7 +29,7 @@ export default function Producao({ pedidos, problemas, ordens = [], producaoCfg 
   const { perfil, nome, setores, materiais, posto: contaPosto } = useAuth()
   // o TABLET do setor: faixa de funcionários + PIN, e só o quadro
   const posto = usePosto(!!contaPosto)
-  const podeEditarData = perfil === 'dono' || perfil === 'designer'
+  const podeEditarData = ['dono', 'designer', 'financeiro'].includes(perfil)
   const [vistaEscolhida, setVista] = useState(['operador', 'expedicao'].includes(perfil) ? 'quadro' : 'lista')
   const vista = contaPosto ? 'quadro' : vistaEscolhida   // 'lista' | 'quadro' (fluxo gráfica)
   const [filtroLinha, setFiltroLinha] = useState('')
@@ -62,7 +62,7 @@ export default function Producao({ pedidos, problemas, ordens = [], producaoCfg 
   // (papel, plástico, etiq.+alça) e Expedição. O badge conta o que está parado
   // naquele posto — o item some da fila assim que avança. Dono e designer têm a
   // aba "Visão geral", que desenha todos os painéis lado a lado (o fluxo inteiro).
-  const ehStaff = perfil === 'dono' || perfil === 'designer'
+  const ehStaff = ['dono', 'designer', 'financeiro'].includes(perfil)
   // ⚠️ `paineis` e `meusMateriais` são dependências do useMemo do QuadroProducao:
   // precisam ser a MESMA referência entre renders, senão o memo dele nunca acerta.
   const meusPaineis = useMemo(() => paineisVisiveis({ perfil, setores, materiais }), [perfil, setores, materiais])

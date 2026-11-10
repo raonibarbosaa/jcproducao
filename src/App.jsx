@@ -36,7 +36,9 @@ const ACESSO = {
   // as Ordens de Fabricação são dono e designer — decisão de 16/09/2026)
   designer:   ['triagem', 'ordens', 'producao', 'carga', 'rota', 'controle', 'entregues', 'localizar', 'cadastros', 'relatorios', 'usuarios', 'ciencia', 'erros'],
   // 'financeiro' PRIMEIRO: é a tela de trabalho dele (contas a receber).
-  financeiro: ['financeiro', 'cheques', 'producao', 'rota', 'controle', 'entregues', 'localizar', 'cadastros'],   // cadastros: Itens (preço) e Fornecedores (repasse de cheque)
+  // 10/11/2026 (Raoni): o financeiro tem acesso a TODAS as funções do sistema —
+  // as abas do dono + Financeiro e Cheques ('financeiro' primeiro: é a tela de trabalho dele).
+  financeiro: ['financeiro', 'cheques', 'triagem', 'ordens', 'producao', 'carga', 'rota', 'controle', 'entregues', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   dono:       ['triagem', 'ordens', 'producao', 'carga', 'rota', 'controle', 'entregues', 'localizar', 'relatorios', 'cadastros', 'usuarios', 'ciencia', 'erros', 'auditoria', 'conciliacao'],
   vendedor:   ['meus'],
   operador:   ['producao'],   // chão de fábrica: só o quadro de produção (não vê valores)

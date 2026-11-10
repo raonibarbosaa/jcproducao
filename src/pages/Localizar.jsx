@@ -43,7 +43,7 @@ export default function Localizar({ pedidos, problemas }) {
   // Desfazer é do escritório: a expedição VÊ o motivo do bloqueio e sabe a quem
   // pedir, mas quem desfaz uma viagem já registrada é dono/designer — mesma
   // linha do "retornar carga", que sempre foi só do dono.
-  const podeLiberar = perfil === 'dono' || perfil === 'designer'
+  const podeLiberar = ['dono', 'designer', 'financeiro'].includes(perfil)
   const veValor = perfil === 'dono' || perfil === 'financeiro'
   // Fase C do Controle de entrega: quem acha o pedido aqui pode lançá-lo
   // (finalizado + saiu) sem trocar de aba — os mesmos botões, a mesma conta

@@ -253,7 +253,7 @@ export default function OrdensFabricacao({ pedidos, ordens = [], erroOrdens = ''
         )}
         <SubTabs abas={abas} ativa={aba} onTrocar={setAba} />
 
-        <PainelVirada cfg={producaoCfg} ehDono={perfil === 'dono'} nFoto={nFoto}
+        <PainelVirada cfg={producaoCfg} ehDono={perfil === 'dono' || perfil === 'financeiro'} nFoto={nFoto}
           ocupado={!!salvando} onLigar={ligarExigencia} onDesligar={desligarExigencia} />
 
         {erroOrdens && (
