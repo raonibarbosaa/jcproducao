@@ -132,8 +132,9 @@ personalizadas em Itabaiana-SE. Importa a planilha de expedição do ERP **Posse
 > aceitar o financeiro: excluir pedido na Triagem, ligar/desligar a virada de OF,
 > retornar carga que já saiu, cancelar entrega, desbloquear no Localizar, data
 > manual, todas as sub-abas de Cadastros (Integrações inclusive). Rules:
-> `soltaOF()` e a leitura de `auditoria` aceitam o financeiro — **publicar
-> antes do build**. O dono continua SEM Financeiro/Cheques na tela.
+> `soltaOF()` e a leitura de `auditoria` aceitam o financeiro. ✅ Rules
+> publicadas e site no ar em 10/11/2026 (`61b6056`). O dono continua SEM
+> Financeiro/Cheques na tela.
 
 ## RELÓGIO DA FILA — tempo por item × etapa (14/08/2026)
 > Base da estatística de produção. O que se mede é quase todo FILA, não trabalho:
